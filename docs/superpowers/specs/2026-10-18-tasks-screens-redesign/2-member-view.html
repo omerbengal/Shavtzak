@@ -1,0 +1,265 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap">
+<style>
+  .mk { --blue:#2196F3; --blue-d:#1565C0; --blue-l:#E3F2FD; --green:#43A047; --green-d:#2E7D32; --green-l:#E8F5E9;
+        --red:#E53935; --red-d:#C62828; --red-l:#FFEBEE; --orange:#FB8C00; --orange-d:#BF360C; --orange-l:#FFF3E0;
+        --tx:#212121; --tx2:#616161; --tx3:#9E9E9E; --div:#E0E0E0; --bg:#FAFAFA; }
+  .mk .phones { display:flex; flex-wrap:wrap; gap:24px; justify-content:center; align-items:flex-start; }
+  .mk .ph-card { padding:10px 10px 8px; }
+  .mk .ph-label { font-size:15px; margin:0 4px 10px; color:var(--text-primary); }
+  .mk .ph-label b { display:inline-block; min-width:30px; height:26px; line-height:26px; text-align:center; border-radius:6px; background:var(--bg-tertiary); margin-right:6px; padding:0 4px; }
+  .mk .ph-notes { max-width:380px; margin:12px 4px 2px; padding-left:18px; font-size:13px; color:var(--text-secondary); }
+  .mk .ph-notes li { margin-bottom:4px; }
+
+  .mk .phone { box-sizing:border-box; width:380px; height:780px; border:10px solid #1d1d1f; border-radius:38px; overflow:hidden;
+               position:relative; background:var(--bg); color:var(--tx); direction:rtl; text-align:right;
+               font-family:'Rubik','Noto Sans Hebrew',Arial,sans-serif; line-height:1.35; box-shadow:0 12px 30px rgba(0,0,0,.18); }
+  .mk .phone svg { width:16px; height:16px; fill:currentColor; flex:none; }
+  .mk .appbar { height:52px; background:var(--blue); color:#fff; display:flex; align-items:center; padding:0 14px; position:relative; }
+  .mk .appbar .ttl { position:absolute; left:0; right:0; text-align:center; font-size:18px; font-weight:600; pointer-events:none; }
+  .mk .appbar svg { width:24px; height:24px; margin-inline-start:auto; }
+  .mk .seg { display:flex; margin:8px 12px 6px; border:1px solid var(--blue-d); border-radius:18px; overflow:hidden; font-size:13px; }
+  .mk .seg span { flex:1; text-align:center; padding:6px 0; color:var(--blue-d); }
+  .mk .seg span.on { background:var(--blue-d); color:#fff; font-weight:600; }
+  .mk .bar { display:flex; direction:ltr; height:8px; border-radius:4px; overflow:hidden; background:#E0E0E0; }
+  .mk .bar i { display:block; height:100%; }
+  .mk .g { background:var(--green); } .mk .o { background:var(--orange); } .mk .n { background:#E0E0E0; }
+  .mk .chip { display:inline-flex; align-items:center; gap:3px; font-size:12px; font-weight:600; padding:2px 8px; border-radius:12px; white-space:nowrap; }
+  .mk .chip svg { width:13px; height:13px; }
+  .mk .chip.green { background:var(--green-l); color:var(--green-d); }
+  .mk .chip.grey { background:#EEEEEE; color:var(--tx2); }
+  .mk .chip.mine { background:var(--blue-d); color:#fff; }
+  .mk .miss { display:inline-flex; align-items:center; gap:1px; font-size:12px; font-weight:600; padding:1px 4px 1px 9px; border-radius:14px; border:1px solid; white-space:nowrap; }
+  .mk .miss svg { width:14px; height:14px; }
+  .mk .miss.red { color:var(--red-d); border-color:#EF9A9A; background:var(--red-l); }
+  .mk .miss.orange { color:var(--orange-d); border-color:#FFCC80; background:var(--orange-l); }
+  .mk .miss.grey { color:var(--tx2); border-color:var(--div); background:#fff; }
+  .mk .nowpill { font-size:11px; font-weight:600; background:var(--blue); color:#fff; padding:1px 7px; border-radius:10px; }
+  .mk .dayh { display:flex; align-items:center; justify-content:space-between; padding:8px 14px 4px; font-size:13px; font-weight:600; color:var(--blue-d); }
+
+  /* ---------- M1: timeline of my tasks ---------- */
+  .mk .lateban { display:flex; align-items:center; gap:9px; margin:2px 12px 2px; padding:7px 10px; border-radius:10px; background:var(--red-l); color:var(--red-d); font-size:12px; border:1px solid #EF9A9A; }
+  .mk .lateban .ic { width:20px; height:20px; border-radius:50%; background:var(--red); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex:none; }
+  .mk .lateban b { font-size:13px; display:block; }
+  .mk .lateban svg { margin-inline-start:auto; }
+  .mk .fold { display:flex; align-items:center; gap:6px; padding:6px 14px 6px; margin:0 12px; font-size:12px; color:var(--tx2); border-bottom:1px dashed var(--div); }
+  .mk .fold svg { width:18px; height:18px; transform:rotate(-90deg); }
+  .mk .ag { display:flex; align-items:stretch; padding-left:12px; }
+  .mk .ag .t { width:50px; flex:none; text-align:center; padding-top:9px; font-size:13px; font-weight:600; direction:ltr; }
+  .mk .ag .t small { display:block; font-size:10px; font-weight:400; color:var(--tx3); }
+  .mk .ag .rail { width:20px; flex:none; position:relative; }
+  .mk .ag .rail:before { content:""; position:absolute; top:0; bottom:0; left:9px; width:2px; background:var(--div); }
+  .mk .ag .node { position:absolute; top:10px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; border:2px solid #BDBDBD; box-sizing:border-box; display:flex; align-items:center; justify-content:center; color:#fff; }
+  .mk .ag .node svg { width:11px; height:11px; }
+  .mk .ag .node.now { border:4px solid var(--blue); box-shadow:0 0 0 4px rgba(33,150,243,.22); }
+  .mk .ag .node.done { background:var(--green); border-color:var(--green); }
+  .mk .ag .dot { position:absolute; top:14px; left:6px; width:8px; height:8px; border-radius:50%; background:#BDBDBD; }
+  .mk .ag .dot.done { background:var(--green); }
+  .mk .sh { flex:1; padding:7px 10px 7px; margin:6px 0 2px; border-radius:10px; min-width:0; }
+  .mk .ag.now .sh { background:var(--blue-l); box-shadow:inset 0 0 0 1.5px #90CAF9; }
+  .mk .sh .kick { font-size:11px; font-weight:600; color:var(--tx3); }
+  .mk .sh .sti { font-size:16px; font-weight:700; display:flex; align-items:center; gap:6px; }
+  .mk .sh .sti .cnt { margin-inline-start:auto; font-size:12px; font-weight:600; color:var(--blue-d); }
+  .mk .sh .slo { font-size:12px; color:var(--tx2); display:flex; align-items:center; gap:4px; margin-top:1px; }
+  .mk .sh .slo svg { width:14px; height:14px; }
+  .mk .task { flex:1; background:#fff; border:1px solid var(--div); border-radius:10px; padding:8px 10px; margin:4px 0; min-width:0; }
+  .mk .task .top { display:flex; align-items:flex-start; gap:9px; }
+  .mk .cb { width:24px; height:24px; border-radius:6px; border:2px solid #9E9E9E; flex:none; box-sizing:border-box; background:#fff; display:flex; align-items:center; justify-content:center; color:#fff; }
+  .mk .cb svg { width:16px; height:16px; }
+  .mk .cb.on { background:var(--green); border-color:var(--green); }
+  .mk .task .tt { font-size:15px; font-weight:600; flex:1; }
+  .mk .task .ln { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--tx2); margin-top:3px; }
+  .mk .task .ln svg { width:14px; height:14px; }
+  .mk .task .ln .star { color:var(--orange-d); font-weight:700; }
+  .mk .task .prog { font-size:12px; color:var(--tx2); direction:ltr; }
+  .mk .subs { margin-top:6px; border-top:1px dashed #E6E6E6; padding-top:4px; }
+  .mk .sub { display:flex; align-items:center; gap:9px; font-size:13px; padding:4px 0; }
+  .mk .sub .cb { width:20px; height:20px; border-radius:5px; }
+  .mk .sub .cb svg { width:14px; height:14px; }
+  .mk .sub.done span { text-decoration:line-through; color:var(--tx3); }
+  .mk .slim { flex:1; display:flex; align-items:center; gap:8px; padding:8px 4px 8px 6px; font-size:14px; min-width:0; }
+  .mk .slim .tt { flex:1; }
+  .mk .slim small { color:var(--tx3); font-size:12px; }
+  .mk .slim.done .tt { text-decoration:line-through; color:var(--tx3); }
+
+  /* ---------- M2: all stages (calendar + sheet) ---------- */
+  .mk .dtabs { display:flex; gap:6px; padding:6px 12px 6px; }
+  .mk .dtabs span { flex:1; text-align:center; font-size:13px; padding:6px 0; border-radius:8px; background:#EEEEEE; color:var(--tx2); }
+  .mk .dtabs span.on { background:var(--blue-l); color:var(--blue-d); font-weight:600; box-shadow:inset 0 0 0 1.5px #90CAF9; }
+  .mk .calwin { position:relative; height:262px; overflow:hidden; }
+  .mk .cal { position:absolute; right:0; left:0; top:-170px; height:540px; }
+  .mk .hr { position:absolute; right:0; left:0; height:0; border-top:1px solid #EEEEEE; }
+  .mk .hr span { position:absolute; right:6px; top:-7px; font-size:10px; color:var(--tx3); background:var(--bg); padding:0 2px; direction:ltr; }
+  .mk .blk { position:absolute; right:46px; left:10px; border-radius:8px; padding:3px 8px; box-sizing:border-box; overflow:hidden;
+             background:#fff; border:1px solid var(--div); border-right:4px solid #BDBDBD; font-size:12px; }
+  .mk .blk .h { display:flex; align-items:center; gap:6px; }
+  .mk .blk .h b { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk .blk .h .push { margin-inline-start:auto; }
+  .mk .blk .lo { color:var(--tx2); font-size:11px; }
+  .mk .blk .bar { height:5px; margin-top:5px; }
+  .mk .blk.late { border-right-color:var(--red); }
+  .mk .blk.now { background:var(--blue-l); border-color:#90CAF9; border-right-color:var(--blue); }
+  .mk .blk.faded { opacity:.5; }
+  .mk .blk.picked { box-shadow:0 0 0 2.5px var(--blue-d), 0 6px 14px rgba(21,101,192,.25); z-index:3; }
+  .mk .mine { display:inline-flex; align-items:center; gap:2px; font-size:11px; font-weight:700; color:#fff; background:var(--blue-d); border-radius:10px; padding:1px 6px 1px 5px; }
+  .mk .mine svg { width:12px; height:12px; }
+  .mk .nowline { position:absolute; right:40px; left:4px; height:0; border-top:2px solid var(--red); z-index:4; }
+  .mk .nowline:before { content:""; position:absolute; right:-5px; top:-6px; width:10px; height:10px; border-radius:50%; background:var(--red); }
+  .mk .nowline span { position:absolute; right:-42px; top:-9px; font-size:10px; font-weight:700; color:#fff; background:var(--red); border-radius:6px; padding:1px 4px; direction:ltr; }
+  .mk .gap { position:absolute; right:46px; left:10px; text-align:center; font-size:11px; color:var(--tx3); }
+  .mk .sheet { position:absolute; right:0; left:0; bottom:0; height:362px; background:#fff; border-radius:18px 18px 0 0; z-index:6;
+               display:flex; flex-direction:column; box-shadow:0 -8px 24px rgba(0,0,0,.18); border-top:3px solid var(--blue); }
+  .mk .handle { width:40px; height:4px; border-radius:2px; background:#D0D0D0; margin:7px auto 3px; }
+  .mk .sh-head { display:flex; align-items:flex-start; gap:8px; padding:2px 16px 0; }
+  .mk .sh-head .ttl { font-size:18px; font-weight:700; }
+  .mk .sh-head .sub2 { font-size:13px; color:var(--tx2); }
+  .mk .sh-head > svg { width:24px; height:24px; color:var(--tx2); margin-inline-start:auto; }
+  .mk .sh-tools { display:flex; align-items:center; gap:10px; padding:8px 16px 8px; border-bottom:1px solid var(--div); }
+  .mk .mini-seg { display:flex; border:1px solid var(--div); border-radius:14px; overflow:hidden; font-size:12px; }
+  .mk .mini-seg span { padding:3px 10px; color:var(--tx2); }
+  .mk .mini-seg span.on { background:#424242; color:#fff; font-weight:600; }
+  .mk .sh-tools .txt { font-size:12px; color:var(--tx2); margin-inline-start:auto; }
+  .mk .row2 { display:flex; align-items:flex-start; gap:9px; padding:9px 16px; border-bottom:1px solid #F0F0F0; }
+  .mk .row2 .bd { flex:1; min-width:0; }
+  .mk .row2 .tt { font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .mk .row2 .ln { font-size:12px; color:var(--tx2); margin-top:2px; display:flex; align-items:center; gap:4px; }
+  .mk .row2 .ln svg { width:13px; height:13px; }
+  .mk .row2.done { padding-top:6px; padding-bottom:6px; }
+  .mk .row2.done .tt { font-weight:500; color:var(--tx3); text-decoration:line-through; }
+  .mk .row2 .ghost { width:24px; flex:none; }
+  .mk .person { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:2px 3px 2px 8px; border-radius:14px; background:#F5F5F5; border:1px solid #E6E6E6; margin-top:5px; }
+  .mk .person .call { width:20px; height:20px; border-radius:50%; background:var(--green); color:#fff; display:inline-flex; align-items:center; justify-content:center; }
+  .mk .person .call svg { width:12px; height:12px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
+  <symbol id="i-place" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></symbol>
+  <symbol id="i-group" viewBox="0 0 24 24"><path d="M16 11a3 3 0 100-6 3 3 0 000 6zm-8 0a3 3 0 100-6 3 3 0 000 6zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></symbol>
+</svg>
+
+<h2>Team member's view</h2>
+<p class="subtitle">Same sample event, same moment (Tuesday 14:40), seen by a member who has 3 open tasks in the current stage. M1 is the screen they land on; M2 is the other tab.</p>
+
+<div class="mk">
+<div class="phones">
+
+  <!-- ===================== M1 ===================== -->
+  <div class="card ph-card">
+    <div class="ph-label"><b>M1</b>"המשימות שלי": a timeline of my tasks</div>
+    <div class="phone">
+      <div class="appbar"><span class="ttl">דו יומי הנהלה</span><svg><use href="#i-back"/></svg></div>
+      <div class="seg"><span class="on">המשימות שלי</span><span>כל השלבים</span></div>
+
+      <div class="lateban"><span class="ic">!</span><span><b>משימה שלך באיחור</b>בדיקת מנות מיוחדות · ארוחת צהריים, <span dir="ltr">13:00</span></span><svg><use href="#i-chev"/></svg></div>
+
+      <div class="dayh">שלישי 20/10 · היום</div>
+      <div class="fold"><svg><use href="#i-chev"/></svg>4 שלבים קודמים · 3 משימות שלך הושלמו</div>
+
+      <!-- current stage -->
+      <div class="ag now"><div class="t">14:30<small>17:00</small></div><div class="rail"><span class="node now"></span></div>
+        <div class="sh"><div class="sti">סדנאות<span class="nowpill">עכשיו</span><span class="cnt">3 פתוחות שלך</span></div>
+          <div class="slo"><svg><use href="#i-place"/></svg>חדרי הסדנה</div></div></div>
+
+      <div class="ag"><div class="t" style="color:var(--tx3)">14:00</div><div class="rail"><span class="dot done"></span></div>
+        <div class="slim done"><span class="cb on" style="width:20px;height:20px"><svg><use href="#i-check"/></svg></span><span class="tt">הכנת מצגות לסדנה</span></div></div>
+
+      <div class="ag"><div class="t">15:00<small>התייצבות</small></div><div class="rail"><span class="dot"></span></div>
+        <div class="task">
+          <div class="top"><span class="tt">הכנת חדר סדנה 2</span><span class="prog">1/3</span></div>
+          <div class="ln"><svg><use href="#i-group"/></svg>עם אבי כהן</div>
+          <div class="subs">
+            <div class="sub done"><span class="cb on"><svg><use href="#i-check"/></svg></span><span>חיבור מקרן</span></div>
+            <div class="sub"><span class="cb"></span><span>סידור כיסאות במעגל</span></div>
+            <div class="sub"><span class="cb"></span><span>בדיקת מיקרופון</span></div>
+          </div>
+        </div></div>
+
+      <div class="ag"><div class="t">15:45<small>התייצבות</small></div><div class="rail"><span class="dot"></span></div>
+        <div class="task"><div class="top"><span class="cb"></span><span class="tt">חלוקת ערכות למשתתפים</span></div></div></div>
+
+      <div class="ag"><div class="t" style="color:var(--tx2);font-weight:500;font-size:11px;line-height:1.25;padding-top:8px">ללא<br>שעה</div><div class="rail"><span class="dot"></span></div>
+        <div class="task"><div class="top"><span class="cb"></span><span class="tt">החזרת ציוד הסדנה למחסן</span></div>
+          <div class="ln" style="margin-right:33px">עד סוף היום</div></div></div>
+
+      <!-- next stage glance -->
+      <div class="ag"><div class="t">19:30<small>21:00</small></div><div class="rail"><span class="node"></span></div>
+        <div class="sh"><div class="kick">השלב הבא</div><div class="sti">ארוחת ערב חגיגית<span class="cnt">משימה אחת שלך</span></div>
+          <div class="slo"><svg><use href="#i-place"/></svg>אולם האירועים</div></div></div>
+      <div class="ag"><div class="t">19:00<small>התייצבות</small></div><div class="rail"><span class="dot"></span></div>
+        <div class="slim"><span class="cb" style="width:20px;height:20px"></span><span class="tt">קבלת אורחים בכניסה</span><small>עם יעל מזרחי</small></div></div>
+
+      <div class="ag"><div class="t">21:00<small>23:30</small></div><div class="rail"><span class="node"></span></div>
+        <div class="sh"><div class="sti" style="font-size:15px;font-weight:500">ערב גיבוש<span class="cnt" style="color:var(--tx3);font-weight:400">אין לך משימות</span></div>
+          <div class="slo"><svg><use href="#i-place"/></svg>בר הבריכה</div></div></div>
+    </div>
+    <ul class="ph-notes">
+      <li>Opens on the current stage: your open tasks there first, the next stage right under it as a glance, earlier stages folded above.</li>
+      <li>The report time is the timeline's axis (right column). One tap ticks a task or a subtask.</li>
+      <li>A late task of yours from an earlier stage stays pinned on top in red until it's ticked.</li>
+      <li>Every stage shows, even one with nothing of yours in it (like lunch), so the timeline is also the event's schedule.</li>
+      <li>No place per task (your call): the place shows once, on the stage.</li>
+      <li>A task with no report time sits at the end of its stage, marked "ללא שעה". It turns late only once its day is over.</li>
+    </ul>
+  </div>
+
+  <!-- ===================== M2 ===================== -->
+  <div class="card ph-card">
+    <div class="ph-label"><b>M2</b>"כל השלבים": the managers' calendar</div>
+    <div class="phone">
+      <div class="appbar"><span class="ttl">דו יומי הנהלה</span><svg><use href="#i-back"/></svg></div>
+      <div class="seg"><span>המשימות שלי</span><span class="on">כל השלבים</span></div>
+      <div class="dtabs"><span class="on">שלישי 20/10 · היום</span><span>רביעי 21/10</span></div>
+      <div class="calwin">
+        <div class="cal">
+          <div class="hr" style="top:176px"><span>13</span></div><div class="hr" style="top:210px"><span>14</span></div>
+          <div class="hr" style="top:244px"><span>15</span></div><div class="hr" style="top:278px"><span>16</span></div>
+          <div class="hr" style="top:312px"><span>17</span></div><div class="hr" style="top:346px"><span>18</span></div>
+          <div class="hr" style="top:380px"><span>19</span></div><div class="hr" style="top:414px"><span>20</span></div>
+          <div class="blk late faded" style="top:177px;height:32px"><div class="h"><b>ארוחת צהריים</b><span class="mine push"><svg><use href="#i-person"/></svg>1</span><span class="miss red">1 באיחור<svg><use href="#i-chev"/></svg></span></div></div>
+          <div class="blk now picked" style="top:228px;height:83px"><div class="h"><b>סדנאות</b><span class="mine push"><svg><use href="#i-person"/></svg>2</span><span class="miss orange">3 חסרות<svg><use href="#i-chev"/></svg></span></div>
+            <div class="lo">חדרי הסדנה · <span dir="ltr">14:30–17:00</span></div><div class="bar"><i class="g" style="flex:2"></i><i class="o" style="flex:1"></i><i class="n" style="flex:2"></i></div></div>
+          <div class="nowline" style="top:233px"><span>14:40</span></div>
+          <div class="gap" style="top:350px">שעתיים וחצי פנויות</div>
+          <div class="blk faded" style="top:398px;height:49px"><div class="h"><b>ארוחת ערב חגיגית</b><span class="mine push"><svg><use href="#i-person"/></svg>1</span><span class="miss grey">0/6<svg><use href="#i-chev"/></svg></span></div></div>
+        </div>
+      </div>
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="sh-head">
+          <div><div class="ttl">סדנאות</div><div class="sub2"><span dir="ltr">14:30–17:00</span> · חדרי הסדנה</div></div>
+          <svg><use href="#i-close"/></svg>
+        </div>
+        <div class="sh-tools"><span class="mini-seg"><span>חסרות (3)</span><span class="on">הכל (5)</span></span><span class="txt"><b dir="ltr">2/5</b> הושלמו</span></div>
+        <div class="row2 done"><span class="cb on" style="width:20px;height:20px;border-color:#BDBDBD;background:#BDBDBD"><svg><use href="#i-check"/></svg></span>
+          <div class="bd"><div class="tt">הכנת מצגות לסדנה</div></div><span class="chip grey">נועה לוי</span></div>
+        <div class="row2 done"><span class="cb on" style="width:20px;height:20px;border-color:#BDBDBD;background:#BDBDBD"><svg><use href="#i-check"/></svg></span>
+          <div class="bd"><div class="tt">הקמת עמדת קפה</div></div><span class="chip grey">אבי כהן</span></div>
+        <div class="row2"><span class="cb"></span>
+          <div class="bd"><div class="tt">הכנת חדר סדנה 2<span class="chip mine">שלך</span></div>
+            <div class="ln"><svg><use href="#i-clock"/></svg>התייצבות 15:00 · <span dir="ltr">1/3</span></div>
+            <span class="person">אבי כהן<span class="call"><svg><use href="#i-phone"/></svg></span></span></div></div>
+        <div class="row2"><span class="cb"></span>
+          <div class="bd"><div class="tt">חלוקת ערכות למשתתפים<span class="chip mine">שלך</span></div>
+            <div class="ln"><svg><use href="#i-clock"/></svg>התייצבות 15:45</div></div></div>
+        <div class="row2"><span class="ghost"></span>
+          <div class="bd"><div class="tt">צילום הסדנאות</div>
+            <div class="ln">עד סוף היום</div>
+            <span class="person">דני רוזן<span class="call"><svg><use href="#i-phone"/></svg></span></span></div></div>
+      </div>
+    </div>
+    <ul class="ph-notes">
+      <li>The same calendar and low sheet the managers use. Stages you have tasks in carry a blue count with a person icon.</li>
+      <li>Here the sheet lists all of the stage's tasks (switch to "חסרות" for open ones only). You can tick only yours.</li>
+      <li>Managers get both tabs too; only the tab each role lands on differs.</li>
+    </ul>
+  </div>
+
+</div>
+</div>

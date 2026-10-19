@@ -1,0 +1,191 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap">
+<style>
+  .mk { --blue:#2196F3; --blue-d:#1565C0; --blue-l:#E3F2FD; --green:#43A047; --green-d:#2E7D32; --green-l:#E8F5E9;
+        --red:#E53935; --red-d:#C62828; --red-l:#FFEBEE; --orange:#FB8C00; --orange-d:#BF360C; --orange-l:#FFF3E0;
+        --tx:#212121; --tx2:#616161; --tx3:#9E9E9E; --div:#E0E0E0; --bg:#FAFAFA; }
+  .mk .desk { box-sizing:border-box; width:1240px; height:790px; margin:0 auto; border:1px solid #CFCFCF; border-radius:12px; overflow:hidden; position:relative;
+              background:var(--bg); color:var(--tx); direction:rtl; text-align:right; font-family:'Rubik','Noto Sans Hebrew',Arial,sans-serif; line-height:1.35;
+              box-shadow:0 12px 30px rgba(0,0,0,.15); }
+  .mk .desk svg { width:16px; height:16px; fill:currentColor; flex:none; }
+  .mk .chrome { height:26px; background:#ECECEC; display:flex; align-items:center; gap:6px; padding:0 12px; direction:ltr; }
+  .mk .chrome i { width:11px; height:11px; border-radius:50%; background:#D0D0D0; display:block; }
+  .mk .appbar { height:50px; background:var(--blue); color:#fff; display:flex; align-items:center; padding:0 18px; position:relative; }
+  .mk .appbar .ttl { position:absolute; left:0; right:0; text-align:center; font-size:19px; font-weight:600; pointer-events:none; }
+  .mk .appbar svg { width:24px; height:24px; margin-inline-start:auto; }
+  .mk .dsum { height:52px; display:flex; align-items:center; gap:22px; padding:0 18px; background:#fff; border-bottom:1px solid var(--div); font-size:14px; }
+  .mk .dsum .meta { display:flex; align-items:center; gap:6px; color:var(--tx2); }
+  .mk .dsum .stats b { font-weight:700; }
+  .mk .seg { display:flex; border:1px solid var(--blue-d); border-radius:18px; overflow:hidden; font-size:13px; margin-inline-start:auto; }
+  .mk .seg span { padding:6px 16px; color:var(--blue-d); }
+  .mk .seg span.on { background:var(--blue-d); color:#fff; font-weight:600; }
+  .mk .checks { height:44px; display:flex; align-items:center; gap:8px; padding:0 18px; background:#fff; border-bottom:1px solid var(--div); font-size:13px; }
+  .mk .checks .lbl { color:var(--tx2); font-weight:600; }
+  .mk .ck { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:14px; font-size:13px; font-weight:500; border:1px solid; }
+  .mk .ck b { font-weight:700; }
+  .mk .ck.red { background:var(--red-l); color:var(--red-d); border-color:#EF9A9A; }
+  .mk .ck.orange { background:var(--orange-l); color:var(--orange-d); border-color:#FFCC80; }
+  .mk .ck.grey { background:#F5F5F5; color:var(--tx2); border-color:var(--div); }
+  .mk .checks .sugg { margin-inline-start:auto; font-size:11px; color:var(--tx3); }
+  .mk .dmain { display:flex; height:616px; }
+
+  /* calendar, both days */
+  .mk .dcal { width:520px; flex:none; position:relative; border-left:1px solid var(--div); background:var(--bg); }
+  .mk .dayhdr { position:absolute; top:0; height:28px; line-height:28px; text-align:center; font-size:13px; font-weight:600; color:var(--blue-d); border-bottom:1px solid var(--div); background:#fff; }
+  .mk .hr { position:absolute; right:0; left:0; height:0; border-top:1px solid #EEEEEE; }
+  .mk .hr span { position:absolute; right:8px; top:-7px; font-size:10px; color:var(--tx3); background:var(--bg); padding:0 2px; direction:ltr; }
+  .mk .vsep { position:absolute; top:0; bottom:0; width:0; border-left:1px solid var(--div); }
+  .mk .blk { position:absolute; border-radius:7px; padding:3px 7px; box-sizing:border-box; overflow:hidden; background:#fff; border:1px solid var(--div);
+             border-right:4px solid #90CAF9; font-size:12px; cursor:pointer; }
+  .mk .blk .h { display:flex; align-items:center; gap:5px; }
+  .mk .blk .h b { font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk .blk .h .c { margin-inline-start:auto; font-size:11px; color:var(--tx2); white-space:nowrap; }
+  .mk .blk .lo { color:var(--tx2); font-size:11px; }
+  .mk .blk .flag { width:16px; height:16px; border-radius:50%; background:var(--red); color:#fff; font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+  .mk .blk .flag.o { background:var(--orange); }
+  .mk .blk.empty { background:repeating-linear-gradient(135deg,#FAFAFA 0 6px,#F0F0F0 6px 12px); border-style:dashed; border-right:4px dashed #BDBDBD; color:var(--tx3); }
+  .mk .blk.picked { background:var(--blue-l); border-color:#90CAF9; border-right-color:var(--blue); box-shadow:0 0 0 2.5px var(--blue-d), 0 6px 14px rgba(21,101,192,.22); z-index:3; }
+
+  /* stage panel */
+  .mk .dpanel { flex:1; background:#fff; overflow:hidden; display:flex; flex-direction:column; }
+  .mk .ph { display:flex; align-items:flex-start; gap:10px; padding:16px 22px 10px; border-bottom:1px solid var(--div); }
+  .mk .ph .ttl { font-size:22px; font-weight:700; }
+  .mk .ph .sub { font-size:14px; color:var(--tx2); margin-top:2px; display:flex; align-items:center; gap:6px; }
+  .mk .ph .acts { margin-inline-start:auto; display:flex; gap:6px; }
+  .mk .ib { width:34px; height:34px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--div); background:#fff; }
+  .mk .ib svg { width:18px; height:18px; }
+  .mk .ib.blue { color:var(--blue-d); } .mk .ib.red { color:var(--red-d); }
+  .mk .det { display:grid; grid-template-columns:1fr 1.2fr 1.3fr; gap:18px; padding:12px 22px 14px; border-bottom:1px solid var(--div); font-size:13px; }
+  .mk .det h4 { font-size:12px; font-weight:600; color:var(--blue-d); margin:0 0 4px; }
+  .mk .det p { margin:0; color:var(--tx); }
+  .mk .det ul { margin:0; padding:0 16px 0 0; }
+  .mk .contact { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+  .mk .contact .nm { flex:1; }
+  .mk .contact .nm small { color:var(--tx2); }
+  .mk .contact .ph2 { direction:ltr; font-size:12px; color:var(--blue-d); display:inline-flex; align-items:center; gap:4px; }
+  .mk .th { display:flex; align-items:center; padding:12px 22px 6px; }
+  .mk .th .t1 { font-size:15px; font-weight:700; }
+  .mk .th .add { margin-inline-start:auto; display:inline-flex; align-items:center; gap:4px; background:var(--blue-d); color:#fff; font-size:13px; font-weight:600; padding:6px 12px; border-radius:8px; }
+  .mk table { width:calc(100% - 28px); margin:0 14px; border-collapse:collapse; font-size:13px; }
+  .mk th { text-align:right; font-size:11px; font-weight:600; color:var(--tx3); padding:6px 8px; border-bottom:1px solid var(--div); }
+  .mk td { padding:8px 8px; border-bottom:1px solid #F0F0F0; vertical-align:top; }
+  .mk td.time { direction:ltr; text-align:right; font-weight:600; width:60px; white-space:nowrap; }
+  .mk td.time.none { color:var(--tx3); font-weight:400; font-size:12px; direction:rtl; }
+  .mk td .tt { font-weight:600; }
+  .mk td .desc { color:var(--tx2); font-size:12px; }
+  .mk .pp { display:inline-block; background:#F5F5F5; border:1px solid #E6E6E6; border-radius:12px; padding:1px 8px; margin:0 0 3px 4px; font-size:12px; white-space:nowrap; }
+  .mk .pp.bad { background:var(--red-l); border-color:#EF9A9A; color:var(--red-d); text-decoration:line-through; }
+  .mk .pp.warn { background:var(--orange-l); border-color:#FFCC80; color:var(--orange-d); }
+  .mk .why { display:block; font-size:11px; margin-top:1px; }
+  .mk .why.r { color:var(--red-d); } .mk .why.o { color:var(--orange-d); }
+  .mk td.sub { direction:ltr; text-align:right; color:var(--tx2); width:50px; }
+  .mk td.act { width:70px; white-space:nowrap; }
+  .mk td.act .ib { width:28px; height:28px; opacity:.0; }
+  .mk tr.hov td { background:#F7FBFF; }
+  .mk tr.hov td.act .ib { opacity:1; }
+  .mk tr.bad td { background:#FFF8F8; }
+  .mk .ph-notes { max-width:1200px; margin:14px auto 0; padding-left:18px; font-size:13px; color:var(--text-secondary); columns:2; column-gap:40px; }
+  .mk .ph-notes li { margin-bottom:5px; break-inside:avoid; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-place" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"/></symbol>
+  <symbol id="i-event" viewBox="0 0 24 24"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-1V1h-2zm3 18H5V8h14v11z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></symbol>
+  <symbol id="i-del" viewBox="0 0 24 24"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></symbol>
+  <symbol id="i-add" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></symbol>
+</svg>
+
+<h2>Manager before the event, on the computer</h2>
+<p class="subtitle">Sunday, two days before the sample event. Wide screen: the calendar keeps both days in view on the right, and clicking a stage opens it on the left with everything needed to review and fix it.</p>
+
+<div class="mk">
+  <div class="desk">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="appbar"><span class="ttl">דו יומי הנהלה</span><svg><use href="#i-back"/></svg></div>
+    <div class="dsum">
+      <span class="meta"><svg><use href="#i-event"/></svg><span dir="ltr">20–21/10</span> · <svg><use href="#i-place"/></svg>מלון רויאל, ים המלח</span>
+      <span class="stats"><b>11</b> שלבים · <b>48</b> משימות · <b>12</b> אנשים</span>
+      <span class="seg"><span class="on">כל השלבים</span><span>המשימות שלי</span></span>
+    </div>
+    <div class="checks">
+      <span class="lbl">לבדיקה:</span>
+      <span class="ck red"><b>1</b> משימה של מי שכבר לא משובץ לאירוע</span>
+    </div>
+    <div class="dmain">
+      <!-- calendar: 34px per hour from 07:00, below a 28px day header -->
+      <div class="dcal">
+        <div class="dayhdr" style="right:44px;width:237px">שלישי 20/10</div>
+        <div class="dayhdr" style="right:282px;width:237px">רביעי 21/10</div>
+        <div class="hr" style="top:28px"><span>07</span></div><div class="hr" style="top:62px"><span>08</span></div><div class="hr" style="top:96px"><span>09</span></div>
+        <div class="hr" style="top:130px"><span>10</span></div><div class="hr" style="top:164px"><span>11</span></div><div class="hr" style="top:198px"><span>12</span></div>
+        <div class="hr" style="top:232px"><span>13</span></div><div class="hr" style="top:266px"><span>14</span></div><div class="hr" style="top:300px"><span>15</span></div>
+        <div class="hr" style="top:334px"><span>16</span></div><div class="hr" style="top:368px"><span>17</span></div><div class="hr" style="top:402px"><span>18</span></div>
+        <div class="hr" style="top:436px"><span>19</span></div><div class="hr" style="top:470px"><span>20</span></div><div class="hr" style="top:504px"><span>21</span></div>
+        <div class="hr" style="top:538px"><span>22</span></div><div class="hr" style="top:572px"><span>23</span></div>
+        <div class="vsep" style="right:281px"></div><div class="vsep" style="right:43px"></div>
+
+        <!-- Tuesday -->
+        <div class="blk" style="right:48px;width:229px;top:63px;height:32px"><div class="h"><b>הקמה ובדיקת ציוד</b><span class="c">5 משימות</span></div></div>
+        <div class="blk" style="right:48px;width:229px;top:97px;height:32px"><div class="h"><b>קליטה והתכנסות</b><span class="c">7 משימות</span></div></div>
+        <div class="blk" style="right:48px;width:229px;top:131px;height:83px"><div class="h"><b>מושב פתיחה</b><span class="c">4 משימות</span></div><div class="lo">אולם הכנסים</div></div>
+        <div class="blk" style="right:48px;width:229px;top:233px;height:32px"><div class="h"><b>ארוחת צהריים</b><span class="c">4 משימות</span></div></div>
+        <div class="blk" style="right:48px;width:229px;top:284px;height:83px"><div class="h"><b>סדנאות</b><span class="c">5 משימות</span></div><div class="lo">חדרי הסדנה</div></div>
+        <div class="blk picked" style="right:48px;width:229px;top:454px;height:49px"><div class="h"><span class="flag">!</span><b>ארוחת ערב חגיגית</b><span class="c">6 משימות</span></div><div class="lo">אולם האירועים</div></div>
+        <div class="blk" style="right:48px;width:229px;top:505px;height:83px"><div class="h"><b>ערב גיבוש</b><span class="c">3 משימות</span></div><div class="lo">בר הבריכה</div></div>
+        <!-- Wednesday -->
+        <div class="blk" style="right:286px;width:229px;top:29px;height:66px"><div class="h"><b>ארוחת בוקר</b><span class="c">2 משימות</span></div><div class="lo">חדר האוכל</div></div>
+        <div class="blk" style="right:286px;width:229px;top:114px;height:66px"><div class="h"><b>סיור בעין גדי</b><span class="c">4 משימות</span></div><div class="lo">יציאה מהלובי</div></div>
+        <div class="blk" style="right:286px;width:229px;top:182px;height:32px"><div class="h"><b>צ׳ק אאוט</b></div></div>
+        <div class="blk" style="right:286px;width:229px;top:216px;height:49px"><div class="h"><b>סיכום ופירוק</b><span class="c">8 משימות</span></div><div class="lo">אולם הכנסים</div></div>
+      </div>
+
+      <!-- stage panel -->
+      <div class="dpanel">
+        <div class="ph">
+          <div>
+            <div class="ttl">ארוחת ערב חגיגית</div>
+            <div class="sub">שלישי 20/10 · <span dir="ltr">19:30–21:00</span> · <svg><use href="#i-place"/></svg>אולם האירועים</div>
+          </div>
+          <div class="acts"><span class="ib blue"><svg><use href="#i-edit"/></svg></span><span class="ib red"><svg><use href="#i-del"/></svg></span></div>
+        </div>
+        <div class="det">
+          <div><h4>הערות</h4><p>להגיע חצי שעה לפני. קוד לבוש: חגיגי.</p></div>
+          <div><h4>דרישות מהמלון ולוגיסטיקה</h4><ul><li>60 מקומות בשולחנות עגולים</li><li>במה, מקרן ומיקרופון אלחוטי</li></ul></div>
+          <div><h4>אנשי קשר</h4>
+            <div class="contact"><span class="nm">רונית <small>· מנהלת אירועים</small></span><span class="ph2"><svg><use href="#i-phone"/></svg>050-0000000</span></div>
+            <div class="contact"><span class="nm">משה <small>· שף</small></span><span class="ph2"><svg><use href="#i-phone"/></svg>052-0000000</span></div>
+          </div>
+        </div>
+        <div class="th"><span class="t1">משימות (6)</span><span class="add"><svg><use href="#i-add"/></svg>משימה חדשה</span></div>
+        <table>
+          <tr><th>התייצבות</th><th>משימה</th><th>אחראים</th><th>תת-משימות</th><th></th></tr>
+          <tr><td class="time">18:00</td><td><div class="tt">תיאום הגשה עם המטבח</div><div class="desc">סדר מנות ומנות מיוחדות</div></td><td><span class="pp">מיכל אברהם</span></td><td class="sub">—</td>
+              <td class="act"><span class="ib blue"><svg><use href="#i-edit"/></svg></span> <span class="ib red"><svg><use href="#i-del"/></svg></span></td></tr>
+          <tr class="hov"><td class="time">18:30</td><td><div class="tt">בדיקת סידורי ישיבה</div></td>
+              <td><span class="pp">אבי כהן</span></td><td class="sub">0/3</td>
+              <td class="act"><span class="ib blue"><svg><use href="#i-edit"/></svg></span> <span class="ib red"><svg><use href="#i-del"/></svg></span></td></tr>
+          <tr><td class="time">19:00</td><td><div class="tt">קבלת אורחים בכניסה</div></td><td><span class="pp">יעל מזרחי</span><span class="pp">נועה לוי</span></td><td class="sub">0/2</td>
+              <td class="act"><span class="ib blue"><svg><use href="#i-edit"/></svg></span> <span class="ib red"><svg><use href="#i-del"/></svg></span></td></tr>
+          <tr><td class="time">19:30</td><td><div class="tt">צילום הערב</div></td><td><span class="pp">עידו שמש</span></td><td class="sub">—</td>
+              <td class="act"><span class="ib blue"><svg><use href="#i-edit"/></svg></span> <span class="ib red"><svg><use href="#i-del"/></svg></span></td></tr>
+          <tr class="bad"><td class="time">19:45</td><td><div class="tt">הפעלת מצגת פתיחה</div><div class="desc">מחשב נייד + קליקר</div></td>
+              <td><span class="pp bad">דני רוזן</span><span class="why r">כבר לא משובץ לאירוע</span></td><td class="sub">—</td>
+              <td class="act"><span class="ib blue"><svg><use href="#i-edit"/></svg></span> <span class="ib red"><svg><use href="#i-del"/></svg></span></td></tr>
+          <tr><td class="time none">ללא שעה</td><td><div class="tt">חלוקת מתנות למשתתפים</div></td><td><span class="pp">יעל מזרחי</span></td><td class="sub">—</td>
+              <td class="act"><span class="ib blue"><svg><use href="#i-edit"/></svg></span> <span class="ib red"><svg><use href="#i-del"/></svg></span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <ul class="ph-notes">
+    <li>Same calendar as on the phone, with both days side by side because the screen is wide. The clicked stage is outlined and stays in view.</li>
+    <li>The stage opens on the left instead of a sheet: details, contacts and all of its tasks as a table, sorted by report time, with untimed ones last.</li>
+    <li>Fixes happen in place: edit or delete the stage at the top, "משימה חדשה" for a task, and each row's pencil and bin appear on hover.</li>
+    <li>The "לבדיקה" row appears only when something needs fixing: a task whose assignee was taken off the event. Clicking it lists those tasks and outlines their stages.</li>
+    <li>That assignee shows struck through in red on the task's row. Stages without tasks (like lunch) are normal and carry no warning.</li>
+    <li>On a phone the same screen falls back to the calendar and the low sheet.</li>
+  </ul>
+</div>

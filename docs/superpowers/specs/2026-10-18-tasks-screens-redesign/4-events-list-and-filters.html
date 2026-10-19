@@ -1,0 +1,208 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap">
+<style>
+  .mk { --blue:#2196F3; --blue-d:#1565C0; --blue-l:#E3F2FD; --green:#43A047; --green-d:#2E7D32; --green-l:#E8F5E9;
+        --red:#E53935; --red-d:#C62828; --red-l:#FFEBEE; --orange:#FB8C00; --orange-d:#BF360C; --orange-l:#FFF3E0;
+        --tx:#212121; --tx2:#616161; --tx3:#9E9E9E; --div:#E0E0E0; --bg:#FAFAFA; }
+  .mk .phones { display:flex; flex-wrap:wrap; gap:24px; justify-content:center; align-items:flex-start; }
+  .mk .ph-card { padding:10px 10px 8px; }
+  .mk .ph-label { font-size:15px; margin:0 4px 10px; color:var(--text-primary); }
+  .mk .ph-label b { display:inline-block; min-width:30px; height:26px; line-height:26px; text-align:center; border-radius:6px; background:var(--bg-tertiary); margin-right:6px; padding:0 4px; }
+  .mk .ph-notes { max-width:380px; margin:12px 4px 2px; padding-left:18px; font-size:13px; color:var(--text-secondary); }
+  .mk .ph-notes li { margin-bottom:4px; }
+  .mk .phone { box-sizing:border-box; width:380px; height:780px; border:10px solid #1d1d1f; border-radius:38px; overflow:hidden;
+               position:relative; background:var(--bg); color:var(--tx); direction:rtl; text-align:right;
+               font-family:'Rubik','Noto Sans Hebrew',Arial,sans-serif; line-height:1.35; box-shadow:0 12px 30px rgba(0,0,0,.18); }
+  .mk .phone svg { width:16px; height:16px; fill:currentColor; flex:none; }
+  .mk .appbar { height:52px; background:var(--blue); color:#fff; display:flex; align-items:center; padding:0 14px; position:relative; gap:14px; }
+  .mk .appbar .ttl { position:absolute; left:0; right:0; text-align:center; font-size:18px; font-weight:600; pointer-events:none; }
+  .mk .appbar svg { width:24px; height:24px; }
+  .mk .appbar .end { margin-inline-start:auto; display:flex; gap:16px; }
+  .mk .bar { display:flex; direction:ltr; height:8px; border-radius:4px; overflow:hidden; background:#E0E0E0; }
+  .mk .bar i { display:block; height:100%; }
+  .mk .g { background:var(--green); } .mk .r { background:var(--red); } .mk .o { background:var(--orange); } .mk .n { background:#E0E0E0; }
+  .mk .chip { display:inline-flex; align-items:center; gap:3px; font-size:12px; font-weight:600; padding:2px 8px; border-radius:12px; white-space:nowrap; }
+  .mk .chip.red { background:var(--red-l); color:var(--red-d); }
+  .mk .miss { display:inline-flex; align-items:center; gap:1px; font-size:12px; font-weight:600; padding:1px 4px 1px 9px; border-radius:14px; border:1px solid; white-space:nowrap; }
+  .mk .miss svg { width:14px; height:14px; }
+  .mk .miss.red { color:var(--red-d); border-color:#EF9A9A; background:var(--red-l); }
+
+  /* ---------- L1: events list ---------- */
+  .mk .sec { display:flex; align-items:center; gap:8px; padding:14px 16px 8px; font-size:14px; font-weight:600; color:var(--blue-d); }
+  .mk .sec .n { font-size:12px; background:var(--blue-l); border-radius:10px; padding:1px 8px; }
+  .mk .sec.grey { color:var(--tx2); border-top:1px solid var(--div); margin-top:8px; padding-top:14px; } .mk .sec.grey .n { background:#EEEEEE; }
+  .mk .sec.grey svg { width:22px; height:22px; }
+  .mk .evc { margin:0 12px 10px; background:#fff; border-radius:12px; border:1px solid var(--div); padding:12px 14px; display:flex; align-items:center; gap:10px; }
+  .mk .evc .bd { flex:1; min-width:0; }
+  .mk .evc .nm { font-size:17px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .mk .evc .meta { font-size:13px; color:var(--tx2); display:flex; align-items:center; gap:5px; margin-top:4px; }
+  .mk .evc > svg { width:22px; height:22px; color:var(--tx3); }
+  .mk .evc.cur { border:1.5px solid #90CAF9; background:linear-gradient(0deg,#fff,#F5FAFF); box-shadow:0 4px 14px rgba(21,101,192,.10); }
+  .mk .live { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:#fff; background:var(--blue); border-radius:10px; padding:2px 8px; }
+  .mk .live:before { content:""; width:6px; height:6px; border-radius:50%; background:#fff; }
+
+  /* ---------- S1 ---------- */
+  .mk .sum { background:#fff; padding:10px 14px 8px; }
+  .mk .sum .meta { display:flex; align-items:center; gap:5px; font-size:13px; color:var(--tx2); }
+  .mk .sum .bar { margin:9px 0 7px; }
+  .mk .sum-row { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--tx2); }
+  .mk .sum-row .big { font-size:15px; font-weight:700; color:var(--tx); }
+  .mk .fbar { display:flex; align-items:center; flex-wrap:nowrap; white-space:nowrap; gap:5px; padding:2px 12px 10px; background:#fff; border-bottom:1px solid var(--div); overflow:hidden; }
+  .mk .flbl { display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:600; color:var(--tx2); }
+  .mk .flbl svg { width:14px; height:14px; }
+  .mk .fchip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:500; padding:4px 7px; border-radius:8px; border:1px solid #BDBDBD; background:#fff; color:var(--tx); white-space:nowrap; flex:none; }
+  .mk .fchip .cnt { font-size:10px; font-weight:700; border-radius:9px; padding:0 5px; background:#EEEEEE; color:var(--tx2); }
+  .mk .fchip.red .cnt { background:var(--red-l); color:var(--red-d); }
+  .mk .fchip.orange .cnt { background:var(--orange-l); color:var(--orange-d); }
+  .mk .fchip.on { background:var(--red-l); border:1.5px solid var(--red); color:var(--red-d); font-weight:600; }
+  .mk .fchip.on .cnt { background:var(--red); color:#fff; }
+  .mk .fchip svg { width:12px; height:12px; }
+  .mk .seg { display:flex; margin:8px 12px 4px; border:1px solid var(--blue-d); border-radius:18px; overflow:hidden; font-size:13px; }
+  .mk .seg span { flex:1; text-align:center; padding:6px 0; color:var(--blue-d); }
+  .mk .seg span.on { background:var(--blue-d); color:#fff; font-weight:600; }
+  .mk .dtabs { display:flex; gap:6px; padding:6px 12px 6px; }
+  .mk .dtabs span { flex:1; text-align:center; font-size:13px; padding:5px 0; border-radius:8px; background:#EEEEEE; color:var(--tx2); }
+  .mk .dtabs span.on { background:var(--blue-l); color:var(--blue-d); font-weight:600; box-shadow:inset 0 0 0 1.5px #90CAF9; }
+  .mk .calwin { position:relative; height:176px; overflow:hidden; }
+  .mk .cal { position:absolute; right:0; left:0; top:-17px; height:540px; }
+  .mk .hr { position:absolute; right:0; left:0; height:0; border-top:1px solid #EEEEEE; }
+  .mk .hr span { position:absolute; right:6px; top:-7px; font-size:10px; color:var(--tx3); background:var(--bg); padding:0 2px; direction:ltr; }
+  .mk .blk { position:absolute; right:46px; left:10px; border-radius:8px; padding:3px 8px; box-sizing:border-box; overflow:hidden;
+             background:#fff; border:1px solid var(--div); border-right:4px solid #BDBDBD; font-size:12px; }
+  .mk .blk .h { display:flex; align-items:center; gap:6px; }
+  .mk .blk .h b { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk .blk .h .miss { margin-inline-start:auto; }
+  .mk .blk.done { background:var(--green-l); border-color:#C8E6C9; border-right-color:var(--green); color:var(--tx2); }
+  .mk .blk.late { border-right-color:var(--red); }
+  .mk .blk.faded { opacity:.45; }
+  .mk .blk.hit { box-shadow:0 0 0 2.5px var(--red-d), 0 6px 14px rgba(198,40,40,.2); z-index:3; }
+  .mk .sheet { position:absolute; right:0; left:0; bottom:0; height:318px; background:#fff; border-radius:18px 18px 0 0; z-index:6;
+               display:flex; flex-direction:column; box-shadow:0 -8px 24px rgba(0,0,0,.18); border-top:3px solid var(--red); }
+  .mk .handle { width:40px; height:4px; border-radius:2px; background:#D0D0D0; margin:7px auto 3px; }
+  .mk .sh-head { display:flex; align-items:flex-start; gap:8px; padding:2px 16px 8px; border-bottom:1px solid var(--div); }
+  .mk .sh-head .ttl { font-size:17px; font-weight:700; }
+  .mk .sh-head .sub { font-size:13px; color:var(--tx2); }
+  .mk .sh-head > svg { width:24px; height:24px; color:var(--tx2); margin-inline-start:auto; }
+  .mk .grp { font-size:12px; font-weight:600; color:var(--tx2); background:#F7F7F7; padding:5px 16px; }
+  .mk .mt { padding:9px 16px; border-bottom:1px solid #F0F0F0; }
+  .mk .mt-top { display:flex; align-items:center; gap:8px; }
+  .mk .mt-top .tt { font-size:15px; font-weight:600; flex:1; }
+  .mk .mt-line { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--tx2); margin-top:3px; }
+  .mk .person { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:2px 3px 2px 8px; border-radius:14px; background:#F5F5F5; border:1px solid #E6E6E6; margin-top:6px; }
+  .mk .person .call { width:20px; height:20px; border-radius:50%; background:var(--green); color:#fff; display:inline-flex; align-items:center; justify-content:center; }
+  .mk .person .call svg { width:12px; height:12px; }
+  .mk .upd { display:flex; gap:6px; margin-top:6px; font-size:12px; background:#FAFAFA; border-radius:8px; padding:5px 8px; }
+  .mk .upd svg { width:14px; height:14px; color:var(--tx3); margin-top:1px; }
+  .mk .upd small { color:var(--tx3); }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 5.69l5 4.5V18h-2v-6H9v6H7v-7.81l5-4.5M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+  <symbol id="i-place" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"/></symbol>
+  <symbol id="i-event" viewBox="0 0 24 24"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-1V1h-2zm3 18H5V8h14v11z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></symbol>
+</svg>
+
+<h2>The events list, and the filters (v2)</h2>
+<p class="subtitle">L1: only events, every one of them, with no task counts. S1: the filters get their own labelled row and look like toggles; "באיחור" is switched on.</p>
+
+<div class="mk">
+<div class="phones">
+
+  <!-- ===================== L1 ===================== -->
+  <div class="card ph-card">
+    <div class="ph-label"><b>L1</b>Events list</div>
+    <div class="phone">
+      <div class="appbar"><span class="ttl">משימות דו יומי</span><svg><use href="#i-home"/></svg></div>
+      <div class="sec">אירועים קרובים<span class="n">3</span></div>
+      <div class="evc cur"><div class="bd">
+          <div class="nm">דו יומי הנהלה<span class="live">מתקיים עכשיו</span></div>
+          <div class="meta"><svg><use href="#i-event"/></svg>שלישי–רביעי, <span dir="ltr">20–21/10</span></div>
+          <div class="meta"><svg><use href="#i-place"/></svg>מלון רויאל, ים המלח</div></div>
+        <svg><use href="#i-chev"/></svg></div>
+      <div class="evc"><div class="bd">
+          <div class="nm">דו יומי צוות דרום</div>
+          <div class="meta"><svg><use href="#i-event"/></svg>ראשון–שני, <span dir="ltr">08–09/11</span></div>
+          <div class="meta"><svg><use href="#i-place"/></svg>מלון מרינה, אילת</div></div>
+        <svg><use href="#i-chev"/></svg></div>
+      <div class="evc"><div class="bd">
+          <div class="nm">דו יומי סוף שנה</div>
+          <div class="meta"><svg><use href="#i-event"/></svg>שני–שלישי, <span dir="ltr">14–15/12</span></div>
+          <div class="meta"><svg><use href="#i-place"/></svg>מלון כרמל, חיפה</div></div>
+        <svg><use href="#i-chev"/></svg></div>
+
+      <div class="sec grey"><svg><use href="#i-chev"/></svg>אירועים שעברו<span class="n">3</span></div>
+    </div>
+    <ul class="ph-notes">
+      <li>Every future event, nearest first, then past events folded (open shows them the same way, latest first).</li>
+      <li>Only the event itself: name, days, place. The one happening now (or the nearest) is marked.</li>
+      <li>The /tasks link still opens straight into the nearest event that hasn't ended; back leads here.</li>
+    </ul>
+  </div>
+
+  <!-- ===================== S1 ===================== -->
+  <div class="card ph-card">
+    <div class="ph-label"><b>S1</b>Filters as a labelled row of toggles</div>
+    <div class="phone">
+      <div class="appbar"><span class="ttl">דו יומי הנהלה</span><span class="end"><svg><use href="#i-search"/></svg><svg><use href="#i-back"/></svg></span></div>
+      <div class="sum">
+        <div class="meta"><svg><use href="#i-event"/></svg><span dir="ltr">20–21/10</span> · <svg><use href="#i-place"/></svg>מלון רויאל, ים המלח</div>
+        <div class="bar"><i class="g" style="flex:20"></i><i class="r" style="flex:2"></i><i class="o" style="flex:1"></i><i class="n" style="flex:25"></i></div>
+        <div class="sum-row"><span class="big" dir="ltr">20/48</span>הושלמו</div>
+      </div>
+      <div class="fbar">
+        <span class="flbl"><svg><use href="#i-filter"/></svg>סינון:</span>
+        <span class="fchip red on"><svg><use href="#i-check"/></svg>באיחור<span class="cnt">2</span></span>
+        <span class="fchip orange">התייצבות בחצי שעה הקרובה<span class="cnt">1</span></span>
+      </div>
+      <div class="seg"><span>המשימות שלי</span><span class="on">כל השלבים</span></div>
+      <div class="dtabs"><span class="on">שלישי 20/10 · היום</span><span>רביעי 21/10</span></div>
+      <div class="calwin">
+        <div class="cal">
+          <div class="hr" style="top:40px"><span>09</span></div><div class="hr" style="top:74px"><span>10</span></div>
+          <div class="hr" style="top:108px"><span>11</span></div><div class="hr" style="top:142px"><span>12</span></div>
+          <div class="hr" style="top:176px"><span>13</span></div>
+          <div class="blk done faded" style="top:7px;height:32px"><div class="h"><b>הקמה ובדיקת ציוד</b></div></div>
+          <div class="blk late hit" style="top:41px;height:32px"><div class="h"><b>קליטה והתכנסות</b><span class="miss red">1 באיחור<svg><use href="#i-chev"/></svg></span></div></div>
+          <div class="blk done faded" style="top:75px;height:83px"><div class="h"><b>מושב פתיחה</b></div></div>
+          <div class="blk late hit" style="top:177px;height:32px"><div class="h"><b>ארוחת צהריים</b><span class="miss red">1 באיחור<svg><use href="#i-chev"/></svg></span></div></div>
+        </div>
+      </div>
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="sh-head">
+          <div><div class="ttl">באיחור · 2 משימות</div><div class="sub">מכל השלבים, הוותיקה ראשונה</div></div>
+          <svg><use href="#i-close"/></svg>
+        </div>
+        <div class="grp">קליטה והתכנסות · <span dir="ltr">09:00–10:00</span></div>
+        <div class="mt">
+          <div class="mt-top"><span class="tt">איסוף טפסי הרשמה</span><span class="chip red">באיחור</span></div>
+          <div class="mt-line"><svg><use href="#i-clock"/></svg>התייצבות 09:30</div>
+          <span class="person">מיכל אברהם<span class="call"><svg><use href="#i-phone"/></svg></span></span>
+          <div class="upd"><svg><use href="#i-chat"/></svg><span>חסרים 4 טפסים, מחכה לנרשמים מאוחרים <small>· מיכל, 11:05</small></span></div>
+        </div>
+        <div class="grp">ארוחת צהריים · <span dir="ltr">13:00–14:00</span></div>
+        <div class="mt">
+          <div class="mt-top"><span class="tt">בדיקת מנות מיוחדות</span><span class="chip red">באיחור</span></div>
+          <div class="mt-line"><svg><use href="#i-clock"/></svg>התייצבות 13:00</div>
+          <span class="person">עידו שמש<span class="call"><svg><use href="#i-phone"/></svg></span></span>
+        </div>
+      </div>
+    </div>
+    <ul class="ph-notes">
+      <li>The filters sit on their own row under the progress, marked with the filter icon and "סינון:", drawn as toggles. A switched-on one fills in and gets a tick.</li>
+      <li>Switching one on lists its tasks from every stage in the low sheet and outlines those stages; switching it off (or closing the sheet) clears it.</li>
+      <li>"התייצבות בחצי שעה הקרובה" keeps the wording you chose.</li>
+    </ul>
+  </div>
+
+</div>
+</div>
