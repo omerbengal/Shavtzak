@@ -48,10 +48,12 @@ TeamMember buildMember({
   bool canManageTasks = false,
   bool isActive = true,
   bool isArchived = false,
+  String? phoneNumber,
 }) {
   return TeamMember(
     id: id,
     name: name,
+    phoneNumber: phoneNumber,
     isActive: isActive,
     isArchived: isArchived,
     constraints: const [],
