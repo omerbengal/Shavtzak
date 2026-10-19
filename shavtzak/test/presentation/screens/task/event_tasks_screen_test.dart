@@ -16,6 +16,7 @@ import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/screens/task/event_tasks_screen.dart';
+import 'package:shavtzak/presentation/screens/task/tasks_auto_open.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/legacy_stage_list.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
 
@@ -834,6 +835,15 @@ void main() {
         find.descendant(of: find.byType(AppBar), matching: find.text('דו יומי צפון')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('opening an event spends the automatic opening of the list',
+        (tester) async {
+      TasksAutoOpen.debugReset();
+      addTearDown(TasksAutoOpen.debugReset);
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+
+      expect(TasksAutoOpen.isPending, isFalse);
     });
 
     testWidgets('the back arrow returns to the event list', (tester) async {

@@ -6,14 +6,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shavtzak/core/services/environment_service.dart';
+import 'package:shavtzak/core/utils/task_schedule.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
 import 'package:shavtzak/domain/entities/event.dart';
-import 'package:shavtzak/domain/entities/stage.dart';
-import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/task/task_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_state.dart';
+import 'package:shavtzak/presentation/screens/task/task_style.dart';
+import 'package:shavtzak/presentation/screens/task/tasks_auto_open.dart';
 import 'package:shavtzak/presentation/screens/task/tasks_screen.dart';
 
 import '../../../support/fake_task_repository.dart';
@@ -37,6 +38,7 @@ void main() {
     name: 'דו יומי דרום',
     startDate: DateTime(2026, 11, 3),
   );
+  // Under way: it started yesterday and ends tomorrow.
   final running = buildEvent(
     id: 'running',
     name: 'דו יומי מרכז',
@@ -58,17 +60,22 @@ void main() {
   late FakeTaskRepository repository;
   late TaskBloc taskBloc;
 
+  setUp(TasksAutoOpen.debugReset);
+
+  /// [comingBack] is the member returning to the list from an event, after
+  /// the session's one automatic opening; turn it off to arrive fresh.
   Future<void> pumpList(
     WidgetTester tester, {
     TeamMember? user,
     List<Event>? events,
-    List<TaskItem> tasks = const [],
-    List<Stage> stages = const [],
     bool deliver = true,
+    bool comingBack = true,
+    Size size = const Size(900, 2400),
   }) async {
-    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    if (comingBack) TasksAutoOpen.spend();
 
     // Built inside the test's fake-async zone; see the event screen tests.
     repository = FakeTaskRepository();
@@ -116,9 +123,8 @@ void main() {
 
     if (deliver) {
       repository.controller.add(TaskBoard(
-        tasks: tasks,
+        tasks: const [],
         events: events ?? [south, past, north, other, running],
-        stages: stages,
         members: [dana],
       ));
       await tester.pump();
@@ -128,12 +134,39 @@ void main() {
 
   Finder row(String id) => find.byKey(Key('task-event-$id'));
 
-  testWidgets('shows a spinner until the board arrives', (tester) async {
-    await pumpList(tester, deliver: false);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  group('opening', () {
+    testWidgets('opens the nearest event that has not ended, straight away',
+        (tester) async {
+      await pumpList(tester, comingBack: false);
+      await tester.pumpAndSettle();
+
+      expect(find.text('event:running'), findsOneWidget);
+    });
+
+    testWidgets('stays on the list when nothing is coming up', (tester) async {
+      await pumpList(tester, comingBack: false, events: [past, other]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('אין אירועי דו יומי קרובים'), findsOneWidget);
+      expect(find.textContaining('event:'), findsNothing);
+    });
+
+    testWidgets('coming back does not bounce into the event again',
+        (tester) async {
+      await pumpList(tester);
+      await tester.pumpAndSettle();
+
+      expect(row('running'), findsOneWidget);
+      expect(find.text('event:running'), findsNothing);
+    });
+
+    testWidgets('waits on a spinner until the board arrives', (tester) async {
+      await pumpList(tester, comingBack: false, deliver: false);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
   });
 
-  testWidgets('lists the upcoming דו יומי events, nearest first, with a count',
+  testWidgets('lists every upcoming event nearest first, and nothing but events',
       (tester) async {
     await pumpList(tester);
 
@@ -145,67 +178,70 @@ void main() {
     double top(String id) => tester.getTopLeft(row(id)).dy;
     expect(top('running'), lessThan(top('north')));
     expect(top('north'), lessThan(top('south')));
+    // No counts on a row: only the event itself.
+    for (final id in ['running', 'north', 'south']) {
+      for (final word in ['משימות', 'שלבים', 'שלך']) {
+        expect(
+          find.descendant(of: row(id), matching: find.textContaining(word)),
+          findsNothing,
+          reason: '$id: $word',
+        );
+      }
+    }
   });
 
-  testWidgets('past events wait in a folded section with their count',
+  testWidgets('a row shows the weekdays, the dates and the place',
       (tester) async {
     await pumpList(tester);
+
+    expect(
+      find.descendant(
+        of: row('north'),
+        matching: find.text('שלישי–רביעי, ${ltr('20–21/10')}'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row('north'), matching: find.text('מלון קיסר')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the event under way is marked מתקיים עכשיו', (tester) async {
+    await pumpList(tester);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('task-event-live-running')),
+        matching: find.text('מתקיים עכשיו'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('task-event-live-north')), findsNothing);
+  });
+
+  testWidgets('past events wait in a folded section, latest first',
+      (tester) async {
+    final older = buildEvent(
+      id: 'older',
+      name: 'דו יומי ישן יותר',
+      startDate: DateTime(2026, 8, 1),
+    );
+    await pumpList(tester, events: [older, past, north]);
 
     expect(find.text('אירועים שעברו'), findsOneWidget);
     expect(row('past'), findsNothing);
 
     await tester.tap(find.byKey(const Key('tasks-past-toggle')));
     await tester.pump();
-    expect(row('past'), findsOneWidget);
+    expect(
+      tester.getTopLeft(row('past')).dy,
+      lessThan(tester.getTopLeft(row('older')).dy),
+    );
 
     await tester.tap(find.byKey(const Key('tasks-past-toggle')));
     await tester.pump();
     expect(row('past'), findsNothing);
-  });
-
-  testWidgets('a row shows the event\'s days, place and what is open in it',
-      (tester) async {
-    await pumpList(
-      tester,
-      tasks: [
-        buildTask(
-            id: 'a',
-            eventId: 'north',
-            stageId: 's1',
-            assigneeIds: const ['m1']),
-        buildTask(
-            id: 'b',
-            eventId: 'north',
-            stageId: 's1',
-            assigneeIds: const ['m2']),
-        buildTask(
-          id: 'c',
-          eventId: 'north',
-          stageId: 's1',
-          assigneeIds: const ['m1'],
-          isComplete: true,
-        ),
-      ],
-      stages: [
-        buildStage(id: 's1', eventId: 'north'),
-        buildStage(id: 's2', eventId: 'north'),
-        buildStage(id: 's3', eventId: 'north'),
-      ],
-    );
-
-    expect(find.text('20/10/2026 – 21/10/2026 · מלון קיסר'), findsOneWidget);
-    expect(
-      tester
-          .widget<Text>(find.byKey(const Key('task-event-summary-north')))
-          .data,
-      '3 שלבים · 2 משימות פתוחות · 1 שלך',
-    );
-    expect(
-      tester
-          .widget<Text>(find.byKey(const Key('task-event-summary-south')))
-          .data,
-      '0 שלבים · 0 משימות פתוחות',
-    );
   });
 
   testWidgets('pressing an event opens its screen', (tester) async {
@@ -230,6 +266,18 @@ void main() {
 
     expect(find.text('טעינת המשימות נכשלה'), findsOneWidget);
     expect(find.byKey(const Key('tasks-retry')), findsOneWidget);
+  });
+
+  testWidgets('on a wide window the list is centred at a readable width',
+      (tester) async {
+    await pumpList(tester, size: const Size(1280, 900));
+
+    expect(
+      tester.getSize(row('north')).width,
+      lessThanOrEqualTo(TaskStyle.readableWidth),
+    );
+    final centre = tester.getCenter(row('north')).dx;
+    expect(centre, closeTo(640, 1));
   });
 
   testWidgets('shows the test-environment banner in test mode', (tester) async {

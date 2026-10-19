@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../core/debug/logger.dart';
 import '../../../core/debug/search_action_logger.dart';
@@ -25,6 +24,7 @@ import 'row_hold.dart';
 import 'sheet_view.dart';
 import 'task_screen_actions.dart';
 import 'task_style.dart';
+import 'tasks_auto_open.dart';
 import 'widgets/legacy_stage_list.dart';
 import 'widgets/member_timeline.dart';
 import 'widgets/task_card.dart';
@@ -32,15 +32,6 @@ import 'widgets/task_detail.dart';
 import 'widgets/task_results_list.dart';
 import 'widgets/task_row.dart';
 import 'widgets/task_sheet.dart';
-
-final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
-
-/// "21/10/2026" for a one-day event, "21/10/2026 – 22/10/2026" otherwise.
-String taskEventDates(Event event) {
-  final days = eventDays(event);
-  if (days.length == 1) return _dateFormat.format(days.single);
-  return '${_dateFormat.format(days.first)} – ${_dateFormat.format(days.last)}';
-}
 
 /// The event screen's two views.
 enum EventTasksTab { mine, all }
@@ -105,6 +96,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
   @override
   void initState() {
     super.initState();
+    // Back from here to the list must not bounce into an event again.
+    TasksAutoOpen.spend();
     _now = _readClock();
     context.read<TaskBloc>().add(const LoadTasks());
     // A task turns orange or red because time passed, not because data

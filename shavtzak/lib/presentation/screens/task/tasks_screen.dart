@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/utils/task_schedule.dart';
 import '../../../core/utils/task_utils.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
@@ -11,10 +12,14 @@ import '../../bloc/task/task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/test_environment_indicator.dart';
-import 'event_tasks_screen.dart';
+import 'task_style.dart';
+import 'tasks_auto_open.dart';
 
-/// The דו יומי task screen, at `/tasks`: the list of דו יומי events. Choosing
-/// one opens its own screen at `/tasks/<eventId>`.
+/// The דו יומי task screen, at `/tasks`: the list of דו יומי events.
+///
+/// The first time it opens in a session it goes straight into the nearest
+/// event that has not ended; the list is one step back. Choosing an event
+/// opens its own screen at `/tasks/<eventId>`.
 ///
 /// Reachable only by link: nothing in the app navigates here. Every signed-in
 /// member can read it.
@@ -30,6 +35,10 @@ class TasksScreen extends StatefulWidget {
 
 class _TasksScreenState extends State<TasksScreen> {
   bool _isPastExpanded = false;
+
+  /// On the way into the nearest event: keep the spinner instead of
+  /// flashing the list.
+  bool _isOpeningNearest = false;
 
   @override
   void initState() {
@@ -82,7 +91,7 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
             body: TestEnvironmentIndicator(
               child: BlocBuilder<TaskBloc, TaskState>(
-                builder: (context, state) => _buildBody(state, user),
+                builder: (context, state) => _buildBody(state),
               ),
             ),
           );
@@ -91,7 +100,7 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  Widget _buildBody(TaskState state, TeamMember user) {
+  Widget _buildBody(TaskState state) {
     if (state is TasksError) {
       return Center(
         child: Column(
@@ -117,45 +126,64 @@ class _TasksScreenState extends State<TasksScreen> {
 
     final now = (widget.clock ?? DateTime.now)();
     final events = taskEvents(state.events, now: now);
+    if (TasksAutoOpen.isPending) {
+      // Decided once, on the session's first look at the events.
+      TasksAutoOpen.spend();
+      if (events.upcoming.isNotEmpty) {
+        _isOpeningNearest = true;
+        final nearest = events.upcoming.first;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Logger.action('auto:openNearestTaskEvent');
+          context.go(
+            '${EnvironmentService.instance.routePrefix}/tasks/${nearest.id}',
+          );
+        });
+      }
+    }
+    if (_isOpeningNearest) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     Widget row(Event event) => _EventRow(
           event: event,
-          summary: summarizeTaskEvent(
-            event.id,
-            tasks: state.tasks,
-            stages: state.stages,
-            memberId: user.id,
-          ),
+          isUnderWay: isEventUnderWay(event, now),
           onTap: () => _openEvent(event),
         );
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
-      children: [
-        _SectionHeader(
-          title: 'אירועים קרובים',
-          count: events.upcoming.length,
-          color: Colors.blue.shade700,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: TaskStyle.readableWidth),
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            _SectionHeader(
+              title: 'אירועים קרובים',
+              count: events.upcoming.length,
+              color: Colors.blue.shade700,
+            ),
+            if (events.upcoming.isEmpty)
+              const _EmptySection('אין אירועי דו יומי קרובים')
+            else
+              ...events.upcoming.map(row),
+            const SizedBox(height: 16),
+            _SectionHeader(
+              key: const Key('tasks-past-toggle'),
+              title: 'אירועים שעברו',
+              count: events.past.length,
+              color: Colors.grey.shade600,
+              isExpanded: _isPastExpanded,
+              onToggle: () {
+                Logger.action('toggle:tasksPastEvents', {'on': !_isPastExpanded});
+                setState(() => _isPastExpanded = !_isPastExpanded);
+              },
+            ),
+            if (_isPastExpanded && events.past.isEmpty)
+              const _EmptySection('אין אירועים קודמים'),
+            if (_isPastExpanded) ...events.past.map(row),
+          ],
         ),
-        if (events.upcoming.isEmpty)
-          const _EmptySection('אין אירועי דו יומי קרובים')
-        else
-          ...events.upcoming.map(row),
-        const SizedBox(height: 16),
-        _SectionHeader(
-          key: const Key('tasks-past-toggle'),
-          title: 'אירועים שעברו',
-          count: events.past.length,
-          color: Colors.grey.shade600,
-          isExpanded: _isPastExpanded,
-          onToggle: () {
-            Logger.action('toggle:tasksPastEvents', {'on': !_isPastExpanded});
-            setState(() => _isPastExpanded = !_isPastExpanded);
-          },
-        ),
-        if (_isPastExpanded && events.past.isEmpty)
-          const _EmptySection('אין אירועים קודמים'),
-        if (_isPastExpanded) ...events.past.map(row),
-      ],
+      ),
     );
   }
 }
@@ -246,28 +274,22 @@ class _EmptySection extends StatelessWidget {
   }
 }
 
-/// One event in the list: name, dates, place and how much is open in it.
+/// One event in the list: its name, its days and its place. Only the event
+/// itself: what is open in it is the event screen's business.
 class _EventRow extends StatelessWidget {
   const _EventRow({
     required this.event,
-    required this.summary,
+    required this.isUnderWay,
     required this.onTap,
   });
 
   final Event event;
-  final TaskEventSummary summary;
+  final bool isUnderWay;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final counts = [
-      summary.stageCount == 1 ? 'שלב אחד' : '${summary.stageCount} שלבים',
-      summary.openTaskCount == 1
-          ? 'משימה פתוחה אחת'
-          : '${summary.openTaskCount} משימות פתוחות',
-      if (summary.myOpenTaskCount > 0) '${summary.myOpenTaskCount} שלך',
-    ].join(' · ');
     return Card(
       key: Key('task-event-${event.id}'),
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -282,27 +304,54 @@ class _EventRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      event.name,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            event.name,
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        if (isUnderWay) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            key: Key('task-event-live-${event.id}'),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: TaskStyle.current,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text(
+                              'מתקיים עכשיו',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      [
-                        taskEventDates(event),
-                        if (event.location.isNotEmpty) event.location,
-                      ].join(' · '),
+                      eventDaysLabel(event),
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: Colors.grey.shade800),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      counts,
-                      key: Key('task-event-summary-${event.id}'),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: Colors.grey.shade700),
-                    ),
+                    if (event.location.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        event.location,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: Colors.grey.shade700),
+                      ),
+                    ],
                   ],
                 ),
               ),
