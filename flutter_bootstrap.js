@@ -35,8 +35,7 @@ if (!window._flutter) {
 }
 _flutter.buildConfig = {"engineRevision":"42d3d75a56efe1a2e9902f52dc8006099c45d937","builds":[{"compileTarget":"dart2js","renderer":"canvaskit","mainJsPath":"main.dart.js"},{}]};
 
-_flutter.loader.load({
-  serviceWorkerSettings: {
-    serviceWorkerVersion: "326914830" /* Flutter's service worker is deprecated and will be removed in a future Flutter release. */
-  }
-});
+
+// No serviceWorkerSettings: Flutter's own worker is deprecated and only
+// self-destructs now. index.html registers sw.js, which caches the app.
+_flutter.loader.load();
