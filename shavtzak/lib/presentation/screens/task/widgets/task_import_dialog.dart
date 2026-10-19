@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/task_import_files.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/task_import/task_import_parser.dart';
+import '../../../../core/utils/task_schedule.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/imported_stage.dart';
 import '../../../../domain/entities/team_member.dart';
-import 'stage_card.dart';
 
 /// Checks [file] against [event] and, when it is clean, imports it.
 ///

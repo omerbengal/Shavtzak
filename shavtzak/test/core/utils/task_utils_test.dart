@@ -3,6 +3,7 @@ import 'package:shavtzak/core/utils/task_utils.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 
+import '../../support/sample_event.dart';
 import '../../support/task_fixtures.dart';
 
 void main() {
@@ -129,8 +130,18 @@ void main() {
       expect(ids(filterTasks(all, now: now, query: 'רכבים')), ['bus']);
     });
 
-    test('the query matches the event name', () {
-      expect(ids(filterTasks(all, now: now, query: 'דרום')), ['food']);
+    test('the query matches an assignee\'s name', () {
+      final named = buildTask(
+        id: 'named',
+        title: 'סידור כיסאות',
+        assigneeIds: const ['m2'],
+        assignees: [buildMember(id: 'm2', name: 'יואב כהן')],
+      );
+      expect(ids(filterTasks([bus, named], now: now, query: 'יואב')), ['named']);
+    });
+
+    test('the query no longer matches the event name', () {
+      expect(filterTasks(all, now: now, query: 'דרום'), isEmpty);
     });
 
     test('the query ignores punctuation such as a geresh', () {
@@ -350,6 +361,40 @@ void main() {
     });
   });
 
+  group('isDueSoon', () {
+    // sampleNow is Tuesday 14:40; stWorkshops is on that Tuesday.
+    TaskItem at(String time, {bool isComplete = false}) => buildTask(
+          stage: stWorkshops,
+          assemblyTime: time,
+          isComplete: isComplete,
+        );
+
+    test('covers now through half an hour from now', () {
+      expect(isDueSoon(at('14:40'), sampleNow), isTrue);
+      expect(isDueSoon(at('15:10'), sampleNow), isTrue);
+      expect(isDueSoon(at('15:11'), sampleNow), isFalse);
+    });
+
+    test('never a task without a report time, or a done one', () {
+      expect(isDueSoon(buildTask(stage: stWorkshops), sampleNow), isFalse);
+      expect(isDueSoon(at('14:50', isComplete: true), sampleNow), isFalse);
+    });
+  });
+
+  group('minutesOfDay', () {
+    test('counts the minutes since midnight', () {
+      expect(minutesOfDay('09:30'), 570);
+      expect(minutesOfDay('00:00'), 0);
+    });
+
+    test('is null for anything but a complete 24-hour time', () {
+      for (final time in ['9:30', '24:00', '']) {
+        expect(minutesOfDay(time), isNull, reason: time);
+      }
+      expect(minutesOfDay(null), isNull);
+    });
+  });
+
   group('sortTasks', () {
     test('orders by due date, earliest first and undated last', () {
       final tasks = [
@@ -528,50 +573,6 @@ void main() {
       );
       expect(split.upcoming.map((event) => event.id), ['running', 'up', 'later']);
       expect(split.past.map((event) => event.id), ['past', 'older']);
-    });
-  });
-
-  group('summarizeTaskEvent', () {
-    test('counts the stages, the open tasks and the member\'s open tasks', () {
-      final board = [
-        buildTask(id: 'a', eventId: 'e1', stageId: 's1', assigneeIds: const ['m1']),
-        buildTask(id: 'b', eventId: 'e1', stageId: 's1', assigneeIds: const ['m2']),
-        buildTask(id: 'c', eventId: 'e1', stageId: 's1', assigneeIds: const ['m1'], isComplete: true),
-        buildTask(id: 'd', eventId: 'e2', assigneeIds: const ['m1']),
-      ];
-      final stages = [
-        buildStage(id: 's1', eventId: 'e1'),
-        buildStage(id: 's2', eventId: 'e1'),
-        buildStage(id: 's3', eventId: 'e2'),
-      ];
-
-      final summary = summarizeTaskEvent(
-        'e1',
-        tasks: board,
-        stages: stages,
-        memberId: 'm1',
-      );
-
-      expect(summary.stageCount, 2);
-      expect(summary.openTaskCount, 2);
-      expect(summary.myOpenTaskCount, 1);
-    });
-
-    test('leaves out tasks whose stage is gone, as the event screen does', () {
-      final summary = summarizeTaskEvent(
-        'e1',
-        tasks: [
-          buildTask(id: 'a', eventId: 'e1', stageId: 's1'),
-          // Saved before stages existed, or left behind by a deleted stage.
-          buildTask(id: 'old', eventId: 'e1', stageId: ''),
-          buildTask(id: 'orphan', eventId: 'e1', stageId: 'gone'),
-        ],
-        stages: [buildStage(id: 's1', eventId: 'e1')],
-        memberId: 'm1',
-      );
-
-      expect(summary.openTaskCount, 1);
-      expect(summary.myOpenTaskCount, 1);
     });
   });
 

@@ -67,7 +67,7 @@ Uses `flutter_bloc` with the BLoC (Business Logic Component) pattern:
 - **EventBloc**: Manages events with real-time updates, handles role quotas
 - **AssignmentBloc**: Most complex - manages assignments with related Event and TeamMember data
 - **UserSelectionBloc**: Manages user authentication, selection, and session persistence
-- **TaskBloc**: Manages the דו יומי task screens. One live subscription to every task plus the stages, events and members they are joined with; subscribes only when a tasks screen opens. Mutations (tasks and stages) report through the event's completer, not the state. Ticking a subtask or a task is optimistic: the bloc lays the unconfirmed tick over the stream's board (`_pending`), sends it in the background and takes it back if the backend refuses. Structure: `/tasks` lists the events of the "דו יומי" category (`duYomiCategoryId` in `task_utils.dart`, matched by id); each event has **stages** (title, one day of the event, optional time or range, hotel details, contacts) and every task sits under a stage. A task's due moment is its stage's day at its optional assembly time (`TaskItem.assemblyTime`), or 23:59 that day without one (`TaskItem.dueAt` is derived, not stored). Assignees are only the members assigned to the event (`TaskRepository.watchEventAssignees`, live) — enforced in the form, not by the backend; the stage date being one of the event's days **is** enforced by the backend. An event with no stages can be filled from an Excel file ("ייבוא מאקסל" / "הורדת תבנית" in the event screen's empty state): parsed in the browser by `lib/core/utils/task_import/`, every problem listed before anything is saved, then one backend call `stage.import` writes all stages and tasks in a single transaction (refused once the event has stages)
+- **TaskBloc**: Manages the דו יומי task screens. One live subscription to every task plus the stages, events and members they are joined with; subscribes only when a tasks screen opens. Mutations (tasks and stages) report through the event's completer, not the state. Ticking a subtask or a task is optimistic: the bloc lays the unconfirmed tick over the stream's board (`_pending`), sends it in the background and takes it back if the backend refuses. Structure: `/tasks` lists the events of the "דו יומי" category (`duYomiCategoryId` in `task_utils.dart`, matched by id); the first time it opens in an app session it goes straight into the nearest event that has not ended (`TasksAutoOpen`, spent by either tasks screen, so back never bounces). The event screen has two tabs over one low sheet that never hides what is above it: "המשימות שלי" (the member's tasks threaded through every stage, opening on the current one) and "כל השלבים" (a day calendar of the stages with a one-row filter bar and, for managers, the "assignee taken off the event" check); on a window ≥ 1000 px the calendar shows the days side by side and the sheet becomes a side panel with a task table. The rules are pure functions in `task_schedule.dart` and `task_progress.dart`; every size and colour is in `task_style.dart`; an open list holds its rows (`RowHold`) so a ticked row never jumps. Each event has **stages** (title, one day of the event, optional time or range, hotel details, contacts) and every task sits under a stage. A task's due moment is its stage's day at its optional assembly time (`TaskItem.assemblyTime`), or 23:59 that day without one (`TaskItem.dueAt` is derived, not stored). Assignees are only the members assigned to the event (`TaskRepository.watchEventAssignees`, live) — enforced in the form, not by the backend; the stage date being one of the event's days **is** enforced by the backend. An event with no stages can be filled from an Excel file ("ייבוא מאקסל" / "הורדת תבנית" in the event screen's empty state): parsed in the browser by `lib/core/utils/task_import/`, every problem listed before anything is saved, then one backend call `stage.import` writes all stages and tasks in a single transaction (refused once the event has stages)
 
 Each BLoC follows the pattern:
 ```dart
@@ -141,7 +141,7 @@ Production:              Test:
 /admin/assignments      /test/admin/assignments
 /user/assignments       /test/user/assignments
 /user/constraints       /test/user/constraints
-/tasks                  /test/tasks              (link-only: event list)
+/tasks                  /test/tasks              (link-only: opens the nearest event; event list one step back)
 /tasks/<eventId>        /test/tasks/<eventId>    (one event's stages and tasks)
 ```
 
@@ -197,7 +197,7 @@ Root (GoRouter)
 │   └── /user/constraints - ConstraintsScreen OR AvailabilityScreen
 │       (depends on isPermanent field)
 │
-├── /tasks (TasksScreen) - list of דו יומי events
+├── /tasks (TasksScreen) - opens the nearest דו יומי event; the list one step back
 │   └── /tasks/<eventId> (EventTasksScreen) - that event's stages and tasks
 │   Link-only: no tab, menu or card navigates here. Any authenticated
 │   member may open either; a signed-out visitor is returned to the
@@ -464,7 +464,7 @@ _subscription = _repository.watchItems().listen(
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (982 passing as of 2026-10-15; Functions: 255). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
+- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (1161 passing as of 2026-10-19; Functions: 255). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
 

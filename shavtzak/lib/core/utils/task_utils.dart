@@ -34,6 +34,12 @@ TaskDueStatus taskDueStatus(TaskItem task, DateTime now) {
   return isToday ? TaskDueStatus.dueToday : TaskDueStatus.open;
 }
 
+/// Whether [task] reports within [taskDueSoonWindow] from [now]: unfinished,
+/// with a report time, due between now and the end of the window. The
+/// "התייצבות בחצי שעה הקרובה" filter and the orange report time use it.
+bool isDueSoon(TaskItem task, DateTime now) =>
+    _isDueWithin(task, now, taskDueSoonWindow);
+
 /// Whether [user] may create, edit and delete tasks.
 bool canManageTasks(TeamMember user) => user.isAdmin || user.canManageTasks;
 
@@ -44,7 +50,7 @@ bool canUpdateTaskProgress(TaskItem task, TeamMember user) =>
 /// Filter [tasks]. Every restriction is optional and they combine with AND.
 ///
 /// - [onlyAssigneeId] is the "my tasks" toggle.
-/// - [query] matches the title, the description and the event name.
+/// - [query] matches the title, the description and the assignees' names.
 /// - An empty [statuses] or [assigneeIds] means no restriction.
 /// - In [statuses], [TaskDueStatus.open] means every unfinished task whose due
 ///   time has not passed, so it takes in the tasks due later today as well.
@@ -79,7 +85,8 @@ List<TaskItem> filterTasks(
     if (normalizedQuery.isEmpty) return true;
     return _searchable(task.title).contains(normalizedQuery) ||
         _searchable(task.description).contains(normalizedQuery) ||
-        _searchable(task.event?.name ?? '').contains(normalizedQuery);
+        task.assignees
+            .any((member) => _searchable(member.name).contains(normalizedQuery));
   }).toList();
 }
 
@@ -112,6 +119,13 @@ final RegExp _hourMinute = RegExp(r'^(\d{2}):(\d{2})$');
 /// Whether [time] is a complete `HH:mm` on the 24-hour clock. The forms refuse
 /// to save a non-empty time that fails this, rather than quietly dropping it.
 bool isValidDueTime(String time) => _parseHourMinute(time) != null;
+
+/// Minutes since midnight for a complete `HH:mm` time, or null for anything
+/// else, including no time at all.
+int? minutesOfDay(String? time) {
+  final parsed = _parseHourMinute(time ?? '');
+  return parsed == null ? null : parsed.hour * 60 + parsed.minute;
+}
 
 ({int hour, int minute})? _parseHourMinute(String time) {
   final match = _hourMinute.firstMatch(time.trim());
@@ -228,42 +242,4 @@ List<DateTime> eventDays(Event event) {
     now,
   );
   return (upcoming: split.future, past: split.past);
-}
-
-/// The counts on an event's row in the event list.
-class TaskEventSummary {
-  const TaskEventSummary({
-    required this.stageCount,
-    required this.openTaskCount,
-    required this.myOpenTaskCount,
-  });
-
-  final int stageCount;
-  final int openTaskCount;
-  final int myOpenTaskCount;
-}
-
-TaskEventSummary summarizeTaskEvent(
-  String eventId, {
-  required List<TaskItem> tasks,
-  required List<Stage> stages,
-  required String memberId,
-}) {
-  final stageIds = {
-    for (final stage in stages)
-      if (stage.eventId == eventId) stage.id,
-  };
-  // Only tasks the event screen can show: a task whose stage is gone (or that
-  // predates stages) is not counted.
-  final open = tasks
-      .where((task) =>
-          task.eventId == eventId &&
-          stageIds.contains(task.stageId) &&
-          !task.isComplete)
-      .toList();
-  return TaskEventSummary(
-    stageCount: stageIds.length,
-    openTaskCount: open.length,
-    myOpenTaskCount: open.where((task) => task.isAssignedTo(memberId)).length,
-  );
 }

@@ -1,0 +1,244 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap">
+<style>
+  .mk { --blue:#2196F3; --blue-d:#1565C0; --blue-l:#E3F2FD; --green:#43A047; --green-d:#2E7D32; --green-l:#E8F5E9;
+        --red:#E53935; --red-d:#C62828; --red-l:#FFEBEE; --orange:#FB8C00; --orange-d:#BF360C; --orange-l:#FFF3E0;
+        --tx:#212121; --tx2:#616161; --tx3:#9E9E9E; --div:#E0E0E0; --bg:#FAFAFA; }
+  .mk .phones { display:flex; flex-wrap:wrap; gap:24px; justify-content:center; align-items:flex-start; }
+  .mk .ph-card { padding:10px 10px 8px; cursor:pointer; }
+  .mk .ph-label { font-size:15px; margin:0 4px 10px; color:var(--text-primary); }
+  .mk .ph-label b { display:inline-block; min-width:30px; height:26px; line-height:26px; text-align:center; border-radius:6px; background:var(--bg-tertiary); margin-right:6px; padding:0 4px; }
+  .mk .card.selected .ph-label b { background:var(--accent); color:#fff; }
+  .mk .ph-notes { max-width:380px; margin:12px 4px 2px; padding-left:18px; font-size:13px; color:var(--text-secondary); }
+  .mk .ph-notes li { margin-bottom:4px; }
+  .mk .ph-notes .arrow { font-weight:700; color:var(--text-primary); }
+
+  .mk .phone { box-sizing:border-box; width:380px; height:780px; border:10px solid #1d1d1f; border-radius:38px; overflow:hidden;
+               position:relative; background:var(--bg); color:var(--tx); direction:rtl; text-align:right;
+               font-family:'Rubik','Noto Sans Hebrew',Arial,sans-serif; line-height:1.35; box-shadow:0 12px 30px rgba(0,0,0,.18); }
+  .mk .phone svg { width:16px; height:16px; fill:currentColor; flex:none; }
+  .mk .appbar { height:52px; background:var(--blue); color:#fff; display:flex; align-items:center; padding:0 14px; position:relative; }
+  .mk .appbar .ttl { position:absolute; left:0; right:0; text-align:center; font-size:18px; font-weight:600; pointer-events:none; }
+  .mk .appbar svg { width:24px; height:24px; margin-inline-start:auto; }
+  .mk .bar { display:flex; direction:ltr; height:8px; border-radius:4px; overflow:hidden; background:#E0E0E0; }
+  .mk .bar i { display:block; height:100%; }
+  .mk .g { background:var(--green); } .mk .r { background:var(--red); } .mk .o { background:var(--orange); } .mk .n { background:#E0E0E0; }
+  .mk .chip { display:inline-flex; align-items:center; gap:3px; font-size:12px; font-weight:600; padding:2px 8px; border-radius:12px; white-space:nowrap; }
+  .mk .chip svg { width:13px; height:13px; }
+  .mk .chip.orange { background:var(--orange-l); color:var(--orange-d); }
+  .mk .chip.grey { background:#EEEEEE; color:var(--tx2); }
+  .mk .chip.green { background:var(--green-l); color:var(--green-d); }
+  .mk .miss { display:inline-flex; align-items:center; gap:1px; font-size:12px; font-weight:600; padding:1px 4px 1px 9px; border-radius:14px; border:1px solid; white-space:nowrap; }
+  .mk .miss svg { width:14px; height:14px; }
+  .mk .miss.red { color:var(--red-d); border-color:#EF9A9A; background:var(--red-l); }
+  .mk .miss.orange { color:var(--orange-d); border-color:#FFCC80; background:var(--orange-l); }
+  .mk .miss.grey { color:var(--tx2); border-color:var(--div); background:#fff; }
+  .mk .dtabs { display:flex; gap:6px; padding:8px 12px 6px; background:var(--bg); }
+  .mk .dtabs span { flex:1; text-align:center; font-size:13px; padding:6px 0; border-radius:8px; background:#EEEEEE; color:var(--tx2); }
+  .mk .dtabs span.on { background:var(--blue-l); color:var(--blue-d); font-weight:600; box-shadow:inset 0 0 0 1.5px #90CAF9; }
+
+  /* ---------- calendar (as in B) ---------- */
+  .mk .calwin { position:relative; height:272px; overflow:hidden; }
+  .mk .cal { position:absolute; right:0; left:0; top:-136px; height:540px; }
+  .mk .hr { position:absolute; right:0; left:0; height:0; border-top:1px solid #EEEEEE; }
+  .mk .hr span { position:absolute; right:6px; top:-7px; font-size:10px; color:var(--tx3); background:var(--bg); padding:0 2px; direction:ltr; }
+  .mk .blk { position:absolute; right:46px; left:10px; border-radius:8px; padding:3px 8px; box-sizing:border-box; overflow:hidden;
+             background:#fff; border:1px solid var(--div); border-right:4px solid #BDBDBD; font-size:12px; }
+  .mk .blk .h { display:flex; align-items:center; gap:6px; }
+  .mk .blk .h b { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk .blk .h .miss, .mk .blk .h .chip { margin-inline-start:auto; }
+  .mk .blk .lo { color:var(--tx2); font-size:11px; }
+  .mk .blk .bar { height:5px; margin-top:5px; }
+  .mk .blk.done { background:var(--green-l); border-color:#C8E6C9; border-right-color:var(--green); color:var(--tx2); }
+  .mk .blk.late { border-right-color:var(--red); }
+  .mk .blk.now { background:var(--blue-l); border-color:#90CAF9; border-right-color:var(--blue); }
+  .mk .blk.faded { opacity:.5; }
+  .mk .blk.picked { box-shadow:0 0 0 2.5px var(--blue-d), 0 6px 14px rgba(21,101,192,.25); z-index:3; }
+  .mk .nowline { position:absolute; right:40px; left:4px; height:0; border-top:2px solid var(--red); z-index:4; }
+  .mk .nowline:before { content:""; position:absolute; right:-5px; top:-6px; width:10px; height:10px; border-radius:50%; background:var(--red); }
+  .mk .nowline span { position:absolute; right:-42px; top:-9px; font-size:10px; font-weight:700; color:#fff; background:var(--red); border-radius:6px; padding:1px 4px; direction:ltr; }
+  .mk .gap { position:absolute; right:46px; left:10px; text-align:center; font-size:11px; color:var(--tx3); }
+
+  /* ---------- Q1: peek sheet ---------- */
+  .mk .sheet { position:absolute; right:0; left:0; bottom:0; height:392px; background:#fff; border-radius:18px 18px 0 0; z-index:6;
+               display:flex; flex-direction:column; box-shadow:0 -8px 24px rgba(0,0,0,.18); border-top:3px solid var(--blue); }
+  .mk .handle { width:40px; height:4px; border-radius:2px; background:#D0D0D0; margin:7px auto 3px; }
+  .mk .sh-head { display:flex; align-items:flex-start; gap:8px; padding:2px 16px 0; }
+  .mk .sh-head .ttl { font-size:18px; font-weight:700; }
+  .mk .sh-head .sub { font-size:13px; color:var(--tx2); }
+  .mk .sh-head svg { width:24px; height:24px; color:var(--tx2); margin-inline-start:auto; }
+  .mk .sh-prog { padding:7px 16px 9px; border-bottom:1px solid var(--div); }
+  .mk .sh-prog .bar { height:6px; margin-bottom:5px; }
+  .mk .sh-prog .txt { font-size:13px; color:var(--tx2); }
+  .mk .sh-prog .txt b { color:var(--tx); }
+  .mk .sh-list { flex:1; overflow:hidden; }
+
+  /* ---------- missing task rows (shared) ---------- */
+  .mk .mt { padding:10px 16px; border-bottom:1px solid #F0F0F0; }
+  .mk .mt-top { display:flex; align-items:center; gap:8px; }
+  .mk .mt-top .tt { font-size:15px; font-weight:600; flex:1; }
+  .mk .mt-line { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--tx2); margin-top:4px; }
+  .mk .mt-line .sp { width:8px; }
+  .mk .people { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+  .mk .person { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:3px 4px 3px 9px; border-radius:14px; background:#F5F5F5; border:1px solid #E6E6E6; }
+  .mk .person .call { width:22px; height:22px; border-radius:50%; background:var(--green); color:#fff; display:inline-flex; align-items:center; justify-content:center; }
+  .mk .person .call svg { width:13px; height:13px; }
+  .mk .upd { display:flex; gap:6px; margin-top:7px; font-size:12px; color:var(--tx); background:#FAFAFA; border-radius:8px; padding:6px 8px; }
+  .mk .upd svg { width:14px; height:14px; color:var(--tx3); margin-top:1px; }
+  .mk .upd small { color:var(--tx3); }
+
+  /* ---------- Q2: day strip + list ---------- */
+  .mk .strip { position:relative; height:92px; background:#fff; border-bottom:1px solid var(--div); }
+  .mk .strip .in { position:absolute; right:12px; left:12px; top:0; bottom:0; }
+  .mk .sb { position:absolute; top:22px; height:28px; border-radius:5px; box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+            font-size:11px; font-weight:700; color:#fff; }
+  .mk .sb svg { width:12px; height:12px; }
+  .mk .sb.done { background:var(--green); }
+  .mk .sb.late { background:var(--red); }
+  .mk .sb.up { background:#E0E0E0; color:var(--tx2); }
+  .mk .sb.picked { top:18px; height:36px; background:var(--blue); box-shadow:0 0 0 2.5px var(--blue-d), 0 4px 10px rgba(21,101,192,.3); z-index:2; }
+  .mk .sb.picked:after { content:""; position:absolute; bottom:-14px; left:50%; margin-left:-8px; border:8px solid transparent; border-top-color:var(--blue-d); }
+  .mk .tick { position:absolute; top:62px; width:20px; margin-right:-10px; text-align:center; font-size:10px; color:var(--tx3); direction:ltr; }
+  .mk .tick:before { content:""; position:absolute; top:-6px; left:50%; height:4px; border-left:1px solid #CFCFCF; }
+  .mk .snow { position:absolute; top:12px; height:46px; border-left:2px solid var(--red); z-index:3; }
+  .mk .snow span { position:absolute; top:-11px; left:-18px; font-size:9px; font-weight:700; color:#fff; background:var(--red); border-radius:5px; padding:0 3px; direction:ltr; }
+  .mk .dirhint { position:absolute; bottom:4px; left:12px; font-size:10px; color:var(--tx3); }
+  .mk .panel { background:#fff; }
+  .mk .step { display:flex; align-items:center; padding:12px 6px 4px; border-top:3px solid var(--blue); }
+  .mk .step .nav { width:64px; flex:none; text-align:center; color:var(--tx2); font-size:10px; line-height:1.2; }
+  .mk .step .nav svg { width:26px; height:26px; display:block; margin:0 auto 1px; color:var(--blue-d); }
+  .mk .step .mid { flex:1; text-align:center; }
+  .mk .step .mid .ttl { font-size:18px; font-weight:700; }
+  .mk .step .mid .sub { font-size:13px; color:var(--tx2); }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></symbol>
+  <symbol id="i-chevr" viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11L2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></symbol>
+</svg>
+
+<h2>B's quick view, keeping the schedule in sight</h2>
+<p class="subtitle">Both open from "3 חסרות" on סדנאות, drawn over the calendar you picked. Click the one you prefer.</p>
+
+<div class="mk">
+<div class="cards phones">
+
+  <!-- ===================== Q1 ===================== -->
+  <div class="card ph-card" data-choice="q1" onclick="toggleSelect(this)">
+    <div class="ph-label"><b>Q1</b>Low sheet, calendar stays above it</div>
+    <div class="phone">
+      <div class="appbar"><span class="ttl">דו יומי הנהלה</span><svg><use href="#i-back"/></svg></div>
+      <div class="dtabs"><span class="on">שלישי 20/10 · היום</span><span>רביעי 21/10</span></div>
+      <div class="calwin">
+        <div class="cal">
+          <div class="hr" style="top:142px"><span>12</span></div><div class="hr" style="top:176px"><span>13</span></div>
+          <div class="hr" style="top:210px"><span>14</span></div><div class="hr" style="top:244px"><span>15</span></div>
+          <div class="hr" style="top:278px"><span>16</span></div><div class="hr" style="top:312px"><span>17</span></div>
+          <div class="hr" style="top:346px"><span>18</span></div><div class="hr" style="top:380px"><span>19</span></div>
+          <div class="hr" style="top:414px"><span>20</span></div>
+          <div class="blk done faded" style="top:75px;height:83px"><div class="h"><b>מושב פתיחה</b><span class="chip green"><svg><use href="#i-check"/></svg><span dir="ltr">4/4</span></span></div></div>
+          <div class="blk late faded" style="top:177px;height:32px"><div class="h"><b>ארוחת צהריים</b><span class="miss red">1 באיחור<svg><use href="#i-chev"/></svg></span></div></div>
+          <div class="blk now picked" style="top:228px;height:83px"><div class="h"><b>סדנאות</b><span class="miss orange">3 חסרות<svg><use href="#i-chev"/></svg></span></div>
+            <div class="lo">חדרי הסדנה · <span dir="ltr">14:30–17:00</span></div><div class="bar"><i class="g" style="flex:2"></i><i class="o" style="flex:1"></i><i class="n" style="flex:2"></i></div></div>
+          <div class="nowline" style="top:233px"><span>14:40</span></div>
+          <div class="gap" style="top:350px">שעתיים וחצי פנויות</div>
+          <div class="blk faded" style="top:398px;height:49px"><div class="h"><b>ארוחת ערב חגיגית</b><span class="miss grey">0/6<svg><use href="#i-chev"/></svg></span></div></div>
+        </div>
+      </div>
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="sh-head">
+          <div><div class="ttl">סדנאות</div><div class="sub"><span dir="ltr">14:30–17:00</span> · חדרי הסדנה</div></div>
+          <svg><use href="#i-close"/></svg>
+        </div>
+        <div class="sh-prog">
+          <div class="bar"><i class="g" style="flex:2"></i><i class="o" style="flex:1"></i><i class="n" style="flex:2"></i></div>
+          <div class="txt"><b dir="ltr">2/5</b> הושלמו · <b>3 חסרות</b>, הדחופה ראשונה</div>
+        </div>
+        <div class="sh-list">
+          <div class="mt">
+            <div class="mt-top"><span class="tt">הכנת חדר סדנה 2</span><span class="chip orange">בעוד 20 דק׳</span></div>
+            <div class="mt-line"><svg><use href="#i-clock"/></svg>התייצבות 15:00<span class="sp"></span><svg><use href="#i-list"/></svg><span dir="ltr">1/3</span></div>
+            <div class="people"><span class="person">נועה לוי<span class="call"><svg><use href="#i-phone"/></svg></span></span><span class="person">אבי כהן<span class="call"><svg><use href="#i-phone"/></svg></span></span></div>
+            <div class="upd"><svg><use href="#i-chat"/></svg><span>מחכים למקרן מהמלון <small>· נועה, 14:22</small></span></div>
+          </div>
+          <div class="mt">
+            <div class="mt-top"><span class="tt">חלוקת ערכות למשתתפים</span><span class="chip grey" dir="ltr">15:45</span></div>
+            <div class="mt-line"><svg><use href="#i-clock"/></svg>התייצבות 15:45<span class="sp"></span><svg><use href="#i-list"/></svg><span dir="ltr">0/2</span></div>
+            <div class="people"><span class="person">יעל מזרחי<span class="call"><svg><use href="#i-phone"/></svg></span></span></div>
+          </div>
+          <div class="mt">
+            <div class="mt-top"><span class="tt">צילום הסדנאות</span><span class="chip grey">עד סוף היום</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="ph-notes">
+      <li>No dark overlay: the calendar stays readable above the sheet, the opened stage outlined and the rest faded.</li>
+      <li>Tap another stage's count above the sheet to switch; drag the sheet up to see all of its tasks.</li>
+      <li>About 8 hours of the day stay in view, centred on the stage.</li>
+    </ul>
+  </div>
+
+  <!-- ===================== Q2 ===================== -->
+  <div class="card ph-card" data-choice="q2" onclick="toggleSelect(this)">
+    <div class="ph-label"><b>Q2</b>Whole day shrinks to a strip on top</div>
+    <div class="phone">
+      <div class="appbar"><span class="ttl">דו יומי הנהלה</span><svg><use href="#i-back"/></svg></div>
+      <div class="dtabs"><span class="on">שלישי 20/10 · היום</span><span>רביעי 21/10</span></div>
+      <div class="strip"><div class="in">
+        <!-- 21px per hour from 08:00 at the right edge -->
+        <div class="sb done" style="right:0;width:19px"><svg><use href="#i-check"/></svg></div>
+        <div class="sb late" style="right:21px;width:19px">!</div>
+        <div class="sb done" style="right:42px;width:50px"><svg><use href="#i-check"/></svg></div>
+        <div class="sb late" style="right:105px;width:19px">!</div>
+        <div class="sb picked" style="right:136px;width:51px">3</div>
+        <div class="sb up" style="right:241px;width:30px">6</div>
+        <div class="sb up" style="right:273px;width:50px">3</div>
+        <div class="snow" style="right:140px"><span>14:40</span></div>
+        <div class="tick" style="right:0">08</div><div class="tick" style="right:84px">12</div><div class="tick" style="right:168px">16</div>
+        <div class="tick" style="right:252px">20</div><div class="tick" style="right:336px">24</div>
+      </div></div>
+      <div class="panel">
+        <div class="step">
+          <div class="nav"><svg><use href="#i-chevr"/></svg>ארוחת צהריים</div>
+          <div class="mid"><div class="ttl">סדנאות</div><div class="sub"><span dir="ltr">14:30–17:00</span> · חדרי הסדנה</div></div>
+          <div class="nav"><svg><use href="#i-chev"/></svg>ארוחת ערב</div>
+        </div>
+        <div class="sh-prog">
+          <div class="bar"><i class="g" style="flex:2"></i><i class="o" style="flex:1"></i><i class="n" style="flex:2"></i></div>
+          <div class="txt"><b dir="ltr">2/5</b> הושלמו · <b>3 חסרות</b>, הדחופה ראשונה</div>
+        </div>
+        <div class="mt">
+          <div class="mt-top"><span class="tt">הכנת חדר סדנה 2</span><span class="chip orange">בעוד 20 דק׳</span></div>
+          <div class="mt-line"><svg><use href="#i-clock"/></svg>התייצבות 15:00<span class="sp"></span><svg><use href="#i-list"/></svg><span dir="ltr">1/3</span></div>
+          <div class="people"><span class="person">נועה לוי<span class="call"><svg><use href="#i-phone"/></svg></span></span><span class="person">אבי כהן<span class="call"><svg><use href="#i-phone"/></svg></span></span></div>
+          <div class="upd"><svg><use href="#i-chat"/></svg><span>מחכים למקרן מהמלון <small>· נועה, 14:22</small></span></div>
+        </div>
+        <div class="mt">
+          <div class="mt-top"><span class="tt">חלוקת ערכות למשתתפים</span><span class="chip grey" dir="ltr">15:45</span></div>
+          <div class="mt-line"><svg><use href="#i-clock"/></svg>התייצבות 15:45<span class="sp"></span><svg><use href="#i-list"/></svg><span dir="ltr">0/2</span></div>
+          <div class="people"><span class="person">יעל מזרחי<span class="call"><svg><use href="#i-phone"/></svg></span></span></div>
+        </div>
+        <div class="mt">
+          <div class="mt-top"><span class="tt">צילום הסדנאות</span><span class="chip grey">עד סוף היום</span></div>
+          <div class="people"><span class="person">דני רוזן<span class="call"><svg><use href="#i-phone"/></svg></span></span></div>
+        </div>
+      </div>
+    </div>
+    <ul class="ph-notes">
+      <li>The whole day stays on screen as a strip: every stage's status colour, its open count, and the red "now" line.</li>
+      <li>Tap any block in the strip, the arrows, or swipe the list sideways to move to another stage's missing tasks. Back returns to the full calendar.</li>
+      <li>In the strip, time runs <span class="arrow">08:00 on the right → 24:00 on the left</span>.</li>
+    </ul>
+  </div>
+
+</div>
+</div>

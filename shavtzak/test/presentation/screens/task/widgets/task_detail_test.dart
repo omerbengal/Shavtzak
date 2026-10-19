@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/core/utils/task_schedule.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
-import 'package:shavtzak/presentation/screens/task/widgets/task_card.dart';
+import 'package:shavtzak/presentation/screens/task/task_style.dart';
+import 'package:shavtzak/presentation/screens/task/widgets/task_detail.dart';
 
 import '../../../../support/task_fixtures.dart';
 
@@ -16,7 +18,7 @@ void main() {
     Subtask(id: 'c', title: 'תשלום'),
   ];
 
-  Future<_Calls> pumpCard(
+  Future<_Calls> pumpDetail(
     WidgetTester tester,
     TaskItem task, {
     bool canManage = false,
@@ -28,19 +30,18 @@ void main() {
         textDirection: TextDirection.rtl,
         child: Scaffold(
           body: SingleChildScrollView(
-            child: Builder(
-              builder: (context) => TaskCard(
-                task: task,
-                now: now,
-                canManage: canManage,
-                canUpdateProgress: canUpdateProgress,
-                onToggleSubtask: (subtask, isDone) =>
-                    calls.subtaskToggles.add('${subtask.id}:$isDone'),
-                onSetComplete: calls.completions.add,
-                onEditUpdate: () => calls.editUpdate++,
-                onEdit: () => calls.edit++,
-                onDelete: () => calls.delete++,
-              ),
+            child: TaskDetail(
+              task: task,
+              now: now,
+              canManage: canManage,
+              canUpdateProgress: canUpdateProgress,
+              onToggleSubtask: (subtask, isDone) =>
+                  calls.subtaskToggles.add('${subtask.id}:$isDone'),
+              onSetComplete: calls.completions.add,
+              onEditUpdate: () => calls.editUpdate++,
+              onEdit: () => calls.edit++,
+              onDelete: () => calls.delete++,
+              onCallPhone: calls.phoneCalls.add,
             ),
           ),
         ),
@@ -49,27 +50,24 @@ void main() {
     return calls;
   }
 
-  Color? tintOf(WidgetTester tester, TaskItem task) {
-    final card = tester.widget<Card>(find.byKey(Key('task-card-${task.id}')));
-    return card.color;
-  }
-
   TextStyle titleStyle(WidgetTester tester, String title) =>
       tester.widget<Text>(find.text(title)).style!;
 
-  /// Presses the card itself, on its title.
-  Future<void> tapCard(WidgetTester tester, TaskItem task) async {
-    await tester.tap(find.text(task.title));
-    await tester.pumpAndSettle();
+  /// The style of the report-time part of the stage line.
+  TextStyle? timeStyle(WidgetTester tester, String line) {
+    final text = tester.widget<Text>(find.text(line));
+    final spans = (text.textSpan! as TextSpan).children!;
+    return (spans.last as TextSpan).style;
   }
 
-  group('status colouring', () {
-    testWidgets('a completed task is green, labelled and struck through',
+  group('status', () {
+    testWidgets('a completed task is labelled הושלמה and struck through',
         (tester) async {
-      final task = buildTask(title: 'אישור ביטחוני', isComplete: true);
-      await pumpCard(tester, task);
+      await pumpDetail(
+        tester,
+        buildTask(title: 'אישור ביטחוני', isComplete: true),
+      );
 
-      expect(tintOf(tester, task), Colors.green.shade50);
       expect(find.text('הושלמה'), findsOneWidget);
       expect(
         titleStyle(tester, 'אישור ביטחוני').decoration,
@@ -77,35 +75,28 @@ void main() {
       );
     });
 
-    testWidgets('an overdue task is red and labelled', (tester) async {
-      final task = buildTask(dueAt: DateTime(2026, 10, 10, 9));
-      await pumpCard(tester, task);
+    testWidgets('an overdue task is labelled באיחור', (tester) async {
+      await pumpDetail(tester, buildTask(dueAt: DateTime(2026, 10, 10, 9)));
 
-      expect(tintOf(tester, task), Colors.red.shade50);
       expect(find.text('באיחור'), findsOneWidget);
     });
 
-    testWidgets('a task due later today is orange and labelled',
-        (tester) async {
-      final task = buildTask(dueAt: DateTime(2026, 10, 11, 20));
-      await pumpCard(tester, task);
+    testWidgets('a task due later today has no label', (tester) async {
+      await pumpDetail(tester, buildTask(dueAt: DateTime(2026, 10, 11, 20)));
 
-      expect(tintOf(tester, task), Colors.orange.shade50);
-      expect(find.text('להיום'), findsOneWidget);
+      expect(find.text('להיום'), findsNothing);
+      expect(find.text('באיחור'), findsNothing);
     });
 
-    testWidgets('an open task has no tint, no label and no strikethrough',
+    testWidgets('an open task has no label and no strikethrough',
         (tester) async {
-      final task = buildTask(
-        title: 'להזמין אוטובוס',
-        dueAt: DateTime(2026, 10, 20, 9),
+      await pumpDetail(
+        tester,
+        buildTask(title: 'להזמין אוטובוס', dueAt: DateTime(2026, 10, 20, 9)),
       );
-      await pumpCard(tester, task);
 
-      expect(tintOf(tester, task), isNull);
       expect(find.text('הושלמה'), findsNothing);
       expect(find.text('באיחור'), findsNothing);
-      expect(find.text('להיום'), findsNothing);
       expect(
         titleStyle(tester, 'להזמין אוטובוס').decoration,
         isNot(TextDecoration.lineThrough),
@@ -114,49 +105,86 @@ void main() {
   });
 
   group('details', () {
-    testWidgets(
-        'shows the assembly time, assignees and description, and no '
-        'event line', (tester) async {
+    testWidgets('shows the stage and the report time, the assignees and the description',
+        (tester) async {
       final task = buildTask(
         description: 'שני רכבים',
-        stage: buildStage(date: DateTime(2026, 10, 20)),
-        assemblyTime: '07:30',
+        stage: buildStage(title: 'סדנאות', date: DateTime(2026, 10, 20)),
+        assemblyTime: '15:00',
         event: buildEvent(name: 'דו יומי צפון'),
         assignees: [
           buildMember(id: 'm1', name: 'דנה'),
           buildMember(id: 'm2', name: 'יואב'),
         ],
       );
-      await pumpCard(tester, task);
+      await pumpDetail(tester, task);
 
-      expect(find.text('התייצבות 07:30'), findsOneWidget);
-      expect(find.text('דנה, יואב'), findsOneWidget);
+      expect(find.text('סדנאות · התייצבות ${ltr('15:00')}'), findsOneWidget);
+      expect(find.text('דנה'), findsOneWidget);
+      expect(find.text('יואב'), findsOneWidget);
       expect(find.text('שני רכבים'), findsOneWidget);
-      // The page is the event: the card does not repeat it.
+      // The page is the event: the view does not repeat it.
       expect(find.textContaining('דו יומי צפון'), findsNothing);
     });
 
+    testWidgets('an untimed task says ללא שעה next to its stage',
+        (tester) async {
+      await pumpDetail(
+        tester,
+        buildTask(stage: buildStage(title: 'קליטה', date: DateTime(2026, 10, 20))),
+      );
+
+      expect(find.text('קליטה · ללא שעה'), findsOneWidget);
+    });
+
+    testWidgets('a task due in the half hour shows its time in orange',
+        (tester) async {
+      await pumpDetail(
+        tester,
+        buildTask(
+          stage: buildStage(title: 'קליטה', date: DateTime(2026, 10, 11)),
+          assemblyTime: '14:20',
+        ),
+      );
+
+      expect(
+        timeStyle(tester, 'קליטה · התייצבות ${ltr('14:20')}')?.color,
+        TaskStyle.soonDark,
+      );
+      expect(find.textContaining('בעוד'), findsNothing);
+    });
+
+    testWidgets('an assignee with a phone gets a call button', (tester) async {
+      final calls = await pumpDetail(
+        tester,
+        buildTask(
+          assigneeIds: const ['m1', 'm2'],
+          assignees: [
+            buildMember(id: 'm1', name: 'דנה', phoneNumber: '0501234567'),
+            buildMember(id: 'm2', name: 'יואב'),
+          ],
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('task-detail-call-m1')));
+      expect(calls.phoneCalls, ['0501234567']);
+      expect(find.byKey(const Key('task-detail-call-m2')), findsNothing);
+    });
+
     testWidgets('a task with no resolvable assignee says so', (tester) async {
-      await pumpCard(tester, buildTask(assigneeIds: const ['deleted']));
+      await pumpDetail(tester, buildTask(assigneeIds: const ['deleted']));
       expect(find.text('ללא אחראים'), findsOneWidget);
     });
 
-    testWidgets('a task with no assembly time shows no time line',
-        (tester) async {
-      await pumpCard(
-        tester,
-        buildTask(stage: buildStage(date: DateTime(2026, 10, 20))),
-      );
-      expect(find.byIcon(Icons.schedule), findsNothing);
-    });
-
     testWidgets('shows the assignee update with its author', (tester) async {
-      final task = buildTask(
-        assigneeUpdate: 'ממתין לאישור',
-        assigneeUpdateByName: 'דנה',
-        assigneeUpdateAt: DateTime(2026, 10, 11, 9, 5),
+      await pumpDetail(
+        tester,
+        buildTask(
+          assigneeUpdate: 'ממתין לאישור',
+          assigneeUpdateByName: 'דנה',
+          assigneeUpdateAt: DateTime(2026, 10, 11, 9, 5),
+        ),
       );
-      await pumpCard(tester, task);
 
       expect(find.text('ממתין לאישור'), findsOneWidget);
       expect(find.textContaining('דנה'), findsOneWidget);
@@ -164,8 +192,10 @@ void main() {
     });
 
     testWidgets('shows when the task was last updated', (tester) async {
-      final task = buildTask(updatedAt: DateTime(2026, 10, 9, 16, 45));
-      await pumpCard(tester, task);
+      await pumpDetail(
+        tester,
+        buildTask(updatedAt: DateTime(2026, 10, 9, 16, 45)),
+      );
 
       expect(
         find.textContaining('עודכן לאחרונה: 09/10/2026 16:45'),
@@ -177,56 +207,33 @@ void main() {
   group('subtasks', () {
     testWidgets('shows progress as done over total', (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
-      await pumpCard(tester, task);
+      await pumpDetail(tester, task);
 
-      expect(find.text('2/3'), findsOneWidget);
+      expect(find.text(ltr('2/3')), findsOneWidget);
       final bar = tester.widget<LinearProgressIndicator>(
         find.byKey(Key('task-progress-${task.id}')),
       );
       expect(bar.value, closeTo(2 / 3, 0.0001));
     });
 
-    testWidgets('always shows one card per subtask, with no arrow',
-        (tester) async {
-      final task = buildTask(subtasks: threeSubtasks);
-      await pumpCard(tester, task);
+    testWidgets('always shows one card per subtask', (tester) async {
+      await pumpDetail(tester, buildTask(subtasks: threeSubtasks));
 
       expect(find.byKey(const Key('subtask-a')), findsOneWidget);
       expect(find.byKey(const Key('subtask-b')), findsOneWidget);
       expect(find.byKey(const Key('subtask-c')), findsOneWidget);
       expect(find.text('תשלום'), findsOneWidget);
-      expect(find.byIcon(Icons.expand_more), findsNothing);
-      expect(find.byIcon(Icons.expand_less), findsNothing);
-    });
-
-    testWidgets('pressing the card or a subtask row hides nothing',
-        (tester) async {
-      final task = buildTask(subtasks: threeSubtasks);
-      final calls = await pumpCard(tester, task);
-
-      await tapCard(tester, task);
-      await tester.tap(find.text('תשלום'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('subtask-c')), findsOneWidget);
-      expect(calls.subtaskToggles, isEmpty);
     });
 
     testWidgets('a done subtask is ticked and struck through', (tester) async {
-      final task = buildTask(subtasks: threeSubtasks);
-      await pumpCard(tester, task);
-      await tapCard(tester, task);
+      await pumpDetail(tester, buildTask(subtasks: threeSubtasks));
 
-      final done = tester.widget<Checkbox>(find.descendant(
-        of: find.byKey(const Key('subtask-a')),
-        matching: find.byType(Checkbox),
-      ));
-      final open = tester.widget<Checkbox>(find.descendant(
-        of: find.byKey(const Key('subtask-c')),
-        matching: find.byType(Checkbox),
-      ));
-      expect(done.value, isTrue);
-      expect(open.value, isFalse);
+      Checkbox boxOf(String id) => tester.widget<Checkbox>(find.descendant(
+            of: find.byKey(Key('subtask-$id')),
+            matching: find.byType(Checkbox),
+          ));
+      expect(boxOf('a').value, isTrue);
+      expect(boxOf('c').value, isFalse);
       expect(
         titleStyle(tester, 'הצעת מחיר').decoration,
         TextDecoration.lineThrough,
@@ -235,9 +242,7 @@ void main() {
 
     testWidgets('ticking a subtask reports that subtask and its new value',
         (tester) async {
-      final task = buildTask(subtasks: threeSubtasks);
-      final calls = await pumpCard(tester, task);
-      await tapCard(tester, task);
+      final calls = await pumpDetail(tester, buildTask(subtasks: threeSubtasks));
 
       await tester.tap(find.descendant(
         of: find.byKey(const Key('subtask-c')),
@@ -250,14 +255,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(calls.subtaskToggles, ['c:true', 'a:false']);
-      // Ticking is not a press on the card.
-      expect(find.byKey(const Key('subtask-c')), findsOneWidget);
     });
 
     testWidgets('a task with subtasks has no completion checkbox of its own',
         (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
-      await pumpCard(tester, task);
+      await pumpDetail(tester, task);
 
       expect(find.byKey(Key('task-complete-${task.id}')), findsNothing);
     });
@@ -266,7 +269,7 @@ void main() {
   group('a task without subtasks', () {
     testWidgets('has a completion checkbox and no progress', (tester) async {
       final task = buildTask();
-      final calls = await pumpCard(tester, task);
+      final calls = await pumpDetail(tester, task);
 
       expect(find.byKey(Key('task-progress-${task.id}')), findsNothing);
 
@@ -276,7 +279,7 @@ void main() {
 
     testWidgets('unticking a completed task reports reopening', (tester) async {
       final task = buildTask(isComplete: true);
-      final calls = await pumpCard(tester, task);
+      final calls = await pumpDetail(tester, task);
 
       await tester.tap(find.byKey(Key('task-complete-${task.id}')));
       expect(calls.completions, [false]);
@@ -288,8 +291,7 @@ void main() {
         'a member who cannot update progress gets disabled checkboxes '
         'and no update button', (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
-      final calls = await pumpCard(tester, task, canUpdateProgress: false);
-      await tapCard(tester, task);
+      final calls = await pumpDetail(tester, task, canUpdateProgress: false);
 
       final checkbox = tester.widget<Checkbox>(find.descendant(
         of: find.byKey(const Key('subtask-c')),
@@ -311,7 +313,7 @@ void main() {
     testWidgets('a read-only member cannot complete a task without subtasks',
         (tester) async {
       final task = buildTask();
-      await pumpCard(tester, task, canUpdateProgress: false);
+      await pumpDetail(tester, task, canUpdateProgress: false);
 
       final checkbox = tester.widget<Checkbox>(
         find.byKey(Key('task-complete-${task.id}')),
@@ -321,7 +323,7 @@ void main() {
 
     testWidgets('the update button opens the update editor', (tester) async {
       final task = buildTask();
-      final calls = await pumpCard(tester, task);
+      final calls = await pumpDetail(tester, task);
 
       await tester.tap(find.byKey(Key('task-update-${task.id}')));
       expect(calls.editUpdate, 1);
@@ -330,11 +332,11 @@ void main() {
     testWidgets('only a manager gets the edit and delete buttons',
         (tester) async {
       final task = buildTask();
-      await pumpCard(tester, task);
+      await pumpDetail(tester, task);
       expect(find.byKey(Key('task-edit-${task.id}')), findsNothing);
       expect(find.byKey(Key('task-delete-${task.id}')), findsNothing);
 
-      final calls = await pumpCard(tester, task, canManage: true);
+      final calls = await pumpDetail(tester, task, canManage: true);
       await tester.tap(find.byKey(Key('task-edit-${task.id}')));
       expect(calls.edit, 1);
       expect(calls.delete, 0);
@@ -347,7 +349,7 @@ void main() {
     testWidgets('edit is a blue pencil and delete a red bin, not a menu',
         (tester) async {
       final task = buildTask();
-      await pumpCard(tester, task, canManage: true);
+      await pumpDetail(tester, task, canManage: true);
 
       Icon iconOf(String key) => tester.widget<Icon>(find.descendant(
             of: find.byKey(Key(key)),
@@ -355,9 +357,9 @@ void main() {
           ));
 
       expect(iconOf('task-edit-${task.id}').icon, Icons.edit);
-      expect(iconOf('task-edit-${task.id}').color, Colors.blue);
+      expect(iconOf('task-edit-${task.id}').color, TaskStyle.edit);
       expect(iconOf('task-delete-${task.id}').icon, Icons.delete);
-      expect(iconOf('task-delete-${task.id}').color, Colors.red);
+      expect(iconOf('task-delete-${task.id}').color, TaskStyle.delete);
       expect(find.byType(PopupMenuButton<String>), findsNothing);
     });
   });
@@ -366,6 +368,7 @@ void main() {
 class _Calls {
   final subtaskToggles = <String>[];
   final completions = <bool>[];
+  final phoneCalls = <String>[];
   int editUpdate = 0;
   int edit = 0;
   int delete = 0;

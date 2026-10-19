@@ -48,8 +48,8 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialText);
-    // The field autofocuses onto an existing note, which is exactly the case
-    // the RTL caret fix exists for: Hebrew mixed with digits.
+    // Tapping into an existing note is exactly the case the RTL caret fix
+    // exists for: Hebrew mixed with digits.
     _focusNode = createRtlCursorFixedFocusNode(_controller);
   }
 
@@ -97,7 +97,8 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
                   key: const Key('assignee-update-text'),
                   controller: _controller,
                   focusNode: _focusNode,
-                  autofocus: true,
+                  // Not focused on open: a phone keyboard would cover the
+                  // dialog before the member decided to type.
                   // Locked while saving: what was sent is what stays on screen.
                   readOnly: _isSaving,
                   minLines: 3,
