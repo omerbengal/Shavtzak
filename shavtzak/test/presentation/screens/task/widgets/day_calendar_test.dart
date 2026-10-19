@@ -11,7 +11,8 @@ import '../../../../support/task_fixtures.dart';
 
 void main() {
   // sampleNow is Tuesday 14:40; the workshops (14:30–17:00) are under way.
-  const hourHeight = 56.0;
+  // Tall enough that the sample stages' names fit without stretching.
+  const hourHeight = 80.0;
 
   late List<(String, bool)> opened;
 
@@ -90,20 +91,33 @@ void main() {
   testWidgets('a stage sits at its start and is as tall as it lasts',
       (tester) async {
     await pumpCalendar(tester);
-    // The grid starts at 08, the hour of the setup.
-    final gridTop = tester.getTopLeft(tueColumn()).dy;
-    expect(tester.getTopLeft(block('ws')).dy - gridTop, 6.5 * hourHeight);
-    expect(tester.getSize(block('ws')).height, 2.5 * hourHeight);
+    // Lunch runs 13:00–14:00, the workshops 14:30–17:00.
+    expect(
+      tester.getTopLeft(block('ws')).dy - tester.getTopLeft(block('lunch')).dy,
+      closeTo(1.5 * hourHeight, 0.01),
+    );
+    expect(tester.getSize(block('ws')).height, closeTo(2.5 * hourHeight, 0.01));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a stage without an end gets the smallest readable height',
+  testWidgets('a long empty stretch squashes into a thin gap', (tester) async {
+    await pumpCalendar(tester);
+    // Nothing runs from the end of the setup at 09:00 until lunch at 13:00.
+    expect(
+      tester.getTopLeft(block('lunch')).dy -
+          tester.getBottomLeft(block('setup')).dy,
+      closeTo(TaskStyle.squashedGapHeight, 0.01),
+    );
+  });
+
+  testWidgets('a start-only stage is as tall as its name needs',
       (tester) async {
     await pumpCalendar(tester);
-    expect(
-      tester.getSize(block('dinner')).height,
-      closeTo(TaskStyle.minBlockMinutes(hourHeight) / 60 * hourHeight, 0.01),
-    );
+    final title = find.descendant(of: block('dinner'), matching: find.text(stDinner.title));
+    expect(tester.getRect(block('dinner')).bottom,
+        greaterThanOrEqualTo(tester.getRect(title).bottom));
+    expect(tester.getSize(block('dinner')).height,
+        greaterThanOrEqualTo(TaskStyle.minBlockHeight));
   });
 
   testWidgets('a stage without a time sits in the all-day row, above the hours',
@@ -149,11 +163,11 @@ void main() {
     await pumpCalendar(tester);
     expect(find.byKey(const Key('now-line')), findsOneWidget);
     expect(find.text(ltr('14:40')), findsOneWidget);
-    // 14:40 is 6 h 40 min into a grid starting at 08.
+    // 14:40 is ten minutes into the workshops.
     final lineTop = tester.getRect(find.byKey(const Key('now-line'))).center.dy;
     expect(
-      lineTop - tester.getTopLeft(tueColumn()).dy,
-      closeTo((6 + 40 / 60) * hourHeight, 0.01),
+      lineTop - tester.getTopLeft(block('ws')).dy,
+      closeTo(10 / 60 * hourHeight, 0.01),
     );
 
     await pumpCalendar(tester, days: [sampleWed]);
@@ -181,13 +195,28 @@ void main() {
     expect(find.byKey(const Key('stage-count-rooms')), findsNothing);
   });
 
-  testWidgets('done stages are green, the current one blue, a late task gives a red edge',
+  testWidgets('a block fills green from the left with its share of done tasks',
       (tester) async {
     await pumpCalendar(tester);
-    expect(blockColor(tester, 'setup'), TaskStyle.doneLight);
+    Rect fill(String id) =>
+        tester.getRect(find.byKey(Key('stage-fill-$id')));
+    final ws = tester.getRect(block('ws'));
+    final wsProgress = taskProgress(sampleBoard().tasksOf('ws'), sampleNow);
+    expect(fill('ws').left, closeTo(ws.left, 0.01));
+    expect(fill('ws').width,
+        closeTo(ws.width * wsProgress.done / wsProgress.total, 0.01));
+    expect(fill('setup').width, closeTo(tester.getRect(block('setup')).width, 0.01));
+    expect(find.byKey(const Key('stage-fill-dinner')), findsNothing);
+    expect(find.byKey(const Key('strip-done')), findsNothing);
+    expect(find.byKey(const Key('strip-rest')), findsNothing);
+  });
+
+  testWidgets('the current stage is blue, the others white, a late task gives a red edge',
+      (tester) async {
+    await pumpCalendar(tester);
     expect(blockColor(tester, 'ws'), TaskStyle.currentLight);
-    expect(find.byKey(const Key('stage-late-ws')), findsOneWidget);
     expect(blockColor(tester, 'dinner'), Colors.white);
+    expect(find.byKey(const Key('stage-late-ws')), findsOneWidget);
     expect(find.byKey(const Key('stage-late-dinner')), findsNothing);
     expect(find.byKey(const Key('stage-late-setup')), findsNothing);
     // The edge sits on the start side, the right under RTL.
@@ -261,30 +290,34 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a long title in a narrow overlapping column ends in an ellipsis',
+  testWidgets('a long title in a short overlapping stage wraps in full',
       (tester) async {
     final title = 'כותרת ארוכה מאוד של שלב שלא נגמרת אף פעם ' * 2;
-    // Half an hour is too short to wrap: one line, cut with an ellipsis.
+    // Half an hour, three at once: two side by side, the third a full row.
     final stages = [
       for (final id in ['a', 'b', 'c'])
         buildStage(
             id: id, title: title, date: sampleTue, startTime: '10:00', endTime: '10:30'),
     ];
-    await pumpCalendar(tester, stages: stages, size: const Size(320, 800));
+    await pumpCalendar(tester, stages: stages, size: const Size(320, 4000));
     expect(tester.takeException(), isNull);
-    final text = tester.widget<Text>(
-        find.descendant(of: block('a'), matching: find.text(title)));
-    expect(text.maxLines, 1);
-    expect(text.overflow, TextOverflow.ellipsis);
-
-    // Two hours, three columns: wraps, still no overflow.
-    final tallStages = [
-      for (final id in ['a', 'b', 'c'])
-        buildStage(
-            id: id, title: title, date: sampleTue, startTime: '10:00', endTime: '12:00'),
-    ];
-    await pumpCalendar(tester, stages: tallStages, size: const Size(320, 800));
-    expect(tester.takeException(), isNull);
+    final column = tester.getRect(tueColumn());
+    expect(tester.getRect(block('a')).width,
+        closeTo(column.width / 2, TaskStyle.blockGap));
+    expect(tester.getRect(block('c')).width,
+        closeTo(column.width, TaskStyle.blockGap));
+    for (final id in ['a', 'b', 'c']) {
+      final text = find.descendant(of: block(id), matching: find.text(title));
+      final widget = tester.widget<Text>(text);
+      expect(widget.maxLines, isNull);
+      expect(widget.overflow, isNot(TextOverflow.ellipsis));
+      // The whole name is inside its block, not hidden under another.
+      expect(tester.getRect(block(id)).bottom,
+          greaterThanOrEqualTo(tester.getRect(text).bottom - 0.01));
+    }
+    // The full row sits above the two that start with it.
+    expect(tester.getRect(block('c')).bottom,
+        lessThanOrEqualTo(tester.getRect(block('a')).top + 0.01));
   });
 
   testWidgets('a late start-only stage stays inside the grid', (tester) async {

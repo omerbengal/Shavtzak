@@ -150,6 +150,9 @@ class CalendarBlock extends Equatable {
   /// Its column among the stages it overlaps; 0 is the start side, the right
   /// under RTL.
   final int column;
+
+  /// 2 when it shares the width with a stage it overlaps, 1 when it has the
+  /// whole width.
   final int columnCount;
 
   @override
@@ -158,14 +161,22 @@ class CalendarBlock extends Equatable {
 
 /// One day of stages, ready to draw.
 class DayLayout extends Equatable {
-  const DayLayout({required this.allDay, required this.blocks});
+  const DayLayout({
+    required this.allDay,
+    required this.blocks,
+    this.bands = const [],
+  });
 
   /// Stages with no usable time, in screen order, for the all-day row.
   final List<Stage> allDay;
   final List<CalendarBlock> blocks;
 
+  /// Stages that found both columns taken at their start: each gets a
+  /// full-width row of its own at its start minute.
+  final List<CalendarBlock> bands;
+
   @override
-  List<Object?> get props => [allDay, blocks];
+  List<Object?> get props => [allDay, blocks, bands];
 }
 
 int _drawnEnd(Stage stage, int start, int minBlockMinutes) {
@@ -173,10 +184,15 @@ int _drawnEnd(Stage stage, int start, int minBlockMinutes) {
   return math.min(math.max(end, start + minBlockMinutes), _minutesPerDay);
 }
 
-/// Lays out one day's stages. Stages that overlap, directly or through each
-/// other, share the width: each takes the lowest column free at its start,
-/// and all of them count the columns their group needed.
-DayLayout layoutDay(List<Stage> dayStages, {required int minBlockMinutes}) {
+/// Lays out one day's stages. Each timed stage takes the lowest of
+/// [maxColumns] columns free at its start, and shares the width only when
+/// another column's stage overlaps it; a stage that finds every column taken
+/// becomes a full-width band, so no name is squeezed into a sliver.
+DayLayout layoutDay(
+  List<Stage> dayStages, {
+  required int minBlockMinutes,
+  int maxColumns = 2,
+}) {
   final allDay = <Stage>[];
   final timed = <({Stage stage, int start, int end})>[];
   for (final stage in sortStages(dayStages)) {
@@ -200,43 +216,229 @@ DayLayout layoutDay(List<Stage> dayStages, {required int minBlockMinutes}) {
     return a.stage.title.compareTo(b.stage.title);
   });
 
-  final blocks = <CalendarBlock>[];
-  var group = <({Stage stage, int start, int end, int column})>[];
-  var columnEnds = <int>[];
-  var groupEnd = 0;
-  void closeGroup() {
-    for (final placed in group) {
-      blocks.add(CalendarBlock(
-        stage: placed.stage,
-        startMinute: placed.start,
-        endMinute: placed.end,
-        column: placed.column,
-        columnCount: columnEnds.length,
-      ));
-    }
-    group = [];
-    columnEnds = [];
-  }
-
+  final placed = <({Stage stage, int start, int end, int column})>[];
+  final bands = <CalendarBlock>[];
+  final columnEnds = List<int>.filled(maxColumns, 0);
   for (final block in timed) {
-    if (group.isNotEmpty && block.start >= groupEnd) closeGroup();
-    groupEnd = group.isEmpty ? block.end : math.max(groupEnd, block.end);
-    var column = columnEnds.indexWhere((end) => end <= block.start);
+    final column = columnEnds.indexWhere((end) => end <= block.start);
     if (column == -1) {
-      column = columnEnds.length;
-      columnEnds.add(block.end);
-    } else {
-      columnEnds[column] = block.end;
+      bands.add(CalendarBlock(
+        stage: block.stage,
+        startMinute: block.start,
+        endMinute: block.end,
+        column: 0,
+        columnCount: 1,
+      ));
+      continue;
     }
-    group.add((
+    columnEnds[column] = block.end;
+    placed.add((
       stage: block.stage,
       start: block.start,
       end: block.end,
       column: column,
     ));
   }
-  closeGroup();
-  return DayLayout(allDay: allDay, blocks: blocks);
+
+  bool overlapsAnother(({Stage stage, int start, int end, int column}) one) =>
+      placed.any((other) =>
+          !identical(other, one) &&
+          other.start < one.end &&
+          one.start < other.end);
+
+  return DayLayout(
+    allDay: allDay,
+    blocks: [
+      for (final one in placed)
+        CalendarBlock(
+          stage: one.stage,
+          startMinute: one.start,
+          endMinute: one.end,
+          column: one.column,
+          columnCount: overlapsAnother(one) ? maxColumns : 1,
+        ),
+    ],
+    bands: bands,
+  );
+}
+
+/// Where each minute of a calendar's grid is drawn, once the hours have
+/// stretched so every stage's name fits and long empty stretches have
+/// squashed. Shared by every day drawn side by side, so their hours line up.
+class TimeAxis {
+  TimeAxis._(this._marks, this._bandSpace, this._segments, this._squashed);
+
+  /// Every minute where something starts or ends, every whole hour, first to
+  /// last.
+  final List<int> _marks;
+
+  /// The room the bands take at each mark.
+  final List<double> _bandSpace;
+
+  /// The height from each mark to the next.
+  final List<double> _segments;
+
+  /// The squashed stretches, as (from, to) minutes.
+  final List<(int, int)> _squashed;
+
+  double get height =>
+      _bandSpace.fold(0.0, (sum, space) => sum + space) +
+      _segments.fold(0.0, (sum, segment) => sum + segment);
+
+  int _indexAtOrBefore(int minute) {
+    var index = 0;
+    while (index + 1 < _marks.length && _marks[index + 1] <= minute) {
+      index++;
+    }
+    return index;
+  }
+
+  /// Where [minute] is drawn: above any band that sits there.
+  double before(int minute) {
+    final index = _indexAtOrBefore(minute);
+    var y = 0.0;
+    for (var i = 0; i < index; i++) {
+      y += _bandSpace[i] + _segments[i];
+    }
+    if (minute <= _marks[index]) return y;
+    y += _bandSpace[index];
+    if (index >= _segments.length) return y;
+    final span = _marks[index + 1] - _marks[index];
+    return y + _segments[index] * (minute - _marks[index]) / span;
+  }
+
+  /// Where a stage starting at [minute] begins: below the bands there.
+  double after(int minute) {
+    final index = _indexAtOrBefore(minute);
+    final y = before(minute);
+    return _marks[index] == minute ? y + _bandSpace[index] : y;
+  }
+
+  /// The top of [band], below the bands of its day that came before it at
+  /// the same minute.
+  double bandTop(DayLayout day, CalendarBlock band) {
+    var y = before(band.startMinute);
+    for (final other in day.bands) {
+      if (identical(other, band)) break;
+      if (other.startMinute == band.startMinute) y += _bandHeights[other] ?? 0;
+    }
+    return y;
+  }
+
+  final Map<CalendarBlock, double> _bandHeights = {};
+
+  /// Whether [minute] lies inside a squashed stretch, where no hour line is
+  /// drawn.
+  bool isSquashed(int minute) =>
+      _squashed.any((run) => run.$1 < minute && minute < run.$2);
+
+  /// The squashed stretches, as (from, to) minutes.
+  List<(int, int)> get squashed => List.unmodifiable(_squashed);
+}
+
+/// Builds the [TimeAxis] of [days] from [firstHour] to [lastHour].
+///
+/// An hour is [hourHeight] tall unless a stage starting in it needs more:
+/// [needOf] gives the height a block or band needs for its whole name, and
+/// the time from a block's start grows until it fits. A band takes its
+/// height at its start minute, before the blocks that start there. Stretches
+/// of at least [squashFromMinutes] with no stage running shrink to
+/// [squashedHeight].
+TimeAxis buildTimeAxis(
+  List<DayLayout> days, {
+  required int firstHour,
+  required int lastHour,
+  required double hourHeight,
+  required double Function(CalendarBlock block) needOf,
+  int squashFromMinutes = 120,
+  double squashedHeight = 24,
+}) {
+  final first = firstHour * 60;
+  final last = lastHour * 60;
+  final markSet = <int>{
+    for (var hour = firstHour; hour <= lastHour; hour++) hour * 60,
+    for (final day in days) ...[
+      for (final block in day.blocks) ...[block.startMinute, block.endMinute],
+      for (final band in day.bands) band.startMinute,
+    ],
+  }..removeWhere((minute) => minute < first || minute > last);
+  final marks = markSet.toList()..sort();
+  final indexOf = {for (var i = 0; i < marks.length; i++) marks[i]: i};
+
+  final segments = [
+    for (var i = 0; i + 1 < marks.length; i++)
+      (marks[i + 1] - marks[i]) / 60 * hourHeight,
+  ];
+
+  // Long empty stretches shrink.
+  bool covered(int from, int to) => days.any((day) => day.blocks.any(
+      (block) => block.startMinute <= from && block.endMinute >= to));
+  final squashed = <(int, int)>[];
+  var runStart = -1;
+  void closeRun(int endIndex) {
+    if (runStart < 0) return;
+    final from = marks[runStart];
+    final to = marks[endIndex];
+    if (to - from >= squashFromMinutes) {
+      for (var i = runStart; i < endIndex; i++) {
+        segments[i] = squashedHeight * (marks[i + 1] - marks[i]) / (to - from);
+      }
+      squashed.add((from, to));
+    }
+    runStart = -1;
+  }
+
+  for (var i = 0; i < segments.length; i++) {
+    if (covered(marks[i], marks[i + 1])) {
+      closeRun(i);
+    } else if (runStart < 0) {
+      runStart = i;
+    }
+  }
+  closeRun(segments.length);
+
+  // Bands take their room at their minute; the busiest day sets it.
+  final bandSpace = List<double>.filled(marks.length, 0);
+  final bandHeights = <CalendarBlock, double>{};
+  for (final day in days) {
+    final perMark = <int, double>{};
+    for (final band in day.bands) {
+      final need = needOf(band);
+      bandHeights[band] = need;
+      final index = indexOf[band.startMinute];
+      if (index == null) continue;
+      perMark[index] = (perMark[index] ?? 0) + need;
+    }
+    perMark.forEach((index, space) {
+      bandSpace[index] = math.max(bandSpace[index], space);
+    });
+  }
+
+  final axis = TimeAxis._(marks, bandSpace, segments, squashed);
+  axis._bandHeights.addAll(bandHeights);
+
+  // Blocks in order of start, so stretching one never takes room another
+  // already counted on.
+  final blocks = [
+    for (final day in days)
+      for (final block in day.blocks) (day: day, block: block),
+  ]..sort((a, b) => a.block.startMinute.compareTo(b.block.startMinute));
+  for (final (:day, :block) in blocks) {
+    final startIndex = indexOf[block.startMinute];
+    if (startIndex == null || startIndex >= segments.length) continue;
+    // A band inside the block covers it from there down: the name must fit
+    // above it.
+    var limit = block.endMinute;
+    for (final band in day.bands) {
+      if (band.startMinute > block.startMinute && band.startMinute < limit) {
+        limit = band.startMinute;
+      }
+    }
+    final room = axis.before(limit) - axis.after(block.startMinute);
+    final deficit = needOf(block) - room;
+    if (deficit > 0) segments[startIndex] += deficit;
+  }
+  return axis;
 }
 
 /// The whole hours a calendar of [stages] shows: from the hour of the

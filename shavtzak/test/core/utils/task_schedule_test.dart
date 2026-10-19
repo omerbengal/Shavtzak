@@ -205,6 +205,38 @@ void main() {
       );
     });
 
+    test('a third stage overlapping two others becomes a full-width row', () {
+      final a = buildStage(
+          id: 'a', date: sampleTue, startTime: '10:00', endTime: '12:00');
+      final b = buildStage(
+          id: 'b', date: sampleTue, startTime: '11:00', endTime: '13:00');
+      final c = buildStage(
+          id: 'c', date: sampleTue, startTime: '11:30', endTime: '12:30');
+      final layout = layoutDay([a, b, c], minBlockMinutes: 33);
+      expect(
+        [for (final x in layout.blocks) (x.stage.id, x.column, x.columnCount)],
+        [('a', 0, 2), ('b', 1, 2)],
+      );
+      expect([for (final x in layout.bands) (x.stage.id, x.startMinute)],
+          [('c', 690)]);
+    });
+
+    test('a stage that overlaps no other column takes the full width', () {
+      final a = buildStage(
+          id: 'a', date: sampleTue, startTime: '10:00', endTime: '14:00');
+      final b = buildStage(
+          id: 'b', date: sampleTue, startTime: '10:30', endTime: '11:00');
+      final c = buildStage(
+          id: 'c', date: sampleTue, startTime: '15:00', endTime: '16:00');
+      expect(
+        [
+          for (final x in layoutDay([a, b, c], minBlockMinutes: 33).blocks)
+            (x.stage.id, x.columnCount),
+        ],
+        [('a', 2), ('b', 2), ('c', 1)],
+      );
+    });
+
     test('a malformed start time goes to the all-day row', () {
       final bad = buildStage(id: 'bad', date: sampleTue, startTime: '9:00');
       expect(layoutDay([bad], minBlockMinutes: 33).allDay, [bad]);
@@ -219,6 +251,84 @@ void main() {
       );
       final block = layoutDay([odd], minBlockMinutes: 33).blocks.single;
       expect((block.startMinute, block.endMinute), (900, 933));
+    });
+  });
+
+  group('buildTimeAxis', () {
+    Stage at(String id, String start, String end) => buildStage(
+        id: id, date: sampleTue, startTime: start, endTime: end);
+    DayLayout dayOf(List<Stage> stages) =>
+        layoutDay(stages, minBlockMinutes: 30);
+
+    test('with room to spare, a minute sits where the hour height puts it',
+        () {
+      final axis = buildTimeAxis(
+        [dayOf([at('a', '08:00', '12:00')])],
+        firstHour: 8,
+        lastHour: 12,
+        hourHeight: 60,
+        needOf: (_) => 10,
+      );
+      expect(axis.before(9 * 60), 60);
+      expect(axis.before(9 * 60 + 30), 90);
+      expect(axis.height, 240);
+    });
+
+    test('a name that needs more room stretches the time from its start', () {
+      final axis = buildTimeAxis(
+        [dayOf([at('a', '09:00', '09:30'), at('b', '09:30', '11:00')])],
+        firstHour: 9,
+        lastHour: 11,
+        hourHeight: 60,
+        needOf: (block) => block.stage.id == 'a' ? 100 : 10,
+      );
+      expect(axis.after(9 * 60 + 30) - axis.after(9 * 60), 100);
+      expect(axis.before(10 * 60), 130);
+      expect(axis.height, 190);
+    });
+
+    test('a full-width row takes its own room at its start minute', () {
+      final layout = dayOf([
+        at('a', '10:00', '12:00'),
+        at('b', '10:00', '11:00'),
+        at('c', '10:00', '10:30'),
+      ]);
+      final band = layout.bands.single;
+      final axis = buildTimeAxis(
+        [layout],
+        firstHour: 10,
+        lastHour: 12,
+        hourHeight: 60,
+        needOf: (block) => block.stage.id == 'c' ? 40 : 10,
+      );
+      expect(axis.bandTop(layout, band), 0);
+      expect(axis.after(10 * 60), 40);
+      expect(axis.height, 160);
+    });
+
+    test('two or more empty hours squash into a thin gap', () {
+      final axis = buildTimeAxis(
+        [dayOf([at('a', '08:00', '09:00'), at('b', '13:00', '14:00')])],
+        firstHour: 8,
+        lastHour: 14,
+        hourHeight: 60,
+        needOf: (_) => 10,
+        squashedHeight: 24,
+      );
+      expect(axis.before(13 * 60) - axis.before(9 * 60), 24);
+      expect(axis.isSquashed(11 * 60), isTrue);
+      expect(axis.isSquashed(9 * 60), isFalse);
+    });
+
+    test('one empty hour keeps its height', () {
+      final axis = buildTimeAxis(
+        [dayOf([at('a', '08:00', '09:00'), at('b', '10:00', '11:00')])],
+        firstHour: 8,
+        lastHour: 11,
+        hourHeight: 60,
+        needOf: (_) => 10,
+      );
+      expect(axis.before(10 * 60) - axis.before(9 * 60), 60);
     });
   });
 

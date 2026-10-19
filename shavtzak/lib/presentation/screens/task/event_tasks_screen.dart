@@ -731,8 +731,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       return _buildNoStages(user, board.event, forManagers: true);
     }
     final days = calendarDays(board.event, board.stages);
-    final chosen = _calendarDay ??= initialCalendarDay(days, _now);
-    final day = days.contains(chosen) ? chosen : days.first;
+    // It opens on the stage of now.
+    _focusStageId ??= timelineAnchor(board.stages, _now)?.id;
     final removed = _removedAssigneeTasks(board, user);
     return CalendarTab(
       top: Column(
@@ -756,14 +756,15 @@ class _EventTasksScreenState extends State<EventTasksScreen>
         active: _activeFilter(sheet),
         onChanged: _onFilterChanged,
       ),
-      days: days,
-      selectedDay: day,
-      now: _now,
-      onSelectDay: (next) {
-        Logger.action('tap:calendarDay');
-        setState(() => _calendarDay = next);
-      },
-      calendar: _buildCalendar(board, user, sheet, [day]),
+      calendar: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final day in days) ...[
+            CalendarDayDivider(day: day, now: _now),
+            _buildCalendar(board, user, sheet, [day]),
+          ],
+        ],
+      ),
       focusKey: _focusKey,
       focusRequest: _focusRequest,
       bottomPadding: sheetRoom,

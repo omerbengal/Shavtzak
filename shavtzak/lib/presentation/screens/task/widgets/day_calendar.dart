@@ -99,7 +99,11 @@ class DayCalendar extends StatelessWidget {
     final minBlockMinutes = TaskStyle.minBlockMinutes(hourHeight);
     final layouts = {
       for (final day in days)
-        day: layoutDay(_stagesOf(day), minBlockMinutes: minBlockMinutes),
+        day: layoutDay(
+          _stagesOf(day),
+          minBlockMinutes: minBlockMinutes,
+          maxColumns: TaskStyle.maxCalendarColumns,
+        ),
     };
     final hours = calendarHours(
       [for (final day in days) ..._stagesOf(day)],
@@ -112,10 +116,32 @@ class DayCalendar extends StatelessWidget {
       children: [
         if (days.length > 1) _headerRow(),
         if (hasAllDay) _allDayRow(layouts),
-        if (hours != null) _grid(layouts, hours.first, hours.last),
+        if (hours != null)
+          LayoutBuilder(
+            builder: (context, constraints) => _grid(
+              context,
+              layouts,
+              hours.first,
+              hours.last,
+              dayWidth: (constraints.maxWidth - TaskStyle.hourLabelWidth) /
+                  days.length,
+            ),
+          ),
       ],
     );
   }
+
+  double _need(BuildContext context, Stage stage, double width) =>
+      math.max(
+        TaskStyle.minBlockHeight,
+        StageBlock.heightFor(
+          context,
+          stage: stage,
+          progress: progressByStage[stage.id] ?? const TaskProgress(),
+          mineCount: mineByStage[stage.id] ?? 0,
+          width: width,
+        ),
+      );
 
   /// A row of cells: the label column on the start side, then one cell per
   /// day.
@@ -157,9 +183,12 @@ class DayCalendar extends StatelessWidget {
         child: _perDay(
           cell: (day) => LayoutBuilder(
             builder: (context, constraints) {
-              final width = math.min(
-                constraints.maxWidth - TaskStyle.blockGap,
-                TaskStyle.allDayBlockWidth,
+              final width = math.max(
+                0.0,
+                math.min(
+                  constraints.maxWidth - TaskStyle.blockGap,
+                  TaskStyle.allDayBlockWidth,
+                ),
               );
               return Padding(
                 padding: const EdgeInsets.symmetric(
@@ -170,8 +199,8 @@ class DayCalendar extends StatelessWidget {
                   children: [
                     for (final stage in layouts[day]!.allDay)
                       SizedBox(
-                        width: math.max(0, width),
-                        child: _block(stage, TaskStyle.minBlockHeight),
+                        width: width,
+                        child: _block(stage, _need(context, stage, width)),
                       ),
                   ],
                 ),
@@ -181,13 +210,43 @@ class DayCalendar extends StatelessWidget {
         ),
       );
 
-  Widget _grid(Map<DateTime, DayLayout> layouts, int first, int last) {
-    final gridHeight = (last - first) * hourHeight;
+  Widget _grid(
+    BuildContext context,
+    Map<DateTime, DayLayout> layouts,
+    int first,
+    int last, {
+    required double dayWidth,
+  }) {
+    double widthOf(CalendarBlock block) =>
+        dayWidth / block.columnCount - TaskStyle.blockGap;
+    final needs = <CalendarBlock, double>{};
+    for (final layout in layouts.values) {
+      for (final block in layout.blocks) {
+        needs[block] = _need(context, block.stage, widthOf(block));
+      }
+      for (final band in layout.bands) {
+        needs[band] = _need(context, band.stage, dayWidth - TaskStyle.blockGap);
+      }
+    }
+    final axis = buildTimeAxis(
+      [for (final day in days) layouts[day]!],
+      firstHour: first,
+      lastHour: last,
+      hourHeight: hourHeight,
+      needOf: (block) => needs[block] ?? TaskStyle.minBlockHeight,
+      squashFromMinutes: TaskStyle.squashFromMinutes,
+      squashedHeight: TaskStyle.squashedGapHeight,
+    );
+    final gridHeight = axis.height;
     final nowMinute = now.hour * 60 + now.minute;
     final showsNow = days.any((day) => _dayOf(day) == _dayOf(now)) &&
         nowMinute >= first * 60 &&
         nowMinute <= last * 60;
-    final nowTop = (nowMinute - first * 60) / 60 * hourHeight;
+    final nowTop = axis.before(nowMinute);
+    final hourMarks = [
+      for (var hour = first; hour <= last; hour++)
+        if (!axis.isSquashed(hour * 60)) hour,
+    ];
 
     return SizedBox(
       height: gridHeight,
@@ -197,17 +256,35 @@ class DayCalendar extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              for (var hour = first; hour < last; hour++)
+              for (final hour in hourMarks)
+                if (hour < last)
+                  PositionedDirectional(
+                    start: 0,
+                    end: 0,
+                    top: axis.before(hour * 60),
+                    child: Text(
+                      hour.toString().padLeft(2, '0'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: TaskStyle.hourLabelSize,
+                        color: TaskStyle.faintText,
+                      ),
+                    ),
+                  ),
+              for (final (from, to) in axis.squashed)
                 PositionedDirectional(
                   start: 0,
                   end: 0,
-                  top: (hour - first) * hourHeight,
-                  child: Text(
-                    hour.toString().padLeft(2, '0'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: TaskStyle.hourLabelSize,
-                      color: TaskStyle.faintText,
+                  top: axis.before(from),
+                  height: axis.before(to) - axis.before(from),
+                  child: const Center(
+                    child: Text(
+                      '⋮',
+                      key: Key('squashed-gap'),
+                      style: TextStyle(
+                        fontSize: TaskStyle.hourLabelSize,
+                        color: TaskStyle.faintText,
+                      ),
                     ),
                   ),
                 ),
@@ -241,44 +318,38 @@ class DayCalendar extends StatelessWidget {
             ],
           ),
         ),
-        cell: (day) => _dayColumn(
-          day,
-          layouts[day]!,
-          first: first,
-          last: last,
-          nowTop: showsNow && _dayOf(day) == _dayOf(now) ? nowTop : null,
-        ),
-      ),
-    );
-  }
-
-  Widget _dayColumn(
-    DateTime day,
-    DayLayout layout, {
-    required int first,
-    required int last,
-    double? nowTop,
-  }) {
-    final gridHeight = (last - first) * hourHeight;
-    return SizedBox(
-      key: Key('day-column-${_dayKeyFormat.format(day)}'),
-      height: gridHeight,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          return Stack(
+        cell: (day) => SizedBox(
+          key: Key('day-column-${_dayKeyFormat.format(day)}'),
+          height: gridHeight,
+          child: Stack(
             children: [
-              for (var hour = first; hour <= last; hour++)
+              for (final hour in hourMarks)
                 PositionedDirectional(
                   start: 0,
                   end: 0,
-                  top: math.min((hour - first) * hourHeight, gridHeight - 1),
+                  top: math.min(axis.before(hour * 60), gridHeight - 1),
                   height: 1,
                   child: const ColoredBox(color: TaskStyle.rest),
                 ),
-              for (final block in layout.blocks)
-                _placed(block, width: width, first: first, gridHeight: gridHeight),
-              if (nowTop != null)
+              for (final block in layouts[day]!.blocks)
+                _placed(
+                  block,
+                  start: block.column * dayWidth / block.columnCount,
+                  width: dayWidth / block.columnCount,
+                  top: axis.after(block.startMinute),
+                  height: axis.before(block.endMinute) -
+                      axis.after(block.startMinute),
+                ),
+              // On top of the blocks they cut across.
+              for (final band in layouts[day]!.bands)
+                _placed(
+                  band,
+                  start: 0,
+                  width: dayWidth,
+                  top: axis.bandTop(layouts[day]!, band),
+                  height: needs[band] ?? TaskStyle.minBlockHeight,
+                ),
+              if (showsNow && _dayOf(day) == _dayOf(now))
                 PositionedDirectional(
                   start: 0,
                   end: 0,
@@ -292,38 +363,23 @@ class DayCalendar extends StatelessWidget {
                   ),
                 ),
             ],
-          );
-        },
+          ),
+        ),
       ),
     );
   }
 
   Widget _placed(
     CalendarBlock block, {
+    required double start,
     required double width,
-    required int first,
-    required double gridHeight,
+    required double top,
+    required double height,
   }) {
-    final columnWidth = width / block.columnCount;
-    final height = math.min(
-      gridHeight,
-      math.max(
-        (block.endMinute - block.startMinute) / 60 * hourHeight,
-        TaskStyle.minBlockHeight,
-      ),
-    );
-    // A block that would run past the bottom moves up instead.
-    final top = math.max(
-      0.0,
-      math.min(
-        (block.startMinute - first * 60) / 60 * hourHeight,
-        gridHeight - height,
-      ),
-    );
     return PositionedDirectional(
-      start: block.column * columnWidth,
+      start: start,
       top: top,
-      width: columnWidth,
+      width: width,
       height: height,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: TaskStyle.blockGap / 2),

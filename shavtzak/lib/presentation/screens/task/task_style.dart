@@ -35,8 +35,18 @@ abstract final class TaskStyle {
   static const double wideHourHeight = 48;
   static const double hourLabelWidth = 40;
   static const double minBlockHeight = 30;
-  static const double blockDetailsMinHeight = 52;
-  static const double blockProgressMinHeight = 68;
+
+  /// The height a squashed stretch of empty hours shrinks to.
+  static const double squashedGapHeight = 24;
+
+  /// How long an empty stretch must be before it squashes.
+  static const int squashFromMinutes = 120;
+
+  /// The line either side of a day's name on the phone's calendar.
+  static const Color dayDividerLine = Color(0xFFBDBDBD);
+
+  /// At most this many stages side by side; one more gets a full row.
+  static const int maxCalendarColumns = 2;
   static const double outlineWidth = 2.5;
   static const double fadedOpacity = 0.35;
   static const double focusTopMargin = 8;
@@ -72,11 +82,14 @@ abstract final class TaskStyle {
   static const double blockGap = 2;
   static const double allDayBlockWidth = 160;
   static const double lateEdgeWidth = 3;
+
+  /// The green a block fills with, from the left, as its tasks get done.
+  static const Color blockDoneFill = Color(0xFFC8E6C9);
+
+  /// The row of the mine badge and the count, under a block's details.
+  static const double blockBadgeRowHeight = 22;
   static const double mineIconSize = 14;
 
-  /// The most of a block's width the mine badge and the count may take, so
-  /// the title always keeps the rest.
-  static const double blockTrailingMaxShare = 0.6;
   static const double hourLabelSize = 11;
   static const double nowLineWidth = 2;
   static const double nowPillHeight = 18;

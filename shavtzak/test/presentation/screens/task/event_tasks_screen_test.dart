@@ -18,6 +18,7 @@ import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/screens/task/event_tasks_screen.dart';
 import 'package:shavtzak/presentation/screens/task/tasks_auto_open.dart';
+import 'package:shavtzak/presentation/screens/task/widgets/calendar_tab.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/day_calendar.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/stage_block.dart';
@@ -193,21 +194,21 @@ void main() {
         'an admin, and a member allowed to manage tasks, land on כל השלבים',
         (tester) async {
       await pumpScreen(tester, user: admin, tasks: [mine]);
-      expect(find.byType(DayCalendar), findsOneWidget);
+      expect(find.byType(DayCalendar), findsWidgets);
 
       await pumpScreen(
         tester,
         user: buildMember(id: 'lead', name: 'אורי', canManageTasks: true),
         tasks: [mine],
       );
-      expect(find.byType(DayCalendar), findsOneWidget);
+      expect(find.byType(DayCalendar), findsWidgets);
     });
 
     testWidgets('every member can open both tabs', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
       await openTab(tester, 'כל השלבים');
-      expect(find.byType(DayCalendar), findsOneWidget);
+      expect(find.byType(DayCalendar), findsWidgets);
 
       await openTab(tester, 'המשימות שלי');
       expect(find.byType(MemberTimeline), findsOneWidget);
@@ -975,15 +976,11 @@ void main() {
       return harness;
     }
 
-    bool daySelected(WidgetTester tester, String day) => tester
-        .widget<ChoiceChip>(find.byKey(Key('calendar-day-$day')))
-        .selected;
-
     testWidgets('a manager lands on the calendar with the summary',
         (tester) async {
       await pumpCalendar(tester);
 
-      expect(find.byType(DayCalendar), findsOneWidget);
+      expect(find.byType(DayCalendar), findsWidgets);
       expect(
         find.descendant(
           of: find.byKey(const Key('event-summary')),
@@ -997,13 +994,30 @@ void main() {
       );
     });
 
-    testWidgets('it opens on today during the event, on the first day before it',
+    testWidgets('every day is in one scroll, a divider above each, no day chips',
         (tester) async {
-      await pumpCalendar(tester, now: DateTime(2026, 10, 21, 9));
-      expect(daySelected(tester, '2026-10-21'), isTrue);
+      await pumpCalendar(tester);
+      expect(find.byType(CalendarDayChips), findsNothing);
+      expect(find.byKey(const Key('calendar-day-divider-2026-10-20')),
+          findsOneWidget);
+      expect(find.byKey(const Key('calendar-day-divider-2026-10-21')),
+          findsOneWidget);
+      expect(find.byKey(const Key('stage-block-ws')), findsOneWidget);
+      expect(find.byKey(const Key('stage-block-bf')), findsOneWidget);
+      // Tuesday above Wednesday.
+      expect(
+        tester.getTopLeft(find.byKey(const Key('stage-block-ws'))).dy,
+        lessThan(tester.getTopLeft(find.byKey(const Key('stage-block-bf'))).dy),
+      );
+    });
 
-      await pumpCalendar(tester, now: DateTime(2026, 10, 11, 14));
-      expect(daySelected(tester, '2026-10-20'), isTrue);
+    testWidgets('it opens scrolled to the stage of now', (tester) async {
+      await pumpCalendar(tester, now: DateTime(2026, 10, 21, 7, 45));
+      final block = tester.getRect(find.byKey(const Key('stage-block-bf')));
+      final pinnedBottom =
+          tester.getBottomLeft(find.byKey(const Key('calendar-pinned'))).dy;
+      expect(block.top, greaterThanOrEqualTo(pinnedBottom - 0.5));
+      expect(block.top, lessThan(tester.view.physicalSize.height));
     });
 
     testWidgets('a stage dated outside the event still gets its day',
@@ -1019,12 +1033,8 @@ void main() {
         ),
       );
 
-      expect(find.byKey(const Key('calendar-day-2026-10-23')), findsOneWidget);
-      // The test font's wide letters push the third day off the row.
-      await tester.ensureVisible(find.byKey(const Key('calendar-day-2026-10-23')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('calendar-day-2026-10-23')));
-      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('calendar-day-divider-2026-10-23')),
+          findsOneWidget);
       expect(find.byKey(const Key('stage-block-stray')), findsOneWidget);
     });
 
@@ -1036,9 +1046,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(inSheet(find.byKey(const Key('stage-sheet-ws'))), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('stage-block-lunch')));
+      // The stage under it is still on screen above the sheet.
+      await tester.tap(find.byKey(const Key('stage-block-dinner')));
       await tester.pumpAndSettle();
-      expect(inSheet(find.byKey(const Key('stage-sheet-lunch'))), findsOneWidget);
+      expect(inSheet(find.byKey(const Key('stage-sheet-dinner'))), findsOneWidget);
       expect(find.byKey(const Key('task-sheet')), findsOneWidget);
     });
 

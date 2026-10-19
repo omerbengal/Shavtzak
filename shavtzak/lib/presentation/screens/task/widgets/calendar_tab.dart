@@ -8,21 +8,17 @@ import '../task_style.dart';
 final DateFormat _dayKeyFormat = DateFormat('yyyy-MM-dd');
 
 /// The phone's "כל השלבים": [top] (the summary and the managers' check)
-/// scrolls away, the filter row and the day chips stay pinned, and the
-/// calendar scrolls under them.
+/// scrolls away, the filter row stays pinned, and the calendar, every day of
+/// it one under the other, scrolls under it.
 ///
-/// Each time [focusRequest] changes, the block carrying [focusKey] is
-/// scrolled to just under the pinned row, so a stage opened in the sheet
-/// sits above it.
+/// It opens with the block carrying [focusKey] just under the pinned row,
+/// and scrolls it there again each time [focusRequest] changes, so a stage
+/// opened in the sheet sits above it.
 class CalendarTab extends StatefulWidget {
   const CalendarTab({
     super.key,
     required this.top,
     required this.filterBar,
-    required this.days,
-    required this.selectedDay,
-    required this.now,
-    required this.onSelectDay,
     required this.calendar,
     this.focusKey,
     this.focusRequest = 0,
@@ -31,10 +27,6 @@ class CalendarTab extends StatefulWidget {
 
   final Widget top;
   final Widget filterBar;
-  final List<DateTime> days;
-  final DateTime selectedDay;
-  final DateTime now;
-  final ValueChanged<DateTime> onSelectDay;
   final Widget calendar;
   final GlobalKey? focusKey;
   final int focusRequest;
@@ -51,6 +43,12 @@ class _CalendarTabState extends State<CalendarTab> {
   final GlobalKey _pinnedKey = GlobalKey();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToFocus(animate: false));
+  }
+
+  @override
   void didUpdateWidget(CalendarTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.focusRequest != oldWidget.focusRequest) {
@@ -65,7 +63,7 @@ class _CalendarTabState extends State<CalendarTab> {
     super.dispose();
   }
 
-  void _scrollToFocus() {
+  void _scrollToFocus({bool animate = true}) {
     if (!mounted || !_scroll.hasClients) return;
     final target = widget.focusKey?.currentContext?.findRenderObject();
     if (target == null || !target.attached) return;
@@ -75,6 +73,10 @@ class _CalendarTabState extends State<CalendarTab> {
     final position = _scroll.position;
     final offset = (reveal.offset - pinnedHeight - TaskStyle.focusTopMargin)
         .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (!animate) {
+      _scroll.jumpTo(offset);
+      return;
+    }
     _scroll.animateTo(
       offset,
       duration: const Duration(milliseconds: 250),
@@ -98,7 +100,7 @@ class _CalendarTabState extends State<CalendarTab> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [widget.filterBar, _buildDays()],
+                children: [widget.filterBar],
               ),
             ),
           ),
@@ -114,15 +116,6 @@ class _CalendarTabState extends State<CalendarTab> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildDays() {
-    return CalendarDayChips(
-      days: widget.days,
-      selectedDay: widget.selectedDay,
-      now: widget.now,
-      onSelectDay: widget.onSelectDay,
     );
   }
 }
@@ -166,6 +159,38 @@ class CalendarDayChips extends StatelessWidget {
             ),
             const SizedBox(width: 6),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The line above each day of the phone's calendar, naming the day.
+class CalendarDayDivider extends StatelessWidget {
+  const CalendarDayDivider({super.key, required this.day, required this.now});
+
+  final DateTime day;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      key: Key('calendar-day-divider-${_dayKeyFormat.format(day)}'),
+      padding: const EdgeInsets.fromLTRB(0, 10, 0, 6),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(color: TaskStyle.dayDividerLine)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              dayLabel(day, now),
+              style: const TextStyle(
+                fontSize: TaskStyle.filterFontSize,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider(color: TaskStyle.dayDividerLine)),
         ],
       ),
     );
