@@ -93,7 +93,10 @@ class TaskFilterBar extends StatelessWidget {
       selected: isOn,
       showCheckmark: true,
       checkmarkColor: dark,
+      // Explicit both ways: the app's chip theme is blue, which reads as on.
+      backgroundColor: Colors.white,
       selectedColor: light,
+      side: BorderSide(color: isOn ? dark : TaskStyle.rest),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onSelected: count == 0 && !isOn ? null : (_) => onChanged(isOn ? null : filter),

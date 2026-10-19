@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/presentation/screens/task/task_style.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/task_filter_bar.dart';
 
 void main() {
@@ -66,6 +67,17 @@ void main() {
 
     await pumpBar(tester, soonCount: 0, active: TaskFilter.dueSoon);
     expect(chip(tester, 'filter-soon').onSelected, isNotNull);
+  });
+
+  testWidgets('a toggle that is off is white with a grey edge, never the theme blue',
+      (tester) async {
+    await pumpBar(tester);
+    for (final key in ['filter-late', 'filter-soon']) {
+      final off = chip(tester, key);
+      expect(off.selected, isFalse);
+      expect(off.backgroundColor, Colors.white, reason: key);
+      expect(off.side?.color, TaskStyle.rest, reason: key);
+    }
   });
 
   testWidgets('the one that is on is filled and ticked', (tester) async {
