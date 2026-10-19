@@ -1177,11 +1177,30 @@ void main() {
       expect(find.text('בטיפול'), findsOneWidget);
     });
 
+    testWidgets('opens without focusing the field, so no keyboard pops up',
+        (tester) async {
+      await openUpdate(tester, initialText: 'בטיפול');
+      await tester.pump();
+
+      final field = tester.widget<TextField>(text);
+      expect(field.autofocus, isFalse);
+      expect(field.focusNode!.hasFocus, isFalse);
+      expect(
+        tester.testTextInput.hasAnyClients,
+        isFalse,
+        reason: 'no text input connection, so no keyboard',
+      );
+    });
+
     testWidgets(
-        'opens with the caret at the end of a mixed Hebrew and digit '
-        'note', (tester) async {
+        'tapping into a mixed Hebrew and digit note puts the caret at its '
+        'end', (tester) async {
       const existing = 'הוזמנו 2 אוטובוסים';
       await openUpdate(tester, initialText: existing);
+      await tester.pump();
+      await tester.tap(text);
+      // The fix moves the caret on the frame after focus arrives.
+      await tester.pump();
       await tester.pump();
 
       final field = tester.widget<TextField>(text);
