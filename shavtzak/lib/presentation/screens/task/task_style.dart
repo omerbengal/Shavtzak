@@ -50,9 +50,6 @@ abstract final class TaskStyle {
 
   /// The line either side of a day's name on the phone's calendar.
   static const Color dayDividerLine = Color(0xFFBDBDBD);
-
-  /// At most this many stages side by side; one more gets a full row.
-  static const int maxCalendarColumns = 2;
   static const double outlineWidth = 2.5;
   static const double fadedOpacity = 0.35;
   static const double focusTopMargin = 8;

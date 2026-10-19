@@ -212,13 +212,30 @@ void main() {
           id: 'b', date: sampleTue, startTime: '11:00', endTime: '13:00');
       final c = buildStage(
           id: 'c', date: sampleTue, startTime: '11:30', endTime: '12:30');
-      final layout = layoutDay([a, b, c], minBlockMinutes: 33);
+      final layout = layoutDay([a, b, c], minBlockMinutes: 33, maxColumns: 2);
       expect(
         [for (final x in layout.blocks) (x.stage.id, x.column, x.columnCount)],
         [('a', 0, 2), ('b', 1, 2)],
       );
       expect([for (final x in layout.bands) (x.stage.id, x.startMinute)],
           [('c', 690)]);
+    });
+
+    test('with no limit, three overlapping stages sit side by side', () {
+      final a = buildStage(
+          id: 'a', date: sampleTue, startTime: '10:00', endTime: '12:00');
+      final b = buildStage(
+          id: 'b', date: sampleTue, startTime: '11:00', endTime: '13:00');
+      final c = buildStage(
+          id: 'c', date: sampleTue, startTime: '11:30', endTime: '12:30');
+      final d = buildStage(
+          id: 'd', date: sampleTue, startTime: '15:00', endTime: '16:00');
+      final layout = layoutDay([a, b, c, d], minBlockMinutes: 33);
+      expect(
+        [for (final x in layout.blocks) (x.stage.id, x.column, x.columnCount)],
+        [('a', 0, 3), ('b', 1, 3), ('c', 2, 3), ('d', 0, 1)],
+      );
+      expect(layout.bands, isEmpty);
     });
 
     test('a stage that overlaps no other column takes the full width', () {
@@ -317,11 +334,11 @@ void main() {
     });
 
     test('a full-width row takes its own room at its start minute', () {
-      final layout = dayOf([
+      final layout = layoutDay([
         at('a', '10:00', '12:00'),
         at('b', '10:00', '11:00'),
         at('c', '10:00', '10:30'),
-      ]);
+      ], minBlockMinutes: 30, maxColumns: 2);
       final band = layout.bands.single;
       final axis = buildTimeAxis(
         [layout],

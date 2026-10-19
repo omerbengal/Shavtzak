@@ -185,14 +185,15 @@ int _drawnEnd(Stage stage, int start, int minBlockMinutes) {
   return math.min(math.max(end, start + minBlockMinutes), _minutesPerDay);
 }
 
-/// Lays out one day's stages. Each timed stage takes the lowest of
-/// [maxColumns] columns free at its start, and shares the width only when
-/// another column's stage overlaps it; a stage that finds every column taken
-/// becomes a full-width band, so no name is squeezed into a sliver.
+/// Lays out one day's stages. Each timed stage takes the lowest column free
+/// at its start; stages that overlap, directly or through each other, share
+/// the width between the columns their group needed, and a stage that
+/// overlaps none has it all. With [maxColumns], a stage that finds every
+/// column taken becomes a full-width band instead.
 DayLayout layoutDay(
   List<Stage> dayStages, {
   required int minBlockMinutes,
-  int maxColumns = 2,
+  int? maxColumns,
 }) {
   final allDay = <Stage>[];
   final timed = <({Stage stage, int start, int end})>[];
@@ -219,9 +220,14 @@ DayLayout layoutDay(
 
   final placed = <({Stage stage, int start, int end, int column})>[];
   final bands = <CalendarBlock>[];
-  final columnEnds = List<int>.filled(maxColumns, 0);
+  final columnEnds = <int>[];
   for (final block in timed) {
-    final column = columnEnds.indexWhere((end) => end <= block.start);
+    var column = columnEnds.indexWhere((end) => end <= block.start);
+    if (column == -1 &&
+        (maxColumns == null || columnEnds.length < maxColumns)) {
+      column = columnEnds.length;
+      columnEnds.add(block.end);
+    }
     if (column == -1) {
       bands.add(CalendarBlock(
         stage: block.stage,
@@ -241,22 +247,29 @@ DayLayout layoutDay(
     ));
   }
 
-  bool overlapsAnother(({Stage stage, int start, int end, int column}) one) =>
-      placed.any((other) =>
-          !identical(other, one) &&
-          other.start < one.end &&
-          one.start < other.end);
+  // Groups of stages that overlap, directly or through each other: each
+  // group shares out the columns it needed.
+  final columnsOf = <int, int>{};
+  final groupOf = <int>[];
+  var group = -1;
+  var groupEnd = -1;
+  for (final one in placed) {
+    if (one.start >= groupEnd) group++;
+    groupEnd = math.max(groupEnd, one.end);
+    groupOf.add(group);
+    columnsOf[group] = math.max(columnsOf[group] ?? 0, one.column + 1);
+  }
 
   return DayLayout(
     allDay: allDay,
     blocks: [
-      for (final one in placed)
+      for (var i = 0; i < placed.length; i++)
         CalendarBlock(
-          stage: one.stage,
-          startMinute: one.start,
-          endMinute: one.end,
-          column: one.column,
-          columnCount: overlapsAnother(one) ? maxColumns : 1,
+          stage: placed[i].stage,
+          startMinute: placed[i].start,
+          endMinute: placed[i].end,
+          column: placed[i].column,
+          columnCount: columnsOf[groupOf[i]]!,
         ),
     ],
     bands: bands,

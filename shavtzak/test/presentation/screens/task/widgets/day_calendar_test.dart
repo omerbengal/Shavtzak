@@ -296,34 +296,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a long title in a short overlapping stage wraps in full',
+  testWidgets('three overlapping stages sit side by side, each to its end, names in full',
       (tester) async {
     final title = 'כותרת ארוכה מאוד של שלב שלא נגמרת אף פעם ' * 2;
-    // Half an hour, three at once: two side by side, the third a full row.
     final stages = [
-      for (final id in ['a', 'b', 'c'])
+      for (final (id, end) in [('a', '11:00'), ('b', '10:30'), ('c', '10:45')])
         buildStage(
-            id: id, title: title, date: sampleTue, startTime: '10:00', endTime: '10:30'),
+            id: id, title: title, date: sampleTue, startTime: '10:00', endTime: end),
     ];
-    await pumpCalendar(tester, stages: stages, size: const Size(320, 4000));
+    await pumpCalendar(tester, stages: stages, size: const Size(320, 6000));
     expect(tester.takeException(), isNull);
     final column = tester.getRect(tueColumn());
-    expect(tester.getRect(block('a')).width,
-        closeTo(column.width / 2, TaskStyle.blockGap));
-    expect(tester.getRect(block('c')).width,
-        closeTo(column.width, TaskStyle.blockGap));
+    final tops = <double>{};
     for (final id in ['a', 'b', 'c']) {
+      final rect = tester.getRect(block(id));
+      expect(rect.width, closeTo(column.width / 3, TaskStyle.blockGap + 0.5), reason: id);
+      tops.add(rect.top);
       final text = find.descendant(of: block(id), matching: find.text(title));
-      final widget = tester.widget<Text>(text);
-      expect(widget.maxLines, isNull);
-      expect(widget.overflow, isNot(TextOverflow.ellipsis));
-      // The whole name is inside its block, not hidden under another.
-      expect(tester.getRect(block(id)).bottom,
-          greaterThanOrEqualTo(tester.getRect(text).bottom - 0.01));
+      expect(tester.widget<Text>(text).maxLines, isNull);
+      expect(rect.bottom, greaterThanOrEqualTo(tester.getRect(text).bottom - 0.01));
     }
-    // The full row sits above the two that start with it.
+    // All start together, and each ends where its time ends: the longest
+    // reaches furthest.
+    expect(tops.length, 1);
+    expect(tester.getRect(block('a')).bottom,
+        greaterThan(tester.getRect(block('c')).bottom));
     expect(tester.getRect(block('c')).bottom,
-        lessThanOrEqualTo(tester.getRect(block('a')).top + 0.01));
+        greaterThan(tester.getRect(block('b')).bottom));
   });
 
   testWidgets('a late start-only stage stays inside the grid', (tester) async {

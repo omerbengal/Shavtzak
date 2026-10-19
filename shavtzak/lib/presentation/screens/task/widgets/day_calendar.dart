@@ -99,7 +99,6 @@ class DayCalendar extends StatelessWidget {
         day: layoutDay(
           _stagesOf(day),
           minBlockMinutes: minBlockMinutes,
-          maxColumns: TaskStyle.maxCalendarColumns,
         ),
     };
     final hours = calendarHours(
