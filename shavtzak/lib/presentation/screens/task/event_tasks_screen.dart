@@ -27,6 +27,7 @@ import 'task_style.dart';
 import 'tasks_auto_open.dart';
 import 'widgets/legacy_stage_list.dart';
 import 'widgets/member_timeline.dart';
+import 'widgets/stage_sheet_view.dart';
 import 'widgets/task_card.dart';
 import 'widgets/task_detail.dart';
 import 'widgets/task_results_list.dart';
@@ -570,13 +571,23 @@ class _EventTasksScreenState extends State<EventTasksScreen>
           all: stageTasks,
         );
         return SheetContent(
-          header: Text(stage.title),
-          body: _resultsBody(
-            view,
-            board,
-            user,
-            rows,
-            emptyText: 'אין עדיין משימות בשלב זה',
+          header: StageSheetHeader(
+            stage: stage,
+            canManage: canManageTasks(user),
+            onEdit: () => editStage(stage, board.event, user),
+            onDelete: () => deleteStage(stage, stageTasks.length),
+          ),
+          body: StageSheetBody(
+            stage: stage,
+            rows: rows,
+            progress: taskProgress(stageTasks, _now),
+            missingOnly: missingOnly,
+            onSwitch: (missing) =>
+                _openSheet(StageView(stageId, missingOnly: missing)),
+            rowBuilder: (task) => _taskRow(task, view, user),
+            canManage: canManageTasks(user),
+            onAddTask: () => createTask(board.event, stage, user),
+            onCallPhone: callPhone,
           ),
         );
       case ResultsView(:final kind, :final query):
@@ -635,15 +646,20 @@ class _EventTasksScreenState extends State<EventTasksScreen>
         showEveryStage: false,
       ),
       emptyText: emptyText,
-      rowBuilder: (task) => TaskRow(
-        task: task,
-        now: _now,
-        viewerId: user.id,
-        canTick: canUpdateTaskProgress(task, user),
-        onSetComplete: (isComplete) => setComplete(task, isComplete),
-        onOpen: () => _openSheet(TaskView(task.id, back: view)),
-        onCallPhone: callPhone,
-      ),
+      rowBuilder: (task) => _taskRow(task, view, user),
+    );
+  }
+
+  /// A task in one of the sheet's lists; it opens over [from].
+  Widget _taskRow(TaskItem task, SheetView from, TeamMember user) {
+    return TaskRow(
+      task: task,
+      now: _now,
+      viewerId: user.id,
+      canTick: canUpdateTaskProgress(task, user),
+      onSetComplete: (isComplete) => setComplete(task, isComplete),
+      onOpen: () => _openSheet(TaskView(task.id, back: from)),
+      onCallPhone: callPhone,
     );
   }
 

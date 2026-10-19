@@ -9,6 +9,7 @@ import 'package:shavtzak/core/services/task_import_files.dart';
 import 'package:shavtzak/core/theme/app_theme.dart';
 import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
 import 'package:shavtzak/core/utils/task_schedule.dart';
+import 'package:shavtzak/core/utils/task_utils.dart' show canManageTasks;
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
@@ -348,6 +349,148 @@ void main() {
       expect(inSheet(find.text('2 משימות שלך באיחור')), findsOneWidget);
       expect(inSheet(find.byKey(const Key('task-row-setup-late'))), findsOneWidget);
       expect(inSheet(find.byKey(const Key('task-row-lunch-late'))), findsOneWidget);
+    });
+  });
+
+  group('stage sheet', () {
+    Future<EventTasksHarness> pumpSample(
+      WidgetTester tester, {
+      required TeamMember user,
+    }) async {
+      final harness = await pumpEventTasks(
+        tester,
+        user: user,
+        size: tallPhoneSize,
+        clock: () => sampleNow,
+        board: sampleTaskBoard(),
+      );
+      repository = harness.repository;
+      if (canManageTasks(user)) await openTab(tester, 'המשימות שלי');
+      return harness;
+    }
+
+    Future<void> openWorkshops(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('my-stage-ws')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('tapping a stage in my timeline opens it in the sheet',
+        (tester) async {
+      await pumpSample(tester, user: sDana);
+      await openWorkshops(tester);
+
+      expect(inSheet(find.byKey(const Key('stage-sheet-ws'))), findsOneWidget);
+      expect(inSheet(find.text('הכל (5)')), findsOneWidget);
+    });
+
+    testWidgets('a row ticked in חסרות stays, struck through, until the view changes',
+        (tester) async {
+      await pumpSample(tester, user: sDana);
+      await openWorkshops(tester);
+      await tester.tap(inSheet(find.text('חסרות (4)')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(inSheet(find.byKey(const Key('task-row-tick-ws-later'))));
+      await tester.pump();
+
+      expect(repository.calls, ['complete:ws-later:true']);
+      final row = inSheet(find.byKey(const Key('task-row-ws-later')));
+      expect(row, findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.descendant(
+              of: row,
+              matching: find.text('חלוקת ערכות למשתתפים'),
+            ))
+            .style
+            ?.decoration,
+        TextDecoration.lineThrough,
+      );
+      expect(inSheet(find.text('חסרות (3)')), findsOneWidget);
+
+      await tester.tap(inSheet(find.text('הכל (5)')));
+      await tester.pumpAndSettle();
+      await tester.tap(inSheet(find.text('חסרות (3)')));
+      await tester.pumpAndSettle();
+      expect(inSheet(find.byKey(const Key('task-row-ws-later'))), findsNothing);
+    });
+
+    testWidgets('a manager edits and deletes the stage from the sheet',
+        (tester) async {
+      await pumpSample(tester, user: admin);
+      await openWorkshops(tester);
+
+      await tester.tap(find.byKey(const Key('stage-edit-ws')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('stage-form-title')),
+        'סדנאות בוקר',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('stage-form-save')));
+      await tester.pumpAndSettle();
+      expect(repository.calls, ['updateStage:ws']);
+
+      await tester.tap(find.byKey(const Key('stage-delete-ws')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('יימחקו גם 5 המשימות שבו'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('stage-delete-confirm')));
+      await tester.pumpAndSettle();
+      expect(repository.calls, ['updateStage:ws', 'deleteStage:ws']);
+    });
+
+    testWidgets('a member gets no stage editing in the sheet', (tester) async {
+      await pumpSample(tester, user: sDana);
+      await openWorkshops(tester);
+
+      expect(find.byKey(const Key('stage-edit-ws')), findsNothing);
+      expect(find.byKey(const Key('stage-delete-ws')), findsNothing);
+      expect(find.byKey(const Key('stage-add-task-ws')), findsNothing);
+    });
+
+    testWidgets('a manager adds a task from the stage', (tester) async {
+      await pumpSample(tester, user: admin);
+      await openWorkshops(tester);
+
+      await tester.tap(find.byKey(const Key('stage-add-task-ws')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('task-form-title')),
+        'הכנת שלטי כיוון',
+      );
+      await tester.tap(find.byKey(const Key('task-form-assignees')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-form-assignee-m2')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['insert:הכנת שלטי כיוון']);
+    });
+
+    testWidgets('the sheet closes when its stage is deleted', (tester) async {
+      final harness = await pumpSample(tester, user: sDana);
+      await openWorkshops(tester);
+
+      await harness.deliver(
+        tester,
+        TaskBoard(
+          tasks: [
+            for (final task in sampleTasks)
+              if (task.stageId != 'ws') task,
+          ],
+          events: [sampleEvent],
+          stages: [
+            for (final stage in sampleStages)
+              if (stage.id != 'ws') stage,
+          ],
+          members: [sDana, sYoav],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('task-sheet')), findsNothing);
     });
   });
 
