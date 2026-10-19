@@ -25,6 +25,7 @@ void main() {
     bool Function(TaskItem task)? canTick,
     List<String> Function(TaskItem task)? removedAssigneeIds,
     Size size = const Size(1280, 900),
+    String? viewerId,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -42,7 +43,7 @@ void main() {
             child: StageTaskTable(
               tasks: tasks,
               now: sampleNow,
-              viewerId: sDana.id,
+              viewerId: viewerId ?? sDana.id,
               canTick: canTick ?? (_) => true,
               canManage: canManage,
               removedAssigneeIds: removedAssigneeIds ?? (_) => const [],
@@ -234,11 +235,17 @@ void main() {
   });
 
   testWidgets('a call button calls the assignee\'s phone', (tester) async {
-    await pumpTable(tester, [tWsSoon]);
+    await pumpTable(tester, [tWsSoon], viewerId: 'someone-else');
 
     expect(find.byKey(const Key('table-call-ws-soon-m2')), findsNothing);
     await tester.tap(find.byKey(const Key('table-call-ws-soon-m1')));
     expect(calls, ['0501234567']);
     expect(opens, isEmpty);
+  });
+
+  testWidgets('the viewer cannot call themselves', (tester) async {
+    await pumpTable(tester, [tWsSoon]);
+
+    expect(find.byKey(const Key('table-call-ws-soon-m1')), findsNothing);
   });
 }

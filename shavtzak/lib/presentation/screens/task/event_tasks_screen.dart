@@ -765,6 +765,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
           header: const Text('פרטי המשימה'),
           body: TaskDetail(
             task: task,
+            viewerId: user.id,
             now: _now,
             canManage: canManageTasks(user),
             canUpdateProgress: canUpdateTaskProgress(task, user),

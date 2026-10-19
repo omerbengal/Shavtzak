@@ -6,8 +6,8 @@ import '../task_style.dart';
 
 /// A task's assignees as chips, shared by the phone row and the wide table:
 /// the viewer's own filled in [TaskStyle.mine], a removed one struck through
-/// in red with a note; the chip of whoever has a phone shows a phone and
-/// calls when tapped.
+/// in red with a note; the chip of anyone else with a phone shows a phone
+/// and calls when tapped.
 class AssigneeChips extends StatelessWidget {
   const AssigneeChips({
     super.key,
@@ -57,7 +57,8 @@ class AssigneeChips extends StatelessWidget {
 
   Widget _buildAssignee(String memberId, TeamMember? member, bool isRemoved) {
     final isMine = memberId == viewerId && !isRemoved;
-    final phone = member?.phoneNumber ?? '';
+    // Nobody calls themselves.
+    final phone = isMine ? '' : member?.phoneNumber ?? '';
     final textColor = isMine
         ? Colors.white
         : (isRemoved ? TaskStyle.lateDark : TaskStyle.neutralText);
@@ -80,11 +81,7 @@ class AssigneeChips extends StatelessWidget {
           ),
           if (phone.isNotEmpty) ...[
             const SizedBox(width: 4),
-            Icon(
-              Icons.phone,
-              size: 14,
-              color: isMine ? Colors.white : TaskStyle.mine,
-            ),
+            const Icon(Icons.phone, size: 14, color: TaskStyle.mine),
           ],
         ],
       ),

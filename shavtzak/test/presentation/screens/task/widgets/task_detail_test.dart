@@ -32,6 +32,7 @@ void main() {
           body: SingleChildScrollView(
             child: TaskDetail(
               task: task,
+              viewerId: 'viewer',
               now: now,
               canManage: canManage,
               canUpdateProgress: canUpdateProgress,
@@ -169,6 +170,23 @@ void main() {
       await tester.tap(find.byKey(const Key('task-detail-call-m1')));
       expect(calls.phoneCalls, ['0501234567']);
       expect(find.byKey(const Key('task-detail-call-m2')), findsNothing);
+    });
+
+    testWidgets('the viewer gets no call button on their own name',
+        (tester) async {
+      await pumpDetail(
+        tester,
+        buildTask(
+          assigneeIds: const ['viewer', 'm1'],
+          assignees: [
+            buildMember(id: 'viewer', name: 'אני', phoneNumber: '0509999999'),
+            buildMember(id: 'm1', name: 'דנה', phoneNumber: '0501234567'),
+          ],
+        ),
+      );
+
+      expect(find.byKey(const Key('task-detail-call-viewer')), findsNothing);
+      expect(find.byKey(const Key('task-detail-call-m1')), findsOneWidget);
     });
 
     testWidgets('a task with no resolvable assignee says so', (tester) async {

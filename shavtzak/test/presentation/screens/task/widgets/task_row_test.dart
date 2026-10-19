@@ -178,7 +178,11 @@ void main() {
 
   testWidgets('an assignee with a phone gets a call button, one without does not',
       (tester) async {
-    await pumpRow(tester, task(assigneeIds: const ['m1', 'm2']));
+    await pumpRow(
+      tester,
+      task(assigneeIds: const ['m1', 'm2']),
+      viewerId: 'someone-else',
+    );
 
     await tester.tap(find.byKey(const Key('task-row-call-t1-m1')));
     expect(calls, ['0501234567']);

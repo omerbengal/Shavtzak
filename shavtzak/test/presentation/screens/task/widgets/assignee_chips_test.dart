@@ -52,6 +52,33 @@ void main() {
     expect(called, ['0521234567']);
   });
 
+  testWidgets("the viewer's own chip shows no phone and does not call",
+      (tester) async {
+    final called = <String>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          body: AssigneeChips(
+            task: buildTask(assigneeIds: const ['oren'], assignees: [oren]),
+            viewerId: 'oren',
+            removedAssigneeIds: const [],
+            onCallPhone: called.add,
+            keyPrefix: 'task-row',
+          ),
+        ),
+      ),
+    ));
+
+    expect(
+      find.descendant(of: chip('oren'), matching: find.byIcon(Icons.phone)),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('task-row-call-t1-oren')), findsNothing);
+    await tester.tap(find.text('אורן לוי'));
+    expect(called, isEmpty);
+  });
+
   testWidgets('a chip without a phone lines up with one that has a phone',
       (tester) async {
     await pumpChips(tester);

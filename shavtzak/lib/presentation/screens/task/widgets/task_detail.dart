@@ -20,6 +20,7 @@ class TaskDetail extends StatelessWidget {
   const TaskDetail({
     super.key,
     required this.task,
+    required this.viewerId,
     required this.now,
     required this.canManage,
     required this.canUpdateProgress,
@@ -32,6 +33,9 @@ class TaskDetail extends StatelessWidget {
   });
 
   final TaskItem task;
+
+  /// Who is looking; they get no call button on their own name.
+  final String viewerId;
 
   /// The current time, injected so the colour rules can be tested.
   final DateTime now;
@@ -208,7 +212,7 @@ class TaskDetail extends StatelessWidget {
   }
 
   Widget _buildAssignee(ThemeData theme, TeamMember member) {
-    final phone = member.phoneNumber ?? '';
+    final phone = member.id == viewerId ? '' : member.phoneNumber ?? '';
     return Row(
       children: [
         const Icon(Icons.person_outline, size: 18, color: TaskStyle.neutralText),
