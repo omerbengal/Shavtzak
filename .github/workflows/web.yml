@@ -53,7 +53,9 @@ jobs:
         run: |
           set -euo pipefail
           node tool/generate_service_worker.mjs build/web
-          ! grep -q '__PRECACHE_MANIFEST__' build/web/sw.js
+          if grep -q '__PRECACHE_MANIFEST__' build/web/sw.js; then
+            echo "sw.js was not pinned"; exit 1
+          fi
           grep -q "$(sha256sum build/web/main.dart.js | cut -d' ' -f1)" build/web/sw.js
 
       # Regression guard. An inert worker strands users on an old build with no
