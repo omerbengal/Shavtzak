@@ -571,7 +571,7 @@ void main() {
     expect(find.byKey(const Key('my-task-update-ws-soon')), findsNothing);
   });
 
-  testWidgets('a compact task with subtasks opens them in place first',
+  testWidgets('a compact task opens at a tap; its arrow lists the subtasks',
       (tester) async {
     await pumpTimeline(
       tester,
@@ -581,7 +581,12 @@ void main() {
 
     await tester.tap(find.text('סידור שולחנות באולם'));
     await tester.pump();
+    expect(openedTasks, ['dinner-hall']);
+    expect(find.byKey(const Key('my-task-subtasks-dinner-hall')), findsNothing);
+    openedTasks.clear();
 
+    await tester.tap(find.byKey(const Key('my-task-fold-dinner-hall')));
+    await tester.pump();
     expect(openedTasks, isEmpty);
     expect(
       inside('my-task-dinner-hall',
@@ -634,14 +639,15 @@ void main() {
     expect(find.byKey(const Key('my-task-subtasks-dinner-hall')), findsNothing);
 
     // A full row starts open; the arrow folds it, and a tap on the folded
-    // row opens it again rather than the task.
+    // row opens the task, not the subtasks.
     await tester.tap(find.byKey(const Key('my-task-fold-ws-soon')));
     await tester.pump();
     expect(find.byKey(const Key('my-task-subtasks-ws-soon')), findsNothing);
+    expect(openedTasks, isEmpty);
     await tester.tap(find.text('הכנת חדר סדנה 2'));
     await tester.pump();
-    expect(find.byKey(const Key('my-task-subtasks-ws-soon')), findsOneWidget);
-    expect(openedTasks, isEmpty);
+    expect(find.byKey(const Key('my-task-subtasks-ws-soon')), findsNothing);
+    expect(openedTasks, ['ws-soon']);
   });
 
   testWidgets('a full row already lists its subtasks, so a tap opens the task',

@@ -54,8 +54,8 @@ class TaskRow extends StatelessWidget {
   /// this, so it survives new data and coming back from the task.
   final bool isExpanded;
 
-  /// Asks the list to list this row's subtasks. When given, the first tap on
-  /// a task with subtasks does this instead of opening the task.
+  /// Asks the list to list this row's subtasks, from the row's arrow. When
+  /// null the row has no arrow.
   final VoidCallback? onExpand;
 
   /// Folds the listed subtasks away, from the row's arrow.
@@ -76,11 +76,8 @@ class TaskRow extends StatelessWidget {
     final toggle = onToggleSubtask;
     return InkWell(
       key: Key('task-row-${task.id}'),
-      // A task with subtasks first lists them in place; once they show, a
-      // tap opens the task.
-      onTap: task.hasSubtasks && !isExpanded && expand != null
-          ? expand
-          : onOpen,
+      // A tap opens the task; only the arrow opens and folds subtasks.
+      onTap: onOpen,
       child: Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(4, 6, 12, 8),
         child: Row(

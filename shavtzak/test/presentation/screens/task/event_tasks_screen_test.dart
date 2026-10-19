@@ -450,7 +450,7 @@ void main() {
       final subtasks =
           inSheet(find.byKey(const Key('task-row-subtasks-setup-steps')));
       await tester.tap(
-          find.descendant(of: row, matching: find.text('תליית שלטים')));
+          inSheet(find.byKey(const Key('task-row-fold-setup-steps'))));
       await tester.pumpAndSettle();
       expect(subtasks, findsOneWidget);
       expect(inSheet(find.byKey(const Key('task-detail-setup-steps'))),

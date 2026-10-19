@@ -349,15 +349,19 @@ void main() {
       expect(find.byKey(const Key('task-row-fold-t1')), findsNothing);
     });
 
-    testWidgets('the first tap lists the subtasks, tickable; the next opens',
+    testWidgets('a tap on the task opens it; only the arrow lists the subtasks',
         (tester) async {
       await pumpExpandable(tester, steps);
       expect(find.byKey(const Key('task-row-subtasks-t1')), findsNothing);
 
       await tester.tap(find.text('הכנת חדר סדנה 2'));
       await tester.pump();
+      expect(opens, 1);
+      expect(find.byKey(const Key('task-row-subtasks-t1')), findsNothing);
 
-      expect(opens, 0);
+      await tester.tap(find.byKey(const Key('task-row-fold-t1')));
+      await tester.pump();
+      expect(opens, 1);
       expect(
         find.descendant(
           of: find.byKey(const Key('task-row-t1')),
@@ -373,10 +377,10 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('task-row-subtask-t1-b')));
       expect(subtaskTicks, ['b:true']);
-      expect(opens, 0);
+      expect(opens, 1);
 
       await tester.tap(find.text('הכנת חדר סדנה 2'));
-      expect(opens, 1);
+      expect(opens, 2);
     });
 
     testWidgets('the subtasks list under the update line', (tester) async {
@@ -384,7 +388,7 @@ void main() {
         tester,
         steps.copyWith(assigneeUpdate: 'כמעט מוכן', assigneeUpdateByName: 'דנה'),
       );
-      await tester.tap(find.text('הכנת חדר סדנה 2'));
+      await tester.tap(find.byKey(const Key('task-row-fold-t1')));
       await tester.pump();
 
       expect(
@@ -397,7 +401,7 @@ void main() {
     testWidgets('someone who may not tick sees the boxes disabled',
         (tester) async {
       await pumpExpandable(tester, steps, canTick: false);
-      await tester.tap(find.text('הכנת חדר סדנה 2'));
+      await tester.tap(find.byKey(const Key('task-row-fold-t1')));
       await tester.pump();
 
       expect(

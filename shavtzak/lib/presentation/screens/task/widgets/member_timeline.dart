@@ -631,11 +631,8 @@ class _TaskLine extends StatelessWidget {
       key: Key('my-task-${task.id}'),
       color: TaskStyle.stageCard,
       child: InkWell(
-        // A task with subtasks first lists them in place; once they show, a
-        // tap opens the task.
-        onTap: task.hasSubtasks && !isExpanded
-            ? () => onSetExpanded(true)
-            : onOpen,
+        // A tap opens the task; only the arrow opens and folds subtasks.
+        onTap: onOpen,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
