@@ -21,6 +21,10 @@ abstract final class TaskStyle {
   /// The viewer's own things: their assignee chip, their count on a stage.
   static const Color mine = Color(0xFF1565C0);
 
+  /// The pencil and the bin, as they have always been.
+  static const Color edit = Colors.blue;
+  static const Color delete = Colors.red;
+
   static const Color rest = Color(0xFFE0E0E0);
   static const Color chip = Color(0xFFEEEEEE);
   static const Color neutralText = Color(0xFF616161);
