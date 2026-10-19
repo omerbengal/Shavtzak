@@ -67,7 +67,7 @@ abstract final class TaskStyle {
   static const double sheetHalfSize = 0.5;
 
   /// How long the sheet takes to slide up as it opens.
-  static const Duration sheetSlideDuration = Duration(milliseconds: 220);
+  static const Duration sheetSlideDuration = Duration(milliseconds: 350);
   static const double sheetCloseBelow = 0.12;
 
   // Layout.
