@@ -43,6 +43,28 @@ void main() {
     expect(hold.rows(missing, matching: [a], all: [a]), [a]);
   });
 
+  test('an opened row stays open while the view stays the same', () {
+    final hold = RowHold();
+    hold.rows(missing, matching: [a, b], all: [a, b]);
+    hold.expand('a');
+
+    hold.rows(missing, matching: [a], all: [a, bDone]);
+    expect(hold.isExpanded('a'), isTrue);
+    expect(hold.isExpanded('b'), isFalse);
+  });
+
+  test('another view, or clear, closes the opened rows', () {
+    final hold = RowHold();
+    hold.rows(missing, matching: [a, b], all: [a, b]);
+    hold.expand('a');
+    hold.rows(const StageView('ws'), matching: [a], all: [a, b]);
+    expect(hold.isExpanded('a'), isFalse);
+
+    hold.expand('a');
+    hold.clear();
+    expect(hold.isExpanded('a'), isFalse);
+  });
+
   test('sheet views compare by what they show', () {
     expect(const StageView('ws'), const StageView('ws'));
     expect(const StageView('ws'), isNot(missing));

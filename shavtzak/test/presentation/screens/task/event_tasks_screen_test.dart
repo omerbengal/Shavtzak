@@ -419,6 +419,61 @@ void main() {
       expect(inSheet(find.byKey(const Key('task-row-setup-late'))), findsOneWidget);
       expect(inSheet(find.byKey(const Key('task-row-lunch-late'))), findsOneWidget);
     });
+
+    testWidgets(
+        'in my late list a task with subtasks opens them in place first, '
+        'and stays open after the task and back', (tester) async {
+      final setupSteps = buildTask(
+        id: 'setup-steps',
+        title: 'תליית שלטים',
+        stage: stSetup,
+        assemblyTime: '08:30',
+        event: sampleEvent,
+        assigneeIds: const ['m1'],
+        assignees: [sDana],
+        subtasks: const [
+          Subtask(id: 'a', title: 'שלט כניסה'),
+          Subtask(id: 'b', title: 'שלט לובי'),
+        ],
+      );
+      final harness = await pumpEventTasks(
+        tester,
+        user: sDana,
+        size: tallPhoneSize,
+        clock: () => sampleNow,
+        board: sampleTaskBoard(tasks: [...sampleTasks, setupSteps]),
+      );
+      await tester.tap(find.byKey(const Key('my-late-banner')));
+      await tester.pumpAndSettle();
+
+      final row = inSheet(find.byKey(const Key('task-row-setup-steps')));
+      final subtasks =
+          inSheet(find.byKey(const Key('task-row-subtasks-setup-steps')));
+      await tester.tap(
+          find.descendant(of: row, matching: find.text('תליית שלטים')));
+      await tester.pumpAndSettle();
+      expect(subtasks, findsOneWidget);
+      expect(inSheet(find.byKey(const Key('task-detail-setup-steps'))),
+          findsNothing);
+
+      final tick = find.byKey(const Key('task-row-subtask-setup-steps-b'));
+      await tester.tap(tick);
+      await tester.pump();
+      expect(harness.repository.calls, ['subtask:setup-steps:b:true']);
+      expect(tester.widget<Checkbox>(tick).value, isTrue);
+      expect(subtasks, findsOneWidget);
+
+      await tester.tap(
+          find.descendant(of: row, matching: find.text('תליית שלטים')));
+      await tester.pumpAndSettle();
+      expect(inSheet(find.byKey(const Key('task-detail-setup-steps'))),
+          findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('task-sheet-back')));
+      await tester.pumpAndSettle();
+      expect(inSheet(find.text('2 משימות שלך באיחור')), findsOneWidget);
+      expect(subtasks, findsOneWidget);
+    });
   });
 
   group('stage sheet', () {

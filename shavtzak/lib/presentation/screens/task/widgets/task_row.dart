@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../../core/utils/task_schedule.dart';
 import '../../../../core/utils/task_utils.dart';
+import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
 import 'assignee_chips.dart';
-
-final DateFormat _timeFormat = DateFormat('HH:mm');
-final DateFormat _dayTimeFormat = DateFormat('dd/MM HH:mm');
+import 'subtask_ticks.dart';
 
 /// One task in a list: in the sheet, under a stage or in filter and search
 /// results.
@@ -27,6 +25,9 @@ class TaskRow extends StatelessWidget {
     required this.onOpen,
     required this.onCallPhone,
     this.removedAssigneeIds = const [],
+    this.isExpanded = false,
+    this.onExpand,
+    this.onToggleSubtask,
   });
 
   final TaskItem task;
@@ -48,15 +49,34 @@ class TaskRow extends StatelessWidget {
   /// struck through in red; one without a member record still gets a chip.
   final List<String> removedAssigneeIds;
 
+  /// Whether the row lists its subtasks. The list holding the row keeps
+  /// this, so it survives new data and coming back from the task.
+  final bool isExpanded;
+
+  /// Asks the list to list this row's subtasks. When given, the first tap on
+  /// a task with subtasks does this instead of opening the task.
+  final VoidCallback? onExpand;
+
+  /// Ticks a subtask from the listed subtasks; null leaves them disabled.
+  final void Function(Subtask subtask, bool isDone)? onToggleSubtask;
+
+  bool get _showsSubtasks => isExpanded && task.hasSubtasks;
+
   @override
   Widget build(BuildContext context) {
     final isLate = taskDueStatus(task, now) == TaskDueStatus.overdue;
     final hasChips =
         AssigneeChips.shownIds(task, removedAssigneeIds).isNotEmpty;
-    final update = _updateLine();
+    final update = assigneeUpdateLine(task, now);
+    final expand = onExpand;
+    final toggle = onToggleSubtask;
     return InkWell(
       key: Key('task-row-${task.id}'),
-      onTap: onOpen,
+      // A task with subtasks first lists them in place; once they show, a
+      // tap opens the task.
+      onTap: task.hasSubtasks && !isExpanded && expand != null
+          ? expand
+          : onOpen,
       child: Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(4, 6, 12, 8),
         child: Row(
@@ -82,7 +102,7 @@ class TaskRow extends StatelessWidget {
                     ),
                   ],
                   if (update != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: TaskStyle.updateLineGap),
                     Text(
                       update,
                       key: Key('task-row-update-${task.id}'),
@@ -92,6 +112,15 @@ class TaskRow extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (_showsSubtasks)
+                    SubtaskTicks(
+                      task: task,
+                      canTick: canTick && toggle != null,
+                      onToggle: (subtask, isDone) =>
+                          toggle?.call(subtask, isDone),
+                      listKeyPrefix: 'task-row',
+                      tickKeyPrefix: 'task-row-subtask',
+                    ),
                 ],
               ),
             ),
@@ -188,23 +217,5 @@ class TaskRow extends StatelessWidget {
         fontWeight: isLate || isSoon ? FontWeight.w600 : FontWeight.normal,
       ),
     );
-  }
-
-  /// The note, then its author and time ("מחכים למקרן · נועה לוי, 14:22"):
-  /// the time alone on today, with the date on any other day. Null when the
-  /// task has no update.
-  String? _updateLine() {
-    final note = task.assigneeUpdate;
-    if (note == null || note.isEmpty) return null;
-    final at = task.assigneeUpdateAt;
-    final isToday = at != null &&
-        at.year == now.year &&
-        at.month == now.month &&
-        at.day == now.day;
-    final byline = [
-      if (task.assigneeUpdateByName != null) task.assigneeUpdateByName!,
-      if (at != null) ltr((isToday ? _timeFormat : _dayTimeFormat).format(at)),
-    ].join(', ');
-    return byline.isEmpty ? note : '$note · $byline';
   }
 }

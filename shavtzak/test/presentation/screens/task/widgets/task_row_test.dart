@@ -273,4 +273,122 @@ void main() {
     // The test font draws a 15 px letter 15 px tall: three lines or more.
     expect(tester.getSize(find.text(title)).height, greaterThanOrEqualTo(45));
   });
+
+  group('subtasks opening in place', () {
+    late List<String> subtaskTicks;
+
+    /// A row whose expansion is kept by its list, as the screen does.
+    Future<void> pumpExpandable(
+      WidgetTester tester,
+      TaskItem initial, {
+      bool canTick = true,
+    }) async {
+      completions = [];
+      calls = [];
+      opens = 0;
+      subtaskTicks = [];
+      var expanded = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => ListView(
+                children: [
+                  TaskRow(
+                    task: initial,
+                    now: sampleNow,
+                    viewerId: 'm1',
+                    canTick: canTick,
+                    onSetComplete: completions.add,
+                    onOpen: () => opens++,
+                    onCallPhone: calls.add,
+                    isExpanded: expanded,
+                    onExpand: () => setState(() => expanded = true),
+                    onToggleSubtask: (subtask, isDone) =>
+                        subtaskTicks.add('${subtask.id}:$isDone'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ));
+    }
+
+    final steps = task(
+      title: 'הכנת חדר סדנה 2',
+      subtasks: const [
+        Subtask(id: 'a', title: 'חיבור מקרן', isDone: true),
+        Subtask(id: 'b', title: 'סידור כיסאות'),
+      ],
+    );
+
+    testWidgets('the first tap lists the subtasks, tickable; the next opens',
+        (tester) async {
+      await pumpExpandable(tester, steps);
+      expect(find.byKey(const Key('task-row-subtasks-t1')), findsNothing);
+
+      await tester.tap(find.text('הכנת חדר סדנה 2'));
+      await tester.pump();
+
+      expect(opens, 0);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('task-row-t1')),
+          matching: find.byKey(const Key('task-row-subtasks-t1')),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Checkbox>(find.byKey(const Key('task-row-subtask-t1-a')))
+            .value,
+        isTrue,
+      );
+      await tester.tap(find.byKey(const Key('task-row-subtask-t1-b')));
+      expect(subtaskTicks, ['b:true']);
+      expect(opens, 0);
+
+      await tester.tap(find.text('הכנת חדר סדנה 2'));
+      expect(opens, 1);
+    });
+
+    testWidgets('the subtasks list under the update line', (tester) async {
+      await pumpExpandable(
+        tester,
+        steps.copyWith(assigneeUpdate: 'כמעט מוכן', assigneeUpdateByName: 'דנה'),
+      );
+      await tester.tap(find.text('הכנת חדר סדנה 2'));
+      await tester.pump();
+
+      expect(
+        tester.getTopLeft(find.byKey(const Key('task-row-subtasks-t1'))).dy,
+        greaterThan(
+            tester.getTopLeft(find.byKey(const Key('task-row-update-t1'))).dy),
+      );
+    });
+
+    testWidgets('someone who may not tick sees the boxes disabled',
+        (tester) async {
+      await pumpExpandable(tester, steps, canTick: false);
+      await tester.tap(find.text('הכנת חדר סדנה 2'));
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<Checkbox>(find.byKey(const Key('task-row-subtask-t1-b')))
+            .onChanged,
+        isNull,
+      );
+    });
+
+    testWidgets('a task without subtasks opens at the first tap',
+        (tester) async {
+      await pumpExpandable(tester, task());
+
+      await tester.tap(find.text('חלוקת ערכות למשתתפים'));
+      expect(opens, 1);
+    });
+  });
 }

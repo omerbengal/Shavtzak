@@ -1044,8 +1044,10 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     );
   }
 
-  /// A task in one of the sheet's lists; it opens over [from]. A manager
-  /// sees an assignee taken off the event struck through on any row.
+  /// A task in one of the sheet's lists; it opens over [from]. One with
+  /// subtasks first lists them in place, kept open by [_rowHold] while the
+  /// list stays. A manager sees an assignee taken off the event struck
+  /// through on any row.
   Widget _taskRow(TaskItem task, SheetView from, TeamMember user) {
     final assigned = _assignedIds;
     return TaskRow(
@@ -1059,6 +1061,13 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       removedAssigneeIds: assigned == null || !canManageTasks(user)
           ? const []
           : removedAssigneeIds(task, assigned),
+      isExpanded: _rowHold.isExpanded(task.id),
+      onExpand: () {
+        Logger.action('expand:taskRowSubtasks', {'view': _viewName(from)});
+        setState(() => _rowHold.expand(task.id));
+      },
+      onToggleSubtask: (subtask, isDone) =>
+          toggleSubtask(task, subtask, isDone),
     );
   }
 
