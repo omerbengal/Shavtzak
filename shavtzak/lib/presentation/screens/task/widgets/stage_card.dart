@@ -1,28 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 
+import '../../../../core/utils/task_schedule.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/task_item.dart';
-
-final DateFormat _dayFormat = DateFormat('dd/MM');
-
-/// "21/10 · 08:00–10:45 · לובי": the stage's day, time and place, skipping
-/// whatever is missing.
-///
-/// A range is wrapped in a left-to-right isolate, so the start time stays on
-/// the left inside the Hebrew line.
-String stageSummaryLine(Stage stage) {
-  final start = stage.startTime;
-  final end = stage.endTime;
-  final time =
-      start == null ? null : (end == null ? start : '\u2066$start–$end\u2069');
-  return [
-    _dayFormat.format(stage.date),
-    if (time != null) time,
-    if (stage.hotelLocation.isNotEmpty) stage.hotelLocation,
-  ].join(' · ');
-}
 
 /// One stage on the event screen: a title line that folds the rest of the
 /// card away, and under it the stage's details (behind a fold of their own)

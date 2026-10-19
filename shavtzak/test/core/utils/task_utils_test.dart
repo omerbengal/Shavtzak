@@ -350,6 +350,20 @@ void main() {
     });
   });
 
+  group('minutesOfDay', () {
+    test('counts the minutes since midnight', () {
+      expect(minutesOfDay('09:30'), 570);
+      expect(minutesOfDay('00:00'), 0);
+    });
+
+    test('is null for anything but a complete 24-hour time', () {
+      for (final time in ['9:30', '24:00', '']) {
+        expect(minutesOfDay(time), isNull, reason: time);
+      }
+      expect(minutesOfDay(null), isNull);
+    });
+  });
+
   group('sortTasks', () {
     test('orders by due date, earliest first and undated last', () {
       final tasks = [

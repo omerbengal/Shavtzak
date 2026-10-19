@@ -113,6 +113,13 @@ final RegExp _hourMinute = RegExp(r'^(\d{2}):(\d{2})$');
 /// to save a non-empty time that fails this, rather than quietly dropping it.
 bool isValidDueTime(String time) => _parseHourMinute(time) != null;
 
+/// Minutes since midnight for a complete `HH:mm` time, or null for anything
+/// else, including no time at all.
+int? minutesOfDay(String? time) {
+  final parsed = _parseHourMinute(time ?? '');
+  return parsed == null ? null : parsed.hour * 60 + parsed.minute;
+}
+
 ({int hour, int minute})? _parseHourMinute(String time) {
   final match = _hourMinute.firstMatch(time.trim());
   if (match == null) return null;
