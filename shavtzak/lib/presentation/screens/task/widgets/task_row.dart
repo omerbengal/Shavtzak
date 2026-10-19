@@ -4,8 +4,8 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../../../../core/utils/task_schedule.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/task_item.dart';
-import '../../../../domain/entities/team_member.dart';
 import '../task_style.dart';
+import 'assignee_chips.dart';
 
 final DateFormat _timeFormat = DateFormat('HH:mm');
 final DateFormat _dayTimeFormat = DateFormat('dd/MM HH:mm');
@@ -51,7 +51,8 @@ class TaskRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isLate = taskDueStatus(task, now) == TaskDueStatus.overdue;
-    final chips = _buildAssignees();
+    final hasChips =
+        AssigneeChips.shownIds(task, removedAssigneeIds).isNotEmpty;
     final update = _updateLine();
     return InkWell(
       key: Key('task-row-${task.id}'),
@@ -70,9 +71,15 @@ class TaskRow extends StatelessWidget {
                   _buildTitleLine(isLate),
                   const SizedBox(height: 2),
                   _buildTime(isLate),
-                  if (chips.isNotEmpty) ...[
+                  if (hasChips) ...[
                     const SizedBox(height: 6),
-                    Wrap(spacing: 6, runSpacing: 4, children: chips),
+                    AssigneeChips(
+                      task: task,
+                      viewerId: viewerId,
+                      removedAssigneeIds: removedAssigneeIds,
+                      onCallPhone: onCallPhone,
+                      keyPrefix: 'task-row',
+                    ),
                   ],
                   if (update != null) ...[
                     const SizedBox(height: 4),
@@ -182,69 +189,6 @@ class TaskRow extends StatelessWidget {
         color: color,
         fontWeight: isLate || isSoon ? FontWeight.w600 : FontWeight.normal,
       ),
-    );
-  }
-
-  List<Widget> _buildAssignees() {
-    final membersById = {for (final member in task.assignees) member.id: member};
-    final removed = removedAssigneeIds.toSet();
-    return [
-      for (final memberId in task.assigneeIds)
-        if (membersById[memberId] != null || removed.contains(memberId))
-          _buildAssignee(memberId, membersById[memberId], removed.contains(memberId)),
-    ];
-  }
-
-  Widget _buildAssignee(String memberId, TeamMember? member, bool isRemoved) {
-    final isMine = memberId == viewerId && !isRemoved;
-    final phone = member?.phoneNumber ?? '';
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          key: Key('task-row-assignee-${task.id}-$memberId'),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: isMine
-                ? TaskStyle.mine
-                : (isRemoved ? TaskStyle.lateLight : TaskStyle.chip),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            member?.name ?? 'חבר צוות שנמחק',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: isMine
-                  ? Colors.white
-                  : (isRemoved ? TaskStyle.lateDark : TaskStyle.neutralText),
-              decoration: isRemoved
-                  ? TextDecoration.lineThrough
-                  : TextDecoration.none,
-            ),
-          ),
-        ),
-        if (phone.isNotEmpty)
-          IconButton(
-            key: Key('task-row-call-${task.id}-$memberId'),
-            tooltip: 'התקשרות',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-            iconSize: 18,
-            color: TaskStyle.mine,
-            icon: const Icon(Icons.phone),
-            onPressed: () => onCallPhone(phone),
-          ),
-        if (isRemoved) ...[
-          const SizedBox(width: 4),
-          const Text(
-            'כבר לא משובץ לאירוע',
-            style: TextStyle(
-              fontSize: TaskStyle.rowMetaSize,
-              color: TaskStyle.lateDark,
-            ),
-          ),
-        ],
-      ],
     );
   }
 

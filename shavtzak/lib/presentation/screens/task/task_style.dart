@@ -80,4 +80,20 @@ abstract final class TaskStyle {
   static const double hourLabelSize = 11;
   static const double nowLineWidth = 2;
   static const double nowPillHeight = 18;
+
+  // The wide layout's table and panel (Task 11).
+  static const double tableTickWidth = 40;
+  static const double tableTimeWidth = 76;
+  static const int tableTitleFlex = 5;
+  static const int tableAssigneesFlex = 4;
+  static const double tableSubtasksWidth = 72;
+
+  /// Room for the pencil and the bin, at the end of a manager's rows.
+  static const double tableActionsWidth = 96;
+  static const double tableHeaderSize = 12.5;
+  static const double tableCellGap = 8;
+  static const double tableRowVerticalPadding = 8;
+  static const double lateMarkSize = 12;
+  static const double panelPadding = 16;
+  static const double panelHintSize = 15;
 }
