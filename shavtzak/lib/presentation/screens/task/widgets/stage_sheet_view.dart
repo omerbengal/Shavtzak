@@ -89,8 +89,7 @@ class StageSheetBody extends StatelessWidget {
   final Stage stage;
   final List<TaskItem> rows;
 
-  /// On a wide screen the rows are one table, built by this; the details
-  /// then sit side by side above it.
+  /// On a wide screen the rows are one table, built by this.
   final Widget Function(List<TaskItem> rows)? tableBuilder;
 
   /// The whole stage, live: the switch's counts and the done count.
@@ -113,19 +112,10 @@ class StageSheetBody extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: tableBuilder == null
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _buildSections(theme),
-                )
-              : Wrap(
-                  spacing: 32,
-                  runSpacing: 8,
-                  children: [
-                    for (final section in _buildSections(theme))
-                      SizedBox(width: TaskStyle.wideDetailsWidth, child: section),
-                  ],
-                ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: _buildSections(theme),
+          ),
         ),
         if (progress.total == 0)
           Padding(
@@ -255,7 +245,8 @@ class StageSheetBody extends StatelessWidget {
     final label = contact.role.isEmpty
         ? contact.name
         : '${contact.name} · ${contact.role}';
-    return Row(
+    // Capped, so on a wide sheet the phone stays near the name.
+    final row = Row(
       key: Key('stage-contact-${contact.id}'),
       children: [
         const Icon(Icons.person_outline, size: 18, color: TaskStyle.neutralText),
@@ -273,6 +264,10 @@ class StageSheetBody extends StatelessWidget {
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
           ),
       ],
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: TaskStyle.readableWidth),
+      child: row,
     );
   }
 }

@@ -3,9 +3,8 @@ import 'package:equatable/equatable.dart';
 /// The lists the sheet can hold besides a single stage.
 enum ResultsKind { late, dueSoon, search, removedAssignees, myLate }
 
-/// What the low sheet (or, on a wide screen, the side panel) shows. One of
-/// these at a time; replacing it replaces the sheet's content without
-/// closing the sheet.
+/// What the low sheet shows. One of these at a time; replacing it replaces
+/// the sheet's content without closing the sheet.
 sealed class SheetView extends Equatable {
   const SheetView();
 }

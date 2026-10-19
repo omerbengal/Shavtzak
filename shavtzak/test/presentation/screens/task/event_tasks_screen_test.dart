@@ -1052,10 +1052,9 @@ void main() {
       );
     });
 
-    testWidgets('every day is in one scroll, a divider above each, no day chips',
+    testWidgets('every day is in one scroll, a divider above each',
         (tester) async {
       await pumpCalendar(tester);
-      expect(find.byType(CalendarDayChips), findsNothing);
       expect(find.byKey(const Key('calendar-day-divider-2026-10-20')),
           findsOneWidget);
       expect(find.byKey(const Key('calendar-day-divider-2026-10-21')),

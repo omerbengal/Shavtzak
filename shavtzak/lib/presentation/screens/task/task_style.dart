@@ -32,7 +32,6 @@ abstract final class TaskStyle {
 
   // The day calendar.
   static const double hourHeight = 56;
-  static const double wideHourHeight = 48;
   static const double hourLabelWidth = 40;
 
   /// How far each hour's line reaches into the label column.
@@ -70,9 +69,9 @@ abstract final class TaskStyle {
   // Layout.
   static const double wideBreakpoint = 1000;
   static const double readableWidth = 640;
-  static const int maxSideBySideDays = 3;
-  static const int calendarFlex = 5;
-  static const int panelFlex = 6;
+
+  /// The sheet on a wide window: centred, no wider than this.
+  static const double wideSheetWidth = 960;
 
   // Text and small parts.
   static const double filterFontSize = 13;
@@ -116,7 +115,7 @@ abstract final class TaskStyle {
   static const double nowLineWidth = 2;
   static const double nowPillHeight = 18;
 
-  // The wide layout's table and panel (Task 11).
+  // The wide sheet's table (Task 11).
   static const double tableTickWidth = 40;
   static const double tableTimeWidth = 76;
   static const int tableTitleFlex = 5;
@@ -129,8 +128,6 @@ abstract final class TaskStyle {
   static const double tableCellGap = 8;
   static const double tableRowVerticalPadding = 8;
   static const double lateMarkSize = 12;
-  static const double panelPadding = 16;
-  static const double panelHintSize = 15;
 
   // "המשימות שלי": a card per stage, its tinted header above white task rows.
   /// The header of a stage that is neither highlighted nor all done.
@@ -147,8 +144,4 @@ abstract final class TaskStyle {
 
   /// The line between the header and the tasks, and between the tasks.
   static const Color stageCardDivider = Color(0xFFEEEEEE);
-
-  // The wide layout's frame (Task 11).
-  /// Each of a stage's notes, requirements and contacts, side by side.
-  static const double wideDetailsWidth = 300;
 }

@@ -11,8 +11,7 @@ import 'update_note_box.dart';
 
 final DateFormat _dateTimeFormat = DateFormat('dd/MM/yyyy HH:mm');
 
-/// One task, in full: the sheet's (or the side panel's) view of a single
-/// task.
+/// One task, in full: the sheet's view of a single task.
 ///
 /// A task with subtasks shows a progress bar and lists them; one without
 /// carries its own completion box instead. Display-only: every action is

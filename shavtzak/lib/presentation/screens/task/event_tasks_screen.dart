@@ -33,7 +33,6 @@ import 'widgets/calendar_tab.dart';
 import 'widgets/day_calendar.dart';
 import 'widgets/event_summary.dart';
 import 'widgets/member_timeline.dart';
-import 'widgets/stage_panel.dart';
 import 'widgets/stage_sheet_view.dart';
 import 'widgets/stage_task_table.dart';
 import 'widgets/task_detail.dart';
@@ -94,10 +93,6 @@ class _EventTasksScreenState extends State<EventTasksScreen>
   /// Whose timeline "המשימות שלי" shows; null is the signed-in member. Only
   /// a debug build lets a manager pick someone else.
   String? _viewAsId;
-
-  /// The day "כל השלבים" shows: today during the event, the first day
-  /// otherwise, taken once; then wherever the member or the sheet moves it.
-  DateTime? _calendarDay;
 
   /// The stage the calendar scrolls to, and a counter asking it to.
   String? _focusStageId;
@@ -192,8 +187,6 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       final stage = _stageOf(view);
       if (stage != null &&
           (previous == null || _stageOf(previous)?.id != stage.id)) {
-        final date = stage.date;
-        _calendarDay = DateTime(date.year, date.month, date.day);
         _focusStageId = stage.id;
         _focusRequest++;
       }
@@ -311,21 +304,16 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                       stages: loaded!.stages,
                       tasks: loaded.tasks,
                     );
-              final isWideWindow = MediaQuery.sizeOf(context).width >=
-                  TaskStyle.wideBreakpoint;
               return Scaffold(
                 appBar: _buildAppBar(event),
                 body: TestEnvironmentIndicator(
                   child: _buildBody(state, board, user),
                 ),
-                // On a computer it sits over the calendar, on the start side;
-                // on a phone it steps aside while the sheet is open.
-                floatingActionButtonLocation:
-                    isWideWindow ? FloatingActionButtonLocation.startFloat : null,
+                // It steps aside while the sheet is open.
                 floatingActionButton: board != null &&
                         canManageTasks(user) &&
                         _tab == EventTasksTab.all &&
-                        (_sheet == null || isWideWindow)
+                        _sheet == null
                     ? FloatingActionButton.extended(
                         key: const Key('stage-add'),
                         onPressed: () => createStage(board.event, user),
@@ -445,17 +433,12 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       builder: (context, constraints) {
         // The layout follows the window's width, not the role.
         final isWide = constraints.maxWidth >= TaskStyle.wideBreakpoint;
-        if (isWide && _tab == EventTasksTab.all && board.stages.isNotEmpty) {
-          return Column(
-            children: [
-              _readableWidth(_buildTabs()),
-              Expanded(child: _buildAllWide(board, user, sheet, onBack)),
-            ],
-          );
-        }
+        // "כל השלבים" spreads its one timeline over a wide window; the sheet
+        // is capped and shows a stage's tasks as a table.
+        final wideAll = isWide && _tab == EventTasksTab.all;
         final phone = Column(
           children: [
-            _buildTabs(),
+            wideAll ? _readableWidth(_buildTabs()) : _buildTabs(),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, inner) {
@@ -470,11 +453,24 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                             : _buildAll(board, user, sheet, sheetRoom),
                       ),
                       if (sheet != null)
-                        TaskSheet(
-                          viewKey: sheet,
-                          content: _sheetContent(sheet, board, user),
-                          onClose: _closeSheet,
-                          onBack: onBack,
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: TaskStyle.wideSheetWidth,
+                            ),
+                            child: TaskSheet(
+                              viewKey: sheet,
+                              content: _sheetContent(
+                                sheet,
+                                board,
+                                user,
+                                wide: wideAll,
+                              ),
+                              onClose: _closeSheet,
+                              onBack: onBack,
+                            ),
+                          ),
                         ),
                     ],
                   );
@@ -484,7 +480,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
           ],
         );
         // "המשימות שלי" keeps its phone layout on a wide screen, centred.
-        return isWide ? _readableWidth(phone) : phone;
+        return isWide && !wideAll ? _readableWidth(phone) : phone;
       },
     );
   }
@@ -495,111 +491,6 @@ class _EventTasksScreenState extends State<EventTasksScreen>
           child: child,
         ),
       );
-
-  /// "כל השלבים" on a computer: the summary, filters and check in a toolbar,
-  /// the calendar on the right with the days side by side, and the sheet's
-  /// content as a panel on the left. Nothing fades: the panel covers no part
-  /// of the calendar.
-  Widget _buildAllWide(
-    EventTaskBoard board,
-    TeamMember user,
-    SheetView? sheet,
-    VoidCallback? onBack,
-  ) {
-    final days = calendarDays(board.event, board.stages);
-    final chosen = _calendarDay ??= initialCalendarDay(days, _now);
-    final day = days.contains(chosen) ? chosen : days.first;
-    final sideBySide = days.length <= TaskStyle.maxSideBySideDays;
-    final removed = _removedAssigneeTasks(board, user);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Column(
-          key: const Key('wide-toolbar'),
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: EventSummary(
-                    event: board.event,
-                    progress: taskProgress(board.tasks, _now),
-                  ),
-                ),
-                TaskFilterBar(
-                  lateCount: lateTasks(board.tasks, _now).length,
-                  soonCount: dueSoonTasks(board.tasks, _now).length,
-                  active: _activeFilter(sheet),
-                  onChanged: _onFilterChanged,
-                ),
-              ],
-            ),
-            if (removed.isNotEmpty)
-              AssigneeCheckLine(
-                count: removed.length,
-                wide: true,
-                onTap: () =>
-                    _openSheet(const ResultsView(ResultsKind.removedAssignees)),
-              ),
-            const Divider(height: 1),
-          ],
-        ),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                flex: TaskStyle.calendarFlex,
-                child: Column(
-                  children: [
-                    if (!sideBySide)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: CalendarDayChips(
-                          days: days,
-                          selectedDay: day,
-                          now: _now,
-                          onSelectDay: (next) {
-                            Logger.action('tap:calendarDay');
-                            setState(() => _calendarDay = next);
-                          },
-                        ),
-                      ),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        // Room at the bottom for the floating button.
-                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
-                        child: _buildCalendar(
-                          board,
-                          user,
-                          sheet,
-                          sideBySide ? days : [day],
-                          hourHeight: TaskStyle.wideHourHeight,
-                          fadeOthers: false,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(
-                flex: TaskStyle.panelFlex,
-                child: StagePanel(
-                  viewKey: sheet,
-                  content: sheet == null
-                      ? null
-                      : _sheetContent(sheet, board, user, wide: true),
-                  onClose: _closeSheet,
-                  onBack: onBack,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildTabs() {
     return Padding(
@@ -776,10 +667,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     EventTaskBoard board,
     TeamMember user,
     SheetView? sheet,
-    List<DateTime> days, {
-    double hourHeight = TaskStyle.hourHeight,
-    bool fadeOthers = true,
-  }) {
+    List<DateTime> days,
+  ) {
     final stagesByDay = <DateTime, List<Stage>>{};
     for (final stage in board.stages) {
       final date = stage.date;
@@ -798,9 +687,9 @@ class _EventTasksScreenState extends State<EventTasksScreen>
         for (final stage in currentStages(board.stages, _now)) stage.id,
       },
       now: _now,
-      hourHeight: hourHeight,
+      hourHeight: TaskStyle.hourHeight,
       outlinedStageIds: _outlinedStages(sheet, board, user),
-      fadeOthers: fadeOthers && sheet != null,
+      fadeOthers: sheet != null,
       focusStageId: _focusStageId,
       focusKey: _focusKey,
       onOpenStage: (stage, {required missingOnly}) =>
@@ -860,8 +749,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
 
   // ---- the sheet ----
 
-  /// What the sheet, or with [wide] the side panel, shows for [view]. On a
-  /// wide screen a stage's tasks are one table.
+  /// What the sheet shows for [view]. With [wide] a stage's tasks are one
+  /// table.
   SheetContent _sheetContent(
     SheetView view,
     EventTaskBoard board,
@@ -1018,7 +907,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     );
   }
 
-  /// A stage's tasks as the wide panel's table; a row opens over [from].
+  /// A stage's tasks as the wide sheet's table; a row opens over [from].
   Widget _stageTable(
     List<TaskItem> rows,
     SheetView from,

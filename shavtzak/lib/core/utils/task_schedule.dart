@@ -513,14 +513,6 @@ List<DateTime> calendarDays(Event event, List<Stage> eventStages) {
   return days;
 }
 
-/// The day the calendar opens on: today while it is one of [days], otherwise
-/// the first of them.
-DateTime initialCalendarDay(List<DateTime> days, DateTime now) {
-  final today = _dayOf(now);
-  if (days.isEmpty || days.contains(today)) return today;
-  return days.first;
-}
-
 // DateTime.weekday runs from Monday (1) to Sunday (7).
 const List<String> _weekdays = [
   'שני',

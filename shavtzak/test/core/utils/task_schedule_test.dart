@@ -403,16 +403,6 @@ void main() {
     );
   });
 
-  test('initialCalendarDay is today during the event, else the first day', () {
-    expect(
-      initialCalendarDay([sampleTue, sampleWed], DateTime(2026, 10, 21, 9)),
-      sampleWed,
-    );
-    expect(
-      initialCalendarDay([sampleTue, sampleWed], DateTime(2026, 10, 11)),
-      sampleTue,
-    );
-  });
 
   test('labels', () {
     expect(hebrewWeekday(DateTime(2026, 10, 18)), 'ראשון');

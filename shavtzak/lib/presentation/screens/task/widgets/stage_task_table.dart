@@ -6,8 +6,8 @@ import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
 import 'assignee_chips.dart';
 
-/// A stage's tasks as a table, for the wide layout's panel: what a phone
-/// [TaskRow] carries, laid out as columns.
+/// A stage's tasks as a table, for the wide sheet: what a phone [TaskRow]
+/// carries, laid out as columns.
 ///
 /// Display-only: ticking, opening, editing, deleting and calling are
 /// reported through the callbacks. The rows are drawn in the order given.

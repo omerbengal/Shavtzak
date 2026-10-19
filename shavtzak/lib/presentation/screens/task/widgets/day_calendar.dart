@@ -17,7 +17,7 @@ String _two(int hour) => hour.toString().padLeft(2, '0');
 
 DateTime _dayOf(DateTime date) => DateTime(date.year, date.month, date.day);
 
-/// "כל השלבים" for one day, or a few days side by side on wide screens: the
+/// "כל השלבים" for one day, or a few days side by side: the
 /// stages with no time in a row on top, then an hour grid with each timed
 /// stage placed by its start and end, and a red line at now on today.
 ///
@@ -38,8 +38,7 @@ class DayCalendar extends StatelessWidget {
     required this.onOpenStage,
   });
 
-  /// The days shown, first on the start side: one on phones, up to
-  /// [TaskStyle.maxSideBySideDays] side by side.
+  /// The days shown, first on the start side.
   final List<DateTime> days;
 
   /// Each day's stages, keyed by the day at local midnight.
