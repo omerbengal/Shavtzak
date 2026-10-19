@@ -229,6 +229,13 @@ void main() {
     expect(find.text('מחכים למקרן · נועה לוי, ${ltr('14:22')}'), findsOneWidget);
   });
 
+  testWidgets('a long update wraps rather than ending in "…"', (tester) async {
+    await pumpRow(tester, task(update: 'עדכון ארוך מאוד ' * 8, updateBy: 'דנה'));
+    final text = tester.widget<Text>(find.byKey(const Key('task-row-update-t1')));
+    expect(text.maxLines, isNull);
+    expect(text.overflow, isNot(TextOverflow.ellipsis));
+  });
+
   testWidgets('an update from another day carries its date', (tester) async {
     await pumpRow(
       tester,

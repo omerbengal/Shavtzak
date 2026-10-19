@@ -331,7 +331,7 @@ void main() {
     expect(inside('my-day-2026-10-21', find.text('רביעי 21/10')), findsOneWidget);
   });
 
-  testWidgets('one late task of mine is named in a one-line banner that opens it',
+  testWidgets('one late task of mine is named in a banner that opens it',
       (tester) async {
     await pumpTimeline(tester);
 
@@ -349,7 +349,9 @@ void main() {
     final text = tester.widget<Text>(
       inside('my-late-banner', find.textContaining('בדיקת מנות מיוחדות')),
     );
-    expect(text.maxLines, 1);
+    // A long name wraps rather than ending in "…".
+    expect(text.maxLines, isNull);
+    expect(text.overflow, isNot(TextOverflow.ellipsis));
 
     await tester.tap(find.byKey(const Key('my-late-banner')));
     expect(openedTasks, ['lunch-late']);

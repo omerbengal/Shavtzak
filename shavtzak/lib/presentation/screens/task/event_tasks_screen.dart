@@ -936,7 +936,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(title),
               if (subtitle != null)
                 Text(
                   subtitle,

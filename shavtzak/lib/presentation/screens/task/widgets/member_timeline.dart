@@ -786,8 +786,10 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-/// The viewer's late tasks, one line, until they are ticked.
-class _LateBanner extends StatelessWidget {
+/// The viewer's late tasks, until they are ticked. Its text wraps, and the
+/// banner keeps at least the height of the text it opened with, so ticking
+/// a task never shortens it and moves the list.
+class _LateBanner extends StatefulWidget {
   const _LateBanner({
     required this.late,
     required this.onOpenTask,
@@ -799,7 +801,18 @@ class _LateBanner extends StatelessWidget {
   final VoidCallback onOpenMyLate;
 
   @override
+  State<_LateBanner> createState() => _LateBannerState();
+}
+
+class _LateBannerState extends State<_LateBanner> {
+  /// The text the banner opened with: its height is kept.
+  String? _openingText;
+
+  @override
   Widget build(BuildContext context) {
+    final late = widget.late;
+    final onOpenTask = widget.onOpenTask;
+    final onOpenMyLate = widget.onOpenMyLate;
     // Once everything late is ticked the banner stays, green and the same
     // height, until the timeline opens again: the list must not move.
     final isClear = late.isEmpty;
@@ -818,8 +831,14 @@ class _LateBanner extends StatelessWidget {
       text = '${late.length} משימות שלך באיחור';
       onTap = onOpenMyLate;
     }
+    final opening = _openingText ??= text;
     final strong = isClear ? TaskStyle.done : TaskStyle.late;
     final dark = isClear ? TaskStyle.doneDark : TaskStyle.lateDark;
+    final textStyle = TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: dark,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Material(
@@ -857,15 +876,19 @@ class _LateBanner extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: dark,
-                    ),
+                  child: Stack(
+                    children: [
+                      // Holds the opening height without showing.
+                      if (opening != text)
+                        Visibility(
+                          visible: false,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: Text(opening, style: textStyle),
+                        ),
+                      Text(text, style: textStyle),
+                    ],
                   ),
                 ),
                 if (isClear)

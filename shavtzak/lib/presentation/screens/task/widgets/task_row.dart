@@ -86,8 +86,6 @@ class TaskRow extends StatelessWidget {
                     Text(
                       update,
                       key: Key('task-row-update-${task.id}'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: TaskStyle.rowMetaSize,
                         color: TaskStyle.neutralText,

@@ -165,8 +165,6 @@ class DayCalendar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
               dayLabel(day, now),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: TaskStyle.filterFontSize,
