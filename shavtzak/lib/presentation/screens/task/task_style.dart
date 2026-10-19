@@ -64,4 +64,20 @@ abstract final class TaskStyle {
   /// at [hourHeight].
   static int minBlockMinutes(double hourHeight) =>
       (minBlockHeight / hourHeight * 60).ceil();
+
+  // The calendar's blocks (Task 9).
+  static const double blockTitleSize = 13;
+  static const double blockMetaSize = 11.5;
+  static const double blockRadius = 6;
+  static const double blockGap = 2;
+  static const double allDayBlockWidth = 160;
+  static const double lateEdgeWidth = 3;
+  static const double mineIconSize = 14;
+
+  /// The most of a block's width the mine badge and the count may take, so
+  /// the title always keeps the rest.
+  static const double blockTrailingMaxShare = 0.6;
+  static const double hourLabelSize = 11;
+  static const double nowLineWidth = 2;
+  static const double nowPillHeight = 18;
 }
