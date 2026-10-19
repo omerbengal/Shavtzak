@@ -110,6 +110,22 @@ abstract final class TaskStyle {
   static const double panelPadding = 16;
   static const double panelHintSize = 15;
 
+  // "המשימות שלי": a card per stage, its tinted header above white task rows.
+  /// The header of a stage that is neither highlighted nor all done.
+  static const Color stageHeader = Color(0xFFF0F3F7);
+  static const Color stageCard = Colors.white;
+  static const Color stageCardBorder = rest;
+  static const double stageCardRadius = 12;
+  static const double stageCardBorderWidth = 1;
+
+  /// The highlighted stage's card border, drawn stronger.
+  static const double stageCardCurrentBorderWidth = 1.5;
+  static const double stageCardGap = 10;
+  static const double stageCardInset = 12;
+
+  /// The line between the header and the tasks, and between the tasks.
+  static const Color stageCardDivider = Color(0xFFEEEEEE);
+
   // The wide layout's frame (Task 11).
   /// Each of a stage's notes, requirements and contacts, side by side.
   static const double wideDetailsWidth = 300;

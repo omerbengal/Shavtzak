@@ -246,34 +246,65 @@ class _MemberTimelineState extends State<MemberTimeline> {
   Widget _buildStage(StageTasks group, _LiveMarks marks) {
     final stage = group.stage;
     final isOpening = stage.id == _anchorId;
+    final isHighlighted = stage.id == marks.highlightId;
+    // One card per stage: the stage is the tinted header, the viewer's
+    // tasks are the white rows under it.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _StageLine(
-            stage: stage,
-            myTasks: group.tasks,
-            isOpening: isOpening,
-            isHighlighted: stage.id == marks.highlightId,
-            kicker: marks.currentIds.contains(stage.id)
-                ? _Kicker.now
-                : (stage.id == marks.nextId ? _Kicker.next : null),
-            onOpen: () => widget.onOpenStage(stage),
-          ),
-          for (final task in group.tasks)
-            _TaskLine(
-              task: task,
-              viewerId: widget.viewerId,
-              now: widget.now,
-              isFull: isOpening,
-              canTick: widget.canTick,
-              onOpen: () => widget.onOpenTask(task),
-              onSetComplete: (value) => widget.onSetComplete(task, value),
-              onToggleSubtask: (subtask, value) =>
-                  widget.onToggleSubtask(task, subtask, value),
+      padding: const EdgeInsets.fromLTRB(
+        TaskStyle.stageCardInset,
+        0,
+        TaskStyle.stageCardInset,
+        TaskStyle.stageCardGap,
+      ),
+      child: Material(
+        key: Key('my-stage-card-${stage.id}'),
+        color: TaskStyle.stageCard,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(TaskStyle.stageCardRadius),
+          side: isHighlighted
+              ? BorderSide(
+                  color: TaskStyle.current.withValues(alpha: 0.45),
+                  width: TaskStyle.stageCardCurrentBorderWidth,
+                )
+              : const BorderSide(
+                  color: TaskStyle.stageCardBorder,
+                  width: TaskStyle.stageCardBorderWidth,
+                ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _StageHeader(
+              stage: stage,
+              myTasks: group.tasks,
+              isOpening: isOpening,
+              isHighlighted: isHighlighted,
+              kicker: marks.currentIds.contains(stage.id)
+                  ? _Kicker.now
+                  : (stage.id == marks.nextId ? _Kicker.next : null),
+              onOpen: () => widget.onOpenStage(stage),
             ),
-        ],
+            for (final task in group.tasks) ...[
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: TaskStyle.stageCardDivider,
+              ),
+              _TaskLine(
+                task: task,
+                viewerId: widget.viewerId,
+                now: widget.now,
+                isFull: isOpening,
+                canTick: widget.canTick,
+                onOpen: () => widget.onOpenTask(task),
+                onSetComplete: (value) => widget.onSetComplete(task, value),
+                onToggleSubtask: (subtask, value) =>
+                    widget.onToggleSubtask(task, subtask, value),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -295,66 +326,26 @@ class _LiveMarks {
 
 enum _Kicker { now, next }
 
-const double _railInset = 10;
-
-/// A row hung on the timeline's rail: the line runs down the start side of
-/// [child], with [marker] on it.
-class _Railed extends StatelessWidget {
-  const _Railed({
-    required this.marker,
-    required this.child,
-    this.markerSize = 16,
-    this.markerTop = 12,
-  });
-
-  final Widget marker;
-  final Widget child;
-  final double markerSize;
-  final double markerTop;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          margin: const EdgeInsetsDirectional.only(start: _railInset),
-          padding: const EdgeInsetsDirectional.only(start: 12),
-          decoration: const BoxDecoration(
-            border: BorderDirectional(
-              start: BorderSide(color: TaskStyle.rest, width: 2),
-            ),
-          ),
-          child: child,
-        ),
-        PositionedDirectional(
-          start: _railInset + 1 - markerSize / 2,
-          top: markerTop,
-          child: SizedBox(
-            width: markerSize,
-            height: markerSize,
-            child: marker,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// The time column on the start side: two short lines, left to right.
 class _TimeColumn extends StatelessWidget {
-  const _TimeColumn({required this.top, this.bottom, this.topColor});
+  const _TimeColumn({
+    required this.top,
+    this.bottom,
+    this.topColor,
+    this.topPadding = 10,
+  });
 
   final String top;
   final String? bottom;
   final Color? topColor;
+  final double topPadding;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: TaskStyle.timeColumnWidth,
       child: Padding(
-        padding: const EdgeInsets.only(top: 10),
+        padding: EdgeInsets.only(top: topPadding),
         child: Column(
           children: [
             Text(
@@ -382,8 +373,10 @@ class _TimeColumn extends StatelessWidget {
   }
 }
 
-class _StageLine extends StatelessWidget {
-  const _StageLine({
+/// The tinted strip at the top of a stage's card: its time, title, place,
+/// "now"/"next" caption and the viewer's count.
+class _StageHeader extends StatelessWidget {
+  const _StageHeader({
     required this.stage,
     required this.myTasks,
     required this.isOpening,
@@ -410,39 +403,46 @@ class _StageLine extends StatelessWidget {
         : null;
     final allDone =
         myTasks.isNotEmpty && myTasks.every((task) => task.isComplete);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _TimeColumn(
-          top: start == null ? '' : ltr(start),
-          bottom: end == null ? null : ltr(end),
-        ),
-        Expanded(
-          child: _Railed(
-            marker: _StageNode(isHighlighted: isHighlighted, isDone: allDone),
-            child: InkWell(
-              key: Key('my-stage-${stage.id}'),
-              onTap: onOpen,
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                margin: const EdgeInsets.only(top: 6, bottom: 2),
-                padding: const EdgeInsetsDirectional.fromSTEB(10, 7, 10, 7),
-                decoration: isHighlighted
-                    ? BoxDecoration(
-                        color: TaskStyle.currentLight,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: TaskStyle.current.withValues(alpha: 0.45),
-                          width: 1.5,
-                        ),
-                      )
-                    : null,
+    final Color tint;
+    if (isHighlighted) {
+      tint = TaskStyle.currentLight;
+    } else if (allDone) {
+      tint = TaskStyle.doneLight;
+    } else {
+      tint = TaskStyle.stageHeader;
+    }
+    return Material(
+      key: Key('my-stage-header-${stage.id}'),
+      color: tint,
+      child: InkWell(
+        key: Key('my-stage-${stage.id}'),
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(0, 8, 10, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _TimeColumn(
+                top: start == null ? '' : ltr(start),
+                bottom: end == null ? null : ltr(end),
+                topPadding: 0,
+              ),
+              Expanded(
                 child: myTasks.isEmpty ? _buildOneLine() : _buildFull(),
               ),
-            ),
+              if (allDone && !isHighlighted)
+                const Padding(
+                  padding: EdgeInsetsDirectional.only(start: 6, top: 1),
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: TaskStyle.done,
+                  ),
+                ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -570,36 +570,6 @@ class _StageLine extends StatelessWidget {
   }
 }
 
-class _StageNode extends StatelessWidget {
-  const _StageNode({required this.isHighlighted, required this.isDone});
-
-  final bool isHighlighted;
-  final bool isDone;
-
-  @override
-  Widget build(BuildContext context) {
-    if (isDone && !isHighlighted) {
-      return Container(
-        decoration: const BoxDecoration(
-          color: TaskStyle.done,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.check, size: 11, color: Colors.white),
-      );
-    }
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: isHighlighted ? TaskStyle.current : TaskStyle.faintText,
-          width: isHighlighted ? 4 : 2,
-        ),
-      ),
-    );
-  }
-}
-
 class _TaskLine extends StatelessWidget {
   const _TaskLine({
     required this.task,
@@ -631,31 +601,27 @@ class _TaskLine extends StatelessWidget {
       for (final member in task.assignees)
         if (member.id != viewerId) member.name,
     ];
-    return Row(
+    // A white row inside its stage's card, under the tinted header.
+    return Material(
       key: Key('my-task-${task.id}'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _TimeColumn(
-          top: task.hasAssemblyTime ? ltr(task.assemblyTime!) : 'ללא שעה',
-          bottom: task.hasAssemblyTime ? 'התייצבות' : null,
-          topColor: isLate ? TaskStyle.lateDark : null,
-        ),
-        Expanded(
-          child: _Railed(
-            markerSize: 8,
-            markerTop: isFull ? 18 : 14,
-            marker: Container(
-              decoration: BoxDecoration(
-                color: task.isComplete
-                    ? TaskStyle.done
-                    : (isLate ? TaskStyle.late : TaskStyle.faintText),
-                shape: BoxShape.circle,
-              ),
+      color: TaskStyle.stageCard,
+      child: InkWell(
+        onTap: onOpen,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _TimeColumn(
+              top: task.hasAssemblyTime ? ltr(task.assemblyTime!) : 'ללא שעה',
+              bottom: task.hasAssemblyTime ? 'התייצבות' : null,
+              topColor: isLate ? TaskStyle.lateDark : null,
+              topPadding: isFull ? 14 : 10,
             ),
-            child: isFull ? _buildFull(others) : _buildCompact(others),
-          ),
+            Expanded(
+              child: isFull ? _buildFull(others) : _buildCompact(others),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -677,86 +643,71 @@ class _TaskLine extends StatelessWidget {
 
   Widget _buildFull(List<String> others) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Material(
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: TaskStyle.rest),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onOpen,
-          child: Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(4, 2, 10, 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    if (!task.hasSubtasks)
-                      Checkbox(
-                        key: Key('my-task-tick-${task.id}'),
-                        value: task.isComplete,
-                        onChanged: canTick
-                            ? (value) => onSetComplete(value ?? false)
-                            : null,
-                      )
-                    else
-                      const SizedBox(width: 8, height: 40),
-                    Expanded(
-                      child: Text(
-                        task.title,
-                        style: _titleStyle(TaskStyle.rowTitleSize),
-                      ),
-                    ),
-                    if (task.hasSubtasks)
-                      Text(
-                        ltr('${task.doneSubtaskCount}/${task.subtasks.length}'),
-                        style: const TextStyle(
-                          fontSize: TaskStyle.rowMetaSize,
-                          fontWeight: FontWeight.w600,
-                          color: TaskStyle.neutralText,
-                        ),
-                      ),
-                  ],
+      padding: const EdgeInsetsDirectional.fromSTEB(0, 4, 10, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (!task.hasSubtasks)
+                Checkbox(
+                  key: Key('my-task-tick-${task.id}'),
+                  value: task.isComplete,
+                  onChanged:
+                      canTick ? (value) => onSetComplete(value ?? false) : null,
+                )
+              else
+                const SizedBox(width: 8, height: 40),
+              Expanded(
+                child: Text(
+                  task.title,
+                  style: _titleStyle(TaskStyle.rowTitleSize),
                 ),
-                if (others.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsetsDirectional.only(
-                      start: task.hasSubtasks ? 8 : 40,
+              ),
+              if (task.hasSubtasks)
+                Text(
+                  ltr('${task.doneSubtaskCount}/${task.subtasks.length}'),
+                  style: const TextStyle(
+                    fontSize: TaskStyle.rowMetaSize,
+                    fontWeight: FontWeight.w600,
+                    color: TaskStyle.neutralText,
+                  ),
+                ),
+            ],
+          ),
+          if (others.isNotEmpty)
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: task.hasSubtasks ? 8 : 40,
+              ),
+              child: _withOthers(others),
+            ),
+          for (final subtask in task.subtasks)
+            Row(
+              children: [
+                Checkbox(
+                  key: Key('my-subtask-${task.id}-${subtask.id}'),
+                  value: subtask.isDone,
+                  visualDensity: VisualDensity.compact,
+                  onChanged: canTick
+                      ? (value) => onToggleSubtask(subtask, value ?? false)
+                      : null,
+                ),
+                Expanded(
+                  child: Text(
+                    subtask.title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      decoration: subtask.isDone
+                          ? TextDecoration.lineThrough
+                          : TextDecoration.none,
+                      color: subtask.isDone ? TaskStyle.faintText : null,
                     ),
-                    child: _withOthers(others),
                   ),
-                for (final subtask in task.subtasks)
-                  Row(
-                    children: [
-                      Checkbox(
-                        key: Key('my-subtask-${task.id}-${subtask.id}'),
-                        value: subtask.isDone,
-                        visualDensity: VisualDensity.compact,
-                        onChanged: canTick
-                            ? (value) => onToggleSubtask(subtask, value ?? false)
-                            : null,
-                      ),
-                      Expanded(
-                        child: Text(
-                          subtask.title,
-                          style: TextStyle(
-                            fontSize: 14,
-                            decoration: subtask.isDone
-                                ? TextDecoration.lineThrough
-                                : TextDecoration.none,
-                            color: subtask.isDone ? TaskStyle.faintText : null,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                ),
               ],
             ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -764,52 +715,48 @@ class _TaskLine extends StatelessWidget {
   /// One line per task, with its tick box (or its subtasks done over total),
   /// so a task can be ticked from any stage, as in the mockup.
   Widget _buildCompact(List<String> others) {
-    return InkWell(
-      onTap: onOpen,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(0, 2, 4, 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 40,
-              child: task.hasSubtasks
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        ltr('${task.doneSubtaskCount}/${task.subtasks.length}'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: TaskStyle.rowMetaSize,
-                          fontWeight: FontWeight.w600,
-                          color: TaskStyle.neutralText,
-                        ),
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(0, 2, 10, 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 40,
+            child: task.hasSubtasks
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      ltr('${task.doneSubtaskCount}/${task.subtasks.length}'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: TaskStyle.rowMetaSize,
+                        fontWeight: FontWeight.w600,
+                        color: TaskStyle.neutralText,
                       ),
-                    )
-                  : Checkbox(
-                      key: Key('my-task-tick-${task.id}'),
-                      value: task.isComplete,
-                      visualDensity: VisualDensity.compact,
-                      onChanged: canTick
-                          ? (value) => onSetComplete(value ?? false)
-                          : null,
                     ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(task.title, style: _titleStyle(14)),
-                    if (others.isNotEmpty) _withOthers(others),
-                  ],
-                ),
+                  )
+                : Checkbox(
+                    key: Key('my-task-tick-${task.id}'),
+                    value: task.isComplete,
+                    visualDensity: VisualDensity.compact,
+                    onChanged: canTick
+                        ? (value) => onSetComplete(value ?? false)
+                        : null,
+                  ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(task.title, style: _titleStyle(14)),
+                  if (others.isNotEmpty) _withOthers(others),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

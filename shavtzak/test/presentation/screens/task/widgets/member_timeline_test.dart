@@ -4,6 +4,7 @@ import 'package:shavtzak/core/utils/task_progress.dart';
 import 'package:shavtzak/core/utils/task_schedule.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
+import 'package:shavtzak/presentation/screens/task/task_style.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
 
 import '../../../../support/sample_event.dart';
@@ -251,6 +252,73 @@ void main() {
     await pumpTimeline(tester);
 
     expect(inside('my-stage-bf', find.text('אין לך משימות')), findsOneWidget);
+  });
+
+  testWidgets('each stage is one card: a tinted header above white task rows',
+      (tester) async {
+    await pumpTimeline(tester);
+
+    // The stage's header and its tasks sit in the same card.
+    for (final key in [
+      'my-stage-header-dinner',
+      'my-stage-dinner',
+      'my-task-dinner-guests',
+    ]) {
+      expect(
+        inside('my-stage-card-dinner', find.byKey(Key(key))),
+        findsOneWidget,
+        reason: key,
+      );
+    }
+    for (final id in ['ws-done', 'ws-soon', 'ws-later', 'ws-untimed']) {
+      expect(
+        inside('my-stage-card-ws', find.byKey(Key('my-task-$id'))),
+        findsOneWidget,
+        reason: id,
+      );
+    }
+    // And not in another stage's card.
+    expect(
+      inside('my-stage-card-ws', find.byKey(const Key('my-task-dinner-guests'))),
+      findsNothing,
+    );
+
+    // The header is tinted; the task rows below it are white.
+    Color? colorOf(String key) =>
+        tester.widget<Material>(find.byKey(Key(key))).color;
+    final header = colorOf('my-stage-header-dinner');
+    final row = colorOf('my-task-dinner-guests');
+    expect(row, Colors.white);
+    expect(header, isNotNull);
+    expect(header, isNot(Colors.white));
+    expect(header, isNot(row));
+    // The highlighted stage keeps its blue tint.
+    expect(colorOf('my-stage-header-ws'), TaskStyle.currentLight);
+    expect(colorOf('my-task-ws-later'), Colors.white);
+
+    // The header comes first, then its tasks.
+    expect(
+      top(tester, find.byKey(const Key('my-stage-header-dinner'))),
+      lessThan(top(tester, find.byKey(const Key('my-task-dinner-guests')))),
+    );
+  });
+
+  testWidgets('a stage without my tasks is a card with its header alone',
+      (tester) async {
+    await pumpTimeline(tester);
+
+    expect(
+      inside('my-stage-card-bf', find.byKey(const Key('my-stage-header-bf'))),
+      findsOneWidget,
+    );
+    expect(
+      inside('my-stage-card-bf', find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> && key.value.startsWith('my-task-');
+      })),
+      findsNothing,
+    );
+    expect(inside('my-stage-card-bf', find.text('אין לך משימות')), findsOneWidget);
   });
 
   testWidgets('day headers name the weekday, and today', (tester) async {
