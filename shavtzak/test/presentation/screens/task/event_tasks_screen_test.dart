@@ -1,35 +1,33 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:bloc_test/bloc_test.dart';
 import 'package:excel/excel.dart' show DateCellValue;
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:shavtzak/core/services/environment_service.dart';
 import 'package:shavtzak/core/services/task_import_files.dart';
 import 'package:shavtzak/core/theme/app_theme.dart';
 import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
+import 'package:shavtzak/core/utils/task_schedule.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
-import 'package:shavtzak/presentation/bloc/task/task_bloc.dart';
-import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.dart';
-import 'package:shavtzak/presentation/bloc/user_selection/user_selection_state.dart';
 import 'package:shavtzak/presentation/screens/task/event_tasks_screen.dart';
+import 'package:shavtzak/presentation/screens/task/widgets/legacy_stage_list.dart';
+import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
 
+import '../../../support/event_tasks_harness.dart';
 import '../../../support/fake_task_import_files.dart';
 import '../../../support/fake_task_repository.dart';
 import '../../../support/import_workbook.dart';
+import '../../../support/sample_event.dart';
 import '../../../support/task_fixtures.dart';
 
 void main() {
-  final now = DateTime(2026, 10, 11, 14, 0);
-
+  // Sunday afternoon; the event is the next Tuesday and Wednesday.
   final event = buildEvent(
     id: 'e1',
     name: 'דו יומי צפון',
@@ -47,11 +45,13 @@ void main() {
   );
   final dana = buildMember(id: 'm1', name: 'דנה');
   final yoav = buildMember(id: 'm2', name: 'יואב');
+  final admin = buildMember(id: 'boss', name: 'מנהלת', isAdmin: true);
 
   final mine = buildTask(
     id: 'mine',
     title: 'להזמין אוטובוס',
     event: event,
+    stage: arrival,
     assigneeIds: const ['m1'],
     assignees: [dana],
   );
@@ -59,6 +59,7 @@ void main() {
     id: 'theirs',
     title: 'הזמנת קייטרינג',
     event: event,
+    stage: arrival,
     assigneeIds: const ['m2'],
     assignees: [yoav],
   );
@@ -66,6 +67,7 @@ void main() {
     id: 'steps',
     title: 'אישור ביטחוני',
     event: event,
+    stage: arrival,
     assigneeIds: const ['m1'],
     assignees: [dana],
     subtasks: const [
@@ -74,442 +76,299 @@ void main() {
     ],
   );
 
-  late FakeTaskRepository repository;
-  late TaskBloc taskBloc;
-  late MockUserSelectionBloc userBloc;
+  TaskBoard boardOf(List<TaskItem> tasks, {List<Stage>? stages}) => TaskBoard(
+        tasks: tasks,
+        events: [event],
+        stages: stages ?? [arrival],
+        members: [dana, yoav],
+      );
 
-  /// Stages start folded; open every one on screen that is still closed.
-  Future<void> openAllStages(WidgetTester tester) async {
-    final toggles = find.byWidgetPredicate((widget) =>
-        widget is InkWell &&
-        widget.key is ValueKey<String> &&
-        (widget.key! as ValueKey<String>).value.startsWith('stage-toggle-'));
-    for (final element in toggles.evaluate().toList()) {
-      final id = ((element.widget.key! as ValueKey<String>).value)
-          .substring('stage-toggle-'.length);
-      if (find.byKey(Key('stage-body-$id')).evaluate().isNotEmpty) continue;
-      await tester.tap(find.byKey(Key('stage-toggle-$id')));
-      await tester.pump();
-    }
-  }
+  /// The mockups' event, at Tuesday 14:40.
+  TaskBoard sampleTaskBoard({List<TaskItem>? tasks}) => TaskBoard(
+        tasks: tasks ?? sampleTasks,
+        events: [sampleEvent],
+        stages: sampleStages,
+        members: [sDana, sYoav],
+      );
+
+  late FakeTaskRepository repository;
 
   Future<void> pumpScreen(
     WidgetTester tester, {
     required TeamMember user,
     List<TaskItem>? tasks,
     List<Stage>? stages,
+    Size size = tallPhoneSize,
     ThemeData? theme,
     String eventId = 'e1',
-    bool openStages = true,
     FakeTaskImportFiles? importFiles,
   }) async {
-    tester.view.physicalSize = const Size(900, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    // Built here, inside the test's fake-async zone. A bloc created in setUp
-    // would run its stream callbacks in the real zone, where `pump` never
-    // reaches them.
-    repository = FakeTaskRepository()
-      ..assigneesByEvent = {
+    final harness = await pumpEventTasks(
+      tester,
+      user: user,
+      size: size,
+      theme: theme,
+      eventId: eventId,
+      importFiles: importFiles,
+      board: tasks == null ? null : boardOf(tasks, stages: stages),
+      assignees: {
         'e1': [dana, yoav],
-      };
-    taskBloc = TaskBloc(repository: repository);
-    userBloc = MockUserSelectionBloc();
-    addTearDown(() {
-      unawaited(taskBloc.close());
-      if (!repository.controller.isClosed) {
-        unawaited(repository.controller.close());
-      }
-    });
-
-    whenListen(
-      userBloc,
-      const Stream<UserSelectionState>.empty(),
-      initialState: UserAuthenticated(user),
+      },
     );
-
-    await tester.pumpWidget(RepositoryProvider<TaskRepository>.value(
-      value: repository,
-      child: MultiBlocProvider(
-        providers: [
-          BlocProvider<TaskBloc>.value(value: taskBloc),
-          BlocProvider<UserSelectionBloc>.value(value: userBloc),
-        ],
-        child: MaterialApp.router(
-          theme: theme,
-          routerConfig: GoRouter(
-            initialLocation: '/tasks/$eventId',
-            routes: [
-              GoRoute(
-                path: '/tasks',
-                builder: (context, state) =>
-                    const Scaffold(body: Text('רשימת האירועים')),
-              ),
-              GoRoute(
-                path: '/tasks/:eventId',
-                builder: (context, state) => EventTasksScreen(
-                  eventId: state.pathParameters['eventId']!,
-                  clock: () => now,
-                  importFiles: importFiles ?? FakeTaskImportFiles(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ));
-    await tester.pump();
-
-    if (tasks != null) {
-      repository.controller.add(TaskBoard(
-        tasks: tasks,
-        events: [event],
-        stages: stages ?? [arrival],
-        members: [dana, yoav],
-      ));
-      await tester.pump();
-      await tester.pump();
-      if (openStages) await openAllStages(tester);
-    }
+    repository = harness.repository;
   }
+
+  Future<void> openTab(WidgetTester tester, String label) async {
+    await tester.tap(find.text(label));
+    await tester.pump();
+  }
+
+  /// Opens a task of my timeline in the sheet, by its title.
+  Future<void> openMyTask(WidgetTester tester, String id, String title) async {
+    await tester.tap(find.descendant(
+      of: find.byKey(Key('my-task-$id')),
+      matching: find.text(title),
+    ));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> search(WidgetTester tester, String query) async {
+    await tester.tap(find.byKey(const Key('tasks-search-open')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('tasks-search')), query);
+    await tester.pumpAndSettle();
+  }
+
+  /// Finds a task through the search and opens it in the sheet.
+  Future<void> openBySearch(WidgetTester tester, String query, String id) async {
+    await search(tester, query);
+    await tester.tap(find.byKey(Key('task-row-$id')));
+    await tester.pumpAndSettle();
+  }
+
+  Finder inSheet(Finder finder) =>
+      find.descendant(of: find.byKey(const Key('task-sheet')), matching: finder);
 
   group('loading', () {
     testWidgets('shows a spinner until the first tasks arrive', (tester) async {
-      await pumpScreen(tester, user: dana);
+      final harness = await pumpEventTasks(tester, user: dana);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-      repository.controller.add(const TaskBoard(tasks: []));
-      await tester.pump();
-      await tester.pump();
-      await openAllStages(tester);
+      await harness.deliver(tester, const TaskBoard(tasks: []));
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
     testWidgets('a load failure offers a retry that subscribes again',
         (tester) async {
-      await pumpScreen(tester, user: dana);
+      final harness = await pumpEventTasks(tester, user: dana);
       // Errors and stays open, like a Firestore listener killed by sign-out.
-      repository.controller.addError(Exception('permission-denied'));
+      harness.repository.controller.addError(Exception('permission-denied'));
       await tester.pump();
       await tester.pump();
 
       expect(find.text('טעינת המשימות נכשלה'), findsOneWidget);
 
-      repository.controller = StreamController<TaskBoard>();
+      harness.repository.controller = StreamController<TaskBoard>();
       await tester.tap(find.byKey(const Key('tasks-retry')));
       await tester.pump();
-      repository.controller.add(TaskBoard(
-        tasks: [mine],
-        events: [event],
-        stages: [arrival],
-      ));
-      await tester.pump();
-      await tester.pump();
-      await openAllStages(tester);
+      await harness.deliver(tester, boardOf([mine]));
 
-      expect(repository.watchCalls, 2);
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
+      expect(harness.repository.watchCalls, 2);
+      expect(find.byKey(const Key('my-task-mine')), findsOneWidget);
     });
   });
 
-  group('mine / all', () {
-    testWidgets('shows only the signed-in member\'s tasks by default',
-        (tester) async {
+  group('tabs', () {
+    testWidgets('a plain member lands on המשימות שלי', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
 
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
-      expect(find.text('הזמנת קייטרינג'), findsNothing);
-    });
-
-    testWidgets('switching to all tasks shows everyone\'s', (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
-
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
-      expect(find.text('הזמנת קייטרינג'), findsOneWidget);
-
-      await tester.tap(find.text('המשימות שלי'));
-      await tester.pump();
-      expect(find.text('הזמנת קייטרינג'), findsNothing);
-    });
-
-    testWidgets('a member with no tasks sees a prompt, not a blank screen',
-        (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [theirs]);
-      expect(find.text('אין לך משימות באירוע זה'), findsOneWidget);
-    });
-
-    testWidgets('all tasks with no tasks still shows every stage, empty',
-        (tester) async {
-      await pumpScreen(tester, user: dana, tasks: const []);
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-      expect(find.byKey(const Key('stage-card-st1')), findsOneWidget);
-      expect(find.text('אין עדיין משימות בשלב זה'), findsOneWidget);
-    });
-  });
-
-  group('search and filter', () {
-    testWidgets('typing narrows the list by title', (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine, withSubtasks]);
-      expect(find.text('אישור ביטחוני'), findsOneWidget);
-
-      await tester.enterText(find.byKey(const Key('tasks-search')), 'אוטובוס');
-      await tester.pump();
-
-      expect(find.text('להזמין אוטובוס'), findsWidgets);
-      expect(find.text('אישור ביטחוני'), findsNothing);
-      // Let the debounced search logger fire before the test ends.
-      await tester.pump(const Duration(seconds: 1));
-    });
-
-    testWidgets('a search with no match says nothing matched', (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine]);
-
-      await tester.enterText(find.byKey(const Key('tasks-search')), 'קקטוס');
-      await tester.pump();
-
-      expect(find.text('לא נמצאו משימות תואמות'), findsOneWidget);
-      await tester.pump(const Duration(seconds: 1));
-    });
-
-    testWidgets('a status filter narrows the list and shows on the badge',
-        (tester) async {
-      final overdue = buildTask(
-        id: 'late',
-        title: 'משימה באיחור',
-        event: event,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-        dueAt: DateTime(2026, 10, 9, 9),
-      );
-      await pumpScreen(tester, user: dana, tasks: [mine, overdue]);
-
-      await tester.tap(find.byKey(const Key('tasks-filter')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('filter-status-overdue')));
-      await tester.pump();
-
-      // Already narrowed, with the filter still open.
-      expect(find.byKey(const Key('filter-close')), findsOneWidget);
-      expect(find.text('משימה באיחור'), findsOneWidget);
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-
-      await tester.tap(find.byKey(const Key('filter-close')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('משימה באיחור'), findsOneWidget);
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-      final badge = tester.widget<Badge>(find.byType(Badge));
-      expect(badge.isLabelVisible, isTrue);
-      expect(find.text('1'), findsOneWidget);
+      expect(find.byType(MemberTimeline), findsOneWidget);
+      expect(find.byType(LegacyStageList), findsNothing);
     });
 
     testWidgets(
-        'the filter offers assignees under all tasks but not under my '
-        'tasks', (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
+        'an admin, and a member allowed to manage tasks, land on כל השלבים',
+        (tester) async {
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      expect(find.byType(LegacyStageList), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('tasks-filter')));
-      await tester.pumpAndSettle();
-      expect(find.text('אחראי'), findsNothing);
-      expect(find.byKey(const Key('filter-assignee-m1')), findsNothing);
-      await tester.tap(find.byKey(const Key('filter-close')));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-      await tester.tap(find.byKey(const Key('tasks-filter')));
-      await tester.pumpAndSettle();
-      expect(find.text('אחראי'), findsOneWidget);
-      expect(find.byKey(const Key('filter-assignee-m1')), findsOneWidget);
-      expect(find.byKey(const Key('filter-assignee-m2')), findsOneWidget);
+      await pumpScreen(
+        tester,
+        user: buildMember(id: 'lead', name: 'אורי', canManageTasks: true),
+        tasks: [mine],
+      );
+      expect(find.byType(LegacyStageList), findsOneWidget);
     });
 
-    testWidgets('my tasks and all tasks each keep a filter of their own',
-        (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
+    testWidgets('every member can open both tabs', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
 
-      Future<void> tickInFilter(String key) async {
-        await tester.tap(find.byKey(const Key('tasks-filter')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(Key(key)));
-        await tester.pump();
-        await tester.tap(find.byKey(const Key('filter-close')));
-        await tester.pumpAndSettle();
+      await openTab(tester, 'כל השלבים');
+      expect(find.byType(LegacyStageList), findsOneWidget);
+
+      await openTab(tester, 'המשימות שלי');
+      expect(find.byType(MemberTimeline), findsOneWidget);
+    });
+
+    testWidgets('the selected tab is readable under the app theme',
+        (tester) async {
+      double contrast(Color a, Color b) {
+        final la = a.computeLuminance();
+        final lb = b.computeLuminance();
+        final lighter = la > lb ? la : lb;
+        final darker = la > lb ? lb : la;
+        return (lighter + 0.05) / (darker + 0.05);
       }
 
-      bool badgeShown() =>
-          tester.widget<Badge>(find.byType(Badge)).isLabelVisible;
+      // The app theme's default selected-segment colours are white text on
+      // light orange, which cannot be read.
+      await pumpScreen(tester,
+          user: dana, tasks: [mine], theme: AppTheme.lightTheme);
 
-      // All tasks: only Yoav's.
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-      await tickInFilter('filter-assignee-m2');
-      expect(find.text('הזמנת קייטרינג'), findsOneWidget);
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-      expect(badgeShown(), isTrue);
-
-      // My tasks is untouched by that.
-      await tester.tap(find.text('המשימות שלי'));
-      await tester.pump();
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
-      expect(badgeShown(), isFalse);
-
-      // My tasks: only completed ones, of which there are none.
-      await tickInFilter('filter-status-completed');
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-      expect(find.text('לא נמצאו משימות תואמות'), findsOneWidget);
-      expect(badgeShown(), isTrue);
-
-      // All tasks still has its own filter, and not the completed one.
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-      expect(find.text('הזמנת קייטרינג'), findsOneWidget);
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-
-      await tester.tap(find.byKey(const Key('tasks-filter')));
-      await tester.pumpAndSettle();
-      bool ticked(String key) =>
-          tester.widget<CheckboxListTile>(find.byKey(Key(key))).value ?? false;
-      expect(ticked('filter-assignee-m2'), isTrue);
-      expect(ticked('filter-status-completed'), isFalse);
-    });
-
-    testWidgets('clearing the filter brings every task back while it is open',
-        (tester) async {
-      final overdue = buildTask(
-        id: 'late',
-        title: 'משימה באיחור',
-        event: event,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-        dueAt: DateTime(2026, 10, 9, 9),
+      final button = tester.widget<SegmentedButton<EventTasksTab>>(
+        find.byType(SegmentedButton<EventTasksTab>),
       );
-      await pumpScreen(tester, user: dana, tasks: [mine, overdue]);
-
-      await tester.tap(find.byKey(const Key('tasks-filter')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('filter-status-overdue')));
-      await tester.pump();
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-
-      await tester.tap(find.byKey(const Key('filter-clear')));
-      await tester.pump();
-
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
-      expect(find.text('משימה באיחור'), findsOneWidget);
-      expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isFalse);
-    });
-
-    testWidgets(
-        'the half-hour filter keeps only unfinished tasks due in the '
-        'next 30 minutes', (tester) async {
-      TaskItem due(String id, String title, DateTime dueAt) => buildTask(
-            id: id,
-            title: title,
-            event: event,
-            assigneeIds: const ['m1'],
-            assignees: [dana],
-            dueAt: dueAt,
-          );
-      // The screen's clock reads 14:00.
-      await pumpScreen(tester, user: dana, tasks: [
-        due('soon', 'בעוד עשרים דקות', DateTime(2026, 10, 11, 14, 20)),
-        due('edge', 'בעוד חצי שעה בדיוק', DateTime(2026, 10, 11, 14, 30)),
-        due('later', 'בעוד שעה', DateTime(2026, 10, 11, 15, 0)),
-        due('late', 'כבר באיחור', DateTime(2026, 10, 11, 13, 0)),
-        mine,
-      ]);
-
-      await tester.tap(find.byKey(const Key('tasks-filter')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('filter-due-soon')));
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('filter-close')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('בעוד עשרים דקות'), findsOneWidget);
-      expect(find.text('בעוד חצי שעה בדיוק'), findsOneWidget);
-      expect(find.text('בעוד שעה'), findsNothing);
-      expect(find.text('כבר באיחור'), findsNothing);
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-      expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isTrue);
+      const selected = {WidgetState.selected};
+      final background = button.style!.backgroundColor!.resolve(selected)!;
+      final foreground = button.style!.foregroundColor!.resolve(selected)!;
+      expect(contrast(foreground, background), greaterThanOrEqualTo(4.5));
     });
   });
 
-  group('who can do what', () {
-    testWidgets('an admin gets the new-stage and new-task buttons',
-        (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: [mine],
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-      expect(find.byKey(const Key('stage-add')), findsOneWidget);
-      expect(find.byKey(const Key('stage-add-task-st1')), findsOneWidget);
-    });
-
-    testWidgets('a flagged non-admin gets the new-stage and new-task buttons',
-        (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'lead', canManageTasks: true),
-        tasks: [mine],
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-      expect(find.byKey(const Key('stage-add')), findsOneWidget);
-      expect(find.byKey(const Key('stage-add-task-st1')), findsOneWidget);
-    });
-
-    testWidgets('a plain member gets no stage or task management buttons',
+  group('search', () {
+    testWidgets('the search icon opens a field with the RTL caret fix',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
-      expect(find.byKey(const Key('stage-add')), findsNothing);
-      expect(find.byKey(const Key('stage-add-task-st1')), findsNothing);
-      expect(find.byKey(const Key('stage-edit-st1')), findsNothing);
-      expect(find.byKey(const Key('task-edit-mine')), findsNothing);
-      expect(find.byKey(const Key('task-delete-mine')), findsNothing);
+      await tester.tap(find.byKey(const Key('tasks-search-open')));
+      await tester.pump();
+
+      final field = tester.widget<TextField>(find.byKey(const Key('tasks-search')));
+      expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
     });
 
-    testWidgets('a member cannot tick someone else\'s task', (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [theirs]);
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
+    testWidgets('typing lists the matches in the sheet, grouped by stage',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
 
-      final checkbox = tester.widget<Checkbox>(
-        find.byKey(const Key('task-complete-theirs')),
+      await search(tester, 'אוטובוס');
+
+      expect(find.byKey(const Key('task-sheet')), findsOneWidget);
+      expect(inSheet(find.text('חיפוש: "אוטובוס" · 1')), findsOneWidget);
+      expect(inSheet(find.byKey(const Key('results-stage-st1'))), findsOneWidget);
+      expect(inSheet(find.byKey(const Key('task-row-mine'))), findsOneWidget);
+      expect(inSheet(find.byKey(const Key('task-row-theirs'))), findsNothing);
+    });
+
+    testWidgets('it finds tasks by an assignee\'s name', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
+
+      await search(tester, 'יואב');
+
+      expect(inSheet(find.byKey(const Key('task-row-theirs'))), findsOneWidget);
+      expect(inSheet(find.byKey(const Key('task-row-mine'))), findsNothing);
+    });
+
+    testWidgets('closing the search closes its sheet', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      await search(tester, 'אוטובוס');
+
+      await tester.tap(find.byKey(const Key('tasks-search-close')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('task-sheet')), findsNothing);
+      expect(find.byKey(const Key('tasks-search')), findsNothing);
+    });
+  });
+
+  group('sheet', () {
+    testWidgets('a task opened from my timeline shows its detail, and X closes it',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+
+      await openMyTask(tester, 'mine', 'להזמין אוטובוס');
+      expect(inSheet(find.byKey(const Key('task-detail-mine'))), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('task-sheet-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('task-sheet')), findsNothing);
+    });
+
+    testWidgets('back returns to the list the task came from', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openBySearch(tester, 'אוטובוס', 'mine');
+      expect(inSheet(find.byKey(const Key('task-detail-mine'))), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('task-sheet-back')));
+      await tester.pumpAndSettle();
+
+      expect(inSheet(find.text('חיפוש: "אוטובוס" · 1')), findsOneWidget);
+    });
+
+    testWidgets('a task deleted while open goes back to its list',
+        (tester) async {
+      final harness = await pumpEventTasks(
+        tester,
+        user: dana,
+        size: tallPhoneSize,
+        board: boardOf([mine, theirs]),
       );
-      expect(checkbox.onChanged, isNull);
+      await openBySearch(tester, 'אוטובוס', 'mine');
+
+      await harness.deliver(tester, boardOf([theirs]));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(inSheet(find.byKey(const Key('task-detail-mine'))), findsNothing);
+      expect(inSheet(find.text('חיפוש: "אוטובוס" · 0')), findsOneWidget);
+    });
+
+    testWidgets('the late banner opens my late tasks', (tester) async {
+      final setupLate = buildTask(
+        id: 'setup-late',
+        title: 'תליית שלטים',
+        stage: stSetup,
+        assemblyTime: '08:30',
+        event: sampleEvent,
+        assigneeIds: const ['m1'],
+        assignees: [sDana],
+      );
+      await pumpEventTasks(
+        tester,
+        user: sDana,
+        size: tallPhoneSize,
+        clock: () => sampleNow,
+        board: sampleTaskBoard(tasks: [...sampleTasks, setupLate]),
+      );
+
+      await tester.tap(find.byKey(const Key('my-late-banner')));
+      await tester.pumpAndSettle();
+
+      expect(inSheet(find.text('2 משימות שלך באיחור')), findsOneWidget);
+      expect(inSheet(find.byKey(const Key('task-row-setup-late'))), findsOneWidget);
+      expect(inSheet(find.byKey(const Key('task-row-lunch-late'))), findsOneWidget);
     });
   });
 
   group('actions', () {
+    testWidgets('ticking in my timeline is sent', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+
+      await tester.tap(find.byKey(const Key('my-task-tick-mine')));
+      await tester.pump();
+
+      expect(repository.calls, ['complete:mine:true']);
+    });
+
     testWidgets('ticking a subtask is sent with that task and subtask',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-      await tester.tap(find.text('אישור ביטחוני'));
-      await tester.pumpAndSettle();
+      await openMyTask(tester, 'steps', 'אישור ביטחוני');
 
-      await tester.tap(find.descendant(
+      await tester.tap(inSheet(find.descendant(
         of: find.byKey(const Key('subtask-b')),
         matching: find.byType(Checkbox),
-      ));
+      )));
       await tester.pump();
 
       expect(repository.calls, ['subtask:steps:b:true']);
@@ -517,6 +376,7 @@ void main() {
 
     testWidgets('completing a task without subtasks is sent', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openMyTask(tester, 'mine', 'להזמין אוטובוס');
 
       await tester.tap(find.byKey(const Key('task-complete-mine')));
       await tester.pump();
@@ -527,6 +387,7 @@ void main() {
     testWidgets('a ticked task is shown done before the backend answers',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openMyTask(tester, 'mine', 'להזמין אוטובוס');
       repository.gate = Completer<void>();
 
       await tester.tap(find.byKey(const Key('task-complete-mine')));
@@ -534,12 +395,10 @@ void main() {
 
       expect(repository.calls, ['complete:mine:true']);
       expect(
-        tester
-            .widget<Checkbox>(find.byKey(const Key('task-complete-mine')))
-            .value,
+        tester.widget<Checkbox>(find.byKey(const Key('task-complete-mine'))).value,
         isTrue,
       );
-      expect(find.text('הושלמה'), findsOneWidget);
+      expect(inSheet(find.text('הושלמה')), findsOneWidget);
 
       repository.gate!.complete();
       await tester.pump();
@@ -548,19 +407,18 @@ void main() {
     testWidgets('a ticked subtask is shown done before the backend answers',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-      await tester.tap(find.text('אישור ביטחוני'));
-      await tester.pumpAndSettle();
+      await openMyTask(tester, 'steps', 'אישור ביטחוני');
       repository.gate = Completer<void>();
 
-      final checkbox = find.descendant(
+      final checkbox = inSheet(find.descendant(
         of: find.byKey(const Key('subtask-a')),
         matching: find.byType(Checkbox),
-      );
+      ));
       await tester.tap(checkbox);
       await tester.pump();
 
       expect(tester.widget<Checkbox>(checkbox).value, isTrue);
-      expect(find.text('1/2'), findsOneWidget);
+      expect(inSheet(find.text(ltr('1/2'))), findsOneWidget);
 
       repository.gate!.complete();
       await tester.pump();
@@ -569,35 +427,28 @@ void main() {
     testWidgets('a tick the backend refuses is taken back and explained',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openMyTask(tester, 'mine', 'להזמין אוטובוס');
       repository.gate = Completer<void>();
       repository.failWith = DatabaseException(
         'Failed backend mutation task.setComplete: אין הרשאה לעדכן את המשימה',
       );
 
-      await tester.tap(find.byKey(const Key('task-complete-mine')));
+      final box = find.byKey(const Key('task-complete-mine'));
+      await tester.tap(box);
       await tester.pump();
-      expect(
-        tester
-            .widget<Checkbox>(find.byKey(const Key('task-complete-mine')))
-            .value,
-        isTrue,
-      );
+      expect(tester.widget<Checkbox>(box).value, isTrue);
 
       repository.gate!.complete();
       await tester.pump();
       await tester.pump();
 
-      expect(
-        tester
-            .widget<Checkbox>(find.byKey(const Key('task-complete-mine')))
-            .value,
-        isFalse,
-      );
+      expect(tester.widget<Checkbox>(box).value, isFalse);
       expect(find.text('אין הרשאה לעדכן את המשימה'), findsOneWidget);
     });
 
     testWidgets('saving an update sends the typed text', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openMyTask(tester, 'mine', 'להזמין אוטובוס');
 
       await tester.tap(find.byKey(const Key('task-update-mine')));
       await tester.pumpAndSettle();
@@ -614,33 +465,26 @@ void main() {
     testWidgets('a failed action shows the backend message and keeps the list',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-      await tester.tap(find.text('אישור ביטחוני'));
-      await tester.pumpAndSettle();
+      await openMyTask(tester, 'steps', 'אישור ביטחוני');
 
       repository.failWith = DatabaseException(
         'Failed backend mutation task.setSubtaskDone: תת-המשימה לא נמצאה',
       );
-      await tester.tap(find.descendant(
+      await tester.tap(inSheet(find.descendant(
         of: find.byKey(const Key('subtask-a')),
         matching: find.byType(Checkbox),
-      ));
+      )));
       await tester.pump();
       await tester.pump();
 
       expect(find.text('תת-המשימה לא נמצאה'), findsOneWidget);
-      expect(find.text('אישור ביטחוני'), findsOneWidget);
+      expect(find.byKey(const Key('my-task-steps')), findsOneWidget);
     });
 
     testWidgets('delete asks first, and cancelling deletes nothing',
         (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: [mine],
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await openBySearch(tester, 'אוטובוס', 'mine');
 
       await tester.tap(find.byKey(const Key('task-delete-mine')));
       await tester.pumpAndSettle();
@@ -653,14 +497,8 @@ void main() {
     });
 
     testWidgets('confirming a delete sends it', (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: [mine],
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await openBySearch(tester, 'אוטובוס', 'mine');
 
       await tester.tap(find.byKey(const Key('task-delete-mine')));
       await tester.pumpAndSettle();
@@ -674,14 +512,8 @@ void main() {
     testWidgets(
         'a confirmed delete shows a spinner and stays open until the '
         'backend answers', (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: [mine],
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await openBySearch(tester, 'אוטובוס', 'mine');
       await tester.tap(find.byKey(const Key('task-delete-mine')));
       await tester.pumpAndSettle();
 
@@ -714,14 +546,8 @@ void main() {
 
     testWidgets('a delete the backend refuses stays open and says why',
         (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: [mine],
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await openBySearch(tester, 'אוטובוס', 'mine');
       await tester.tap(find.byKey(const Key('task-delete-mine')));
       await tester.pumpAndSettle();
 
@@ -735,93 +561,12 @@ void main() {
       expect(find.text('אין הרשאה למחוק משימות'), findsOneWidget);
       expect(confirm, findsOneWidget);
       expect(tester.widget<FilledButton>(confirm).enabled, isTrue);
-      expect(
-        find.descendant(
-          of: confirm,
-          matching: find.byType(CircularProgressIndicator),
-        ),
-        findsNothing,
-      );
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
-    });
-
-    Future<void> fillNewTask(WidgetTester tester, String title) async {
-      // The button scales in when the list first loads and ignores taps until
-      // that animation ends.
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-
-      await tester.tap(find.byKey(const Key('stage-add-task-st1')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('task-form-title')), title);
-      await tester.tap(find.byKey(const Key('task-form-assignees')));
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('task-form-assignee-m2')));
-      await tester.pump();
-    }
-
-    testWidgets('a manager creates a task through the form', (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: const [],
-      );
-      await fillNewTask(tester, 'משימה חדשה לגמרי');
-      await tester.tap(find.byKey(const Key('task-form-save')));
-      await tester.pumpAndSettle();
-
-      expect(repository.calls, ['insert:משימה חדשה לגמרי']);
-      expect(find.byKey(const Key('task-form-title')), findsNothing);
-    });
-
-    testWidgets(
-        'the new-task form offers only the members assigned to the '
-        'chosen event', (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: const [],
-      );
-      repository.assigneesByEvent = {
-        'e1': [yoav],
-      };
-      await fillNewTask(tester, 'כותרת');
-
-      expect(find.byKey(const Key('task-form-assignee-m2')), findsOneWidget);
-      expect(find.byKey(const Key('task-form-assignee-m1')), findsNothing);
-    });
-
-    testWidgets('a create the backend refuses keeps the form open and says why',
-        (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: const [],
-      );
-      await fillNewTask(tester, 'משימה שנדחתה');
-      repository.failWith = DatabaseException(
-        'Failed backend mutation task.insert: אין הרשאה ליצור משימות',
-      );
-      await tester.tap(find.byKey(const Key('task-form-save')));
-      await tester.pumpAndSettle();
-
-      expect(repository.calls, ['insert:משימה שנדחתה']);
-      expect(find.text('אין הרשאה ליצור משימות'), findsOneWidget);
-      expect(find.byKey(const Key('task-form-title')), findsOneWidget);
-      expect(find.text('משימה שנדחתה'), findsOneWidget);
+      expect(find.byKey(const Key('task-detail-mine')), findsOneWidget);
     });
 
     testWidgets('a manager edits a task through the form', (tester) async {
-      await pumpScreen(
-        tester,
-        user: buildMember(id: 'boss', isAdmin: true),
-        tasks: [mine],
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await openBySearch(tester, 'אוטובוס', 'mine');
 
       await tester.tap(find.byKey(const Key('task-edit-mine')));
       await tester.pumpAndSettle();
@@ -836,11 +581,157 @@ void main() {
       expect(repository.calls, ['update:mine']);
       expect(find.byKey(const Key('task-form-title')), findsNothing);
     });
+
+    testWidgets('a member cannot tick someone else\'s task', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [theirs]);
+      await openBySearch(tester, 'קייטרינג', 'theirs');
+
+      expect(
+        tester
+            .widget<Checkbox>(find.byKey(const Key('task-complete-theirs')))
+            .onChanged,
+        isNull,
+      );
+      expect(find.byKey(const Key('task-edit-theirs')), findsNothing);
+      expect(find.byKey(const Key('task-delete-theirs')), findsNothing);
+    });
+  });
+
+  // Today's stage list stays on "כל השלבים" until the calendar replaces it.
+  group('until the calendar lands', () {
+    Future<void> openStage(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      if (find.byKey(const Key('stage-body-st1')).evaluate().isEmpty) {
+        await tester.tap(find.byKey(const Key('stage-toggle-st1')));
+        await tester.pump();
+      }
+    }
+
+    Future<void> fillNewTask(WidgetTester tester, String title) async {
+      await openStage(tester);
+      await tester.tap(find.byKey(const Key('stage-add-task-st1')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('task-form-title')), title);
+      await tester.tap(find.byKey(const Key('task-form-assignees')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-form-assignee-m2')));
+      await tester.pump();
+    }
+
+    testWidgets('managers get the new-stage and new-task buttons, members do not',
+        (tester) async {
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await openStage(tester);
+      expect(find.byKey(const Key('stage-add')), findsOneWidget);
+      expect(find.byKey(const Key('stage-add-task-st1')), findsOneWidget);
+
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openTab(tester, 'כל השלבים');
+      await openStage(tester);
+      expect(find.byKey(const Key('stage-add')), findsNothing);
+      expect(find.byKey(const Key('stage-add-task-st1')), findsNothing);
+      expect(find.byKey(const Key('stage-edit-st1')), findsNothing);
+    });
+
+    testWidgets('a manager creates a task through the form', (tester) async {
+      await pumpScreen(tester, user: admin, tasks: const []);
+      await fillNewTask(tester, 'משימה חדשה לגמרי');
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['insert:משימה חדשה לגמרי']);
+      expect(find.byKey(const Key('task-form-title')), findsNothing);
+    });
+
+    testWidgets(
+        'the new-task form offers only the members assigned to the '
+        'chosen event', (tester) async {
+      await pumpScreen(tester, user: admin, tasks: const []);
+      repository.assigneesByEvent = {
+        'e1': [yoav],
+      };
+      await fillNewTask(tester, 'כותרת');
+
+      expect(find.byKey(const Key('task-form-assignee-m2')), findsOneWidget);
+      expect(find.byKey(const Key('task-form-assignee-m1')), findsNothing);
+    });
+
+    testWidgets('a create the backend refuses keeps the form open and says why',
+        (tester) async {
+      await pumpScreen(tester, user: admin, tasks: const []);
+      await fillNewTask(tester, 'משימה שנדחתה');
+      repository.failWith = DatabaseException(
+        'Failed backend mutation task.insert: אין הרשאה ליצור משימות',
+      );
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['insert:משימה שנדחתה']);
+      expect(find.text('אין הרשאה ליצור משימות'), findsOneWidget);
+      expect(find.byKey(const Key('task-form-title')), findsOneWidget);
+    });
+
+    testWidgets('a manager adds a stage on a day of the event', (tester) async {
+      await pumpScreen(tester, user: admin, tasks: const []);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('stage-add')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('stage-form-title')), 'ערב');
+      await tester.tap(find.byKey(const Key('stage-form-date')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('21/10/2026').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['insertStage:ערב']);
+      expect(find.byKey(const Key('stage-form-title')), findsNothing);
+    });
+
+    testWidgets('the new-stage button shows on כל השלבים only', (tester) async {
+      await pumpScreen(tester, user: admin, tasks: const []);
+      expect(find.byKey(const Key('stage-add')), findsOneWidget);
+
+      await openTab(tester, 'המשימות שלי');
+      expect(find.byKey(const Key('stage-add')), findsNothing);
+    });
+
+    testWidgets('a manager edits a stage', (tester) async {
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('stage-edit-st1')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('stage-form-title')),
+        'קליטה ורישום',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('stage-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['updateStage:st1']);
+    });
+
+    testWidgets('deleting a stage warns that its tasks go too, then sends it',
+        (tester) async {
+      await pumpScreen(tester, user: admin, tasks: [mine, theirs]);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('stage-delete-st1')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('יימחקו גם 2 המשימות שבו'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('stage-delete-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['deleteStage:st1']);
+      expect(find.byKey(const Key('stage-delete-confirm')), findsNothing);
+    });
   });
 
   group('excel import', () {
-    final admin = buildMember(id: 'boss', isAdmin: true);
-
     testWidgets('a manager sees import and template on an event without stages',
         (tester) async {
       await pumpScreen(tester, user: admin, tasks: const [], stages: const []);
@@ -850,14 +741,13 @@ void main() {
 
     testWidgets('a member gets no import buttons', (tester) async {
       await pumpScreen(tester, user: dana, tasks: const [], stages: const []);
+      expect(find.text('אין עדיין שלבים לאירוע זה'), findsOneWidget);
       expect(find.byKey(const Key('tasks-import')), findsNothing);
       expect(find.byKey(const Key('tasks-import-template')), findsNothing);
     });
 
     testWidgets('no import once the event has a stage', (tester) async {
       await pumpScreen(tester, user: admin, tasks: const []);
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
       expect(find.byKey(const Key('tasks-import')), findsNothing);
     });
 
@@ -921,336 +811,7 @@ void main() {
     });
   });
 
-  group('folds', () {
-    testWidgets('a stage starts folded and opens and closes on its title',
-        (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine], openStages: false);
-
-      expect(find.text('קליטה'), findsOneWidget);
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-
-      await tester.tap(find.byKey(const Key('stage-toggle-st1')));
-      await tester.pump();
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('stage-toggle-st1')));
-      await tester.pump();
-      expect(find.text('להזמין אוטובוס'), findsNothing);
-    });
-
-    testWidgets('an open stage stays open when its tasks change',
-        (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-      expect(find.byKey(const Key('subtask-a')), findsOneWidget);
-
-      // Someone creates an overdue task, which sorts above the other one.
-      final overdue = buildTask(
-        id: 'late',
-        title: 'משימה באיחור',
-        event: event,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-        dueAt: DateTime(2026, 10, 9, 9),
-      );
-      repository.controller.add(TaskBoard(
-        tasks: [withSubtasks, overdue],
-        events: [event],
-        stages: [arrival],
-        members: [dana, yoav],
-      ));
-      await tester.pump();
-      await tester.pump();
-      await openAllStages(tester);
-
-      expect(find.text('משימה באיחור'), findsOneWidget);
-      expect(find.byKey(const Key('subtask-a')), findsOneWidget);
-    });
-
-    testWidgets('subtasks always show, without pressing the task',
-        (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-
-      expect(find.byKey(const Key('subtask-a')), findsOneWidget);
-      expect(find.byKey(const Key('subtask-b')), findsOneWidget);
-
-      await tester.tap(find.text('אישור ביטחוני'));
-      await tester.pump();
-      expect(find.byKey(const Key('subtask-a')), findsOneWidget);
-    });
-  });
-
-  group('text fields', () {
-    testWidgets('the search field carries the RTL caret fix', (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine]);
-
-      final field = tester.widget<TextField>(
-        find.byKey(const Key('tasks-search')),
-      );
-      expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
-    });
-  });
-
-  group('appearance', () {
-    double contrast(Color a, Color b) {
-      final la = a.computeLuminance();
-      final lb = b.computeLuminance();
-      final lighter = la > lb ? la : lb;
-      final darker = la > lb ? lb : la;
-      return (lighter + 0.05) / (darker + 0.05);
-    }
-
-    testWidgets('the selected mine/all segment is readable under the app theme',
-        (tester) async {
-      // The app theme's default selected-segment colours are white text on
-      // light orange, which cannot be read.
-      await pumpScreen(tester,
-          user: dana, tasks: [mine], theme: AppTheme.lightTheme);
-
-      final button = tester.widget<SegmentedButton<bool>>(
-        find.byType(SegmentedButton<bool>),
-      );
-      final style = button.style;
-      expect(style, isNotNull);
-      const selected = {WidgetState.selected};
-      final background = style!.backgroundColor!.resolve(selected)!;
-      final foreground = style.foregroundColor!.resolve(selected)!;
-      expect(contrast(foreground, background), greaterThanOrEqualTo(4.5));
-    });
-
-    testWidgets('shows the test-environment banner in test mode only',
-        (tester) async {
-      EnvironmentService.instance.updateFromPath('/test/tasks');
-      addTearDown(() => EnvironmentService.instance.updateFromPath('/tasks'));
-      await pumpScreen(tester, user: dana, tasks: [mine]);
-      expect(find.textContaining('סביבת בדיקות'), findsOneWidget);
-
-      EnvironmentService.instance.updateFromPath('/tasks');
-      await tester.pump();
-      expect(find.textContaining('סביבת בדיקות'), findsNothing);
-    });
-  });
-
-  group('ordering', () {
-    testWidgets('overdue tasks come before open ones', (tester) async {
-      final overdue = buildTask(
-        id: 'late',
-        title: 'משימה באיחור',
-        event: event,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-        dueAt: DateTime(2026, 10, 9, 9),
-      );
-      await pumpScreen(tester, user: dana, tasks: [mine, overdue]);
-
-      final lateY = tester.getTopLeft(find.text('משימה באיחור')).dy;
-      final openY = tester.getTopLeft(find.text('להזמין אוטובוס')).dy;
-      expect(lateY, lessThan(openY));
-    });
-  });
-
-  group('event and stages', () {
-    final admin = buildMember(id: 'boss', isAdmin: true);
-    final evening = buildStage(
-      id: 'st2',
-      eventId: 'e1',
-      title: 'ערב גיבוש',
-      date: DateTime(2026, 10, 20),
-      startTime: '19:00',
-      endTime: '22:30',
-      hotelLocation: 'אולם ב',
-    );
-    final dayTwo = buildStage(
-      id: 'st3',
-      eventId: 'e1',
-      title: 'יציאה',
-      date: DateTime(2026, 10, 21),
-    );
-    final detailed = buildStage(
-      id: 'st4',
-      eventId: 'e1',
-      title: 'כנס',
-      date: DateTime(2026, 10, 21),
-      requirements: 'מקרן ושני מיקרופונים',
-      notes: 'להגיע חצי שעה לפני',
-      contacts: const [
-        StageContact(
-            id: 'c1', name: 'אבי', phone: '050-1234567', role: 'מנהל אירועים'),
-      ],
-    );
-
-    Future<void> showAll(WidgetTester tester) async {
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-      await openAllStages(tester);
-    }
-
-    testWidgets('the header shows the event, its days and its place',
-        (tester) async {
-      await pumpScreen(tester, user: dana, tasks: [mine]);
-
-      expect(find.text('דו יומי צפון'), findsOneWidget);
-      expect(find.text('20/10/2026 – 21/10/2026'), findsOneWidget);
-      expect(find.text('מלון קיסר'), findsOneWidget);
-    });
-
-    testWidgets('stages run by day and start time, with their time and place',
-        (tester) async {
-      await pumpScreen(
-        tester,
-        user: dana,
-        tasks: const [],
-        stages: [dayTwo, evening, arrival],
-      );
-      await showAll(tester);
-
-      double top(String id) =>
-          tester.getTopLeft(find.byKey(Key('stage-card-$id'))).dy;
-      expect(top('st1'), lessThan(top('st2')));
-      expect(top('st2'), lessThan(top('st3')));
-      expect(
-        find.text('20/10 · \u206619:00–22:30\u2069 · אולם ב'),
-        findsOneWidget,
-      );
-      expect(find.text('20/10 · 08:00'), findsOneWidget);
-    });
-
-    testWidgets('my tasks shows only the stages holding my tasks',
-        (tester) async {
-      final mineAtNight = buildTask(
-        id: 'night',
-        title: 'סידור אולם',
-        stageId: 'st2',
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-      );
-      await pumpScreen(
-        tester,
-        user: dana,
-        tasks: [mineAtNight, theirs],
-        stages: [arrival, evening, dayTwo],
-      );
-
-      expect(find.byKey(const Key('stage-card-st2')), findsOneWidget);
-      expect(find.byKey(const Key('stage-card-st1')), findsNothing);
-      expect(find.byKey(const Key('stage-card-st3')), findsNothing);
-
-      await showAll(tester);
-      expect(find.byKey(const Key('stage-card-st1')), findsOneWidget);
-      expect(find.byKey(const Key('stage-card-st3')), findsOneWidget);
-    });
-
-    testWidgets(
-        'a search hides the stages with nothing matching, even under '
-        'all tasks', (tester) async {
-      final night = buildTask(
-        id: 'night',
-        title: 'סידור אולם',
-        stageId: 'st2',
-        assigneeIds: const ['m2'],
-      );
-      await pumpScreen(
-        tester,
-        user: dana,
-        tasks: [mine, night],
-        stages: [arrival, evening],
-      );
-      await showAll(tester);
-
-      await tester.enterText(find.byKey(const Key('tasks-search')), 'אולם');
-      await tester.pump();
-
-      expect(find.byKey(const Key('stage-card-st2')), findsOneWidget);
-      expect(find.byKey(const Key('stage-card-st1')), findsNothing);
-      await tester.pump(const Duration(seconds: 1));
-    });
-
-    testWidgets(
-        'the task count is of all the stage\'s tasks, not only the '
-        'visible ones', (tester) async {
-      final theirsDone = buildTask(
-        id: 'done',
-        title: 'סגור',
-        assigneeIds: const ['m2'],
-        isComplete: true,
-      );
-      await pumpScreen(tester, user: dana, tasks: [mine, theirsDone]);
-
-      expect(find.text('משימות: \u20661/2\u2069'), findsOneWidget);
-    });
-
-    testWidgets('the stage details stay folded until opened', (tester) async {
-      await pumpScreen(
-        tester,
-        user: dana,
-        tasks: const [],
-        stages: [arrival, detailed],
-      );
-      await showAll(tester);
-
-      expect(find.text('מקרן ושני מיקרופונים'), findsNothing);
-      expect(find.byKey(const Key('stage-details-toggle-st1')), findsNothing,
-          reason: 'a stage with no details has no fold');
-      expect(find.text('להגיע חצי שעה לפני'), findsOneWidget,
-          reason: 'the notes sit with the time and place, not in the fold');
-
-      await tester.tap(find.byKey(const Key('stage-details-toggle-st4')));
-      await tester.pump();
-
-      expect(find.text('מקרן ושני מיקרופונים'), findsOneWidget);
-      expect(find.text('להגיע חצי שעה לפני'), findsOneWidget);
-      expect(find.text('אבי · מנהל אירועים'), findsOneWidget);
-      expect(find.byKey(const Key('stage-contact-call-c1')), findsOneWidget);
-      expect(find.text('050-1234567'), findsOneWidget);
-    });
-
-    testWidgets('a folded stage still shows its notes', (tester) async {
-      await pumpScreen(
-        tester,
-        user: dana,
-        tasks: const [],
-        stages: [detailed],
-        openStages: false,
-      );
-      await tester.tap(find.text('כל המשימות'));
-      await tester.pump();
-
-      expect(find.byKey(const Key('stage-body-st4')), findsNothing);
-      expect(find.text('להגיע חצי שעה לפני'), findsOneWidget);
-    });
-
-    testWidgets('a stage with only notes has no details fold', (tester) async {
-      final notesOnly = buildStage(
-        id: 'st5',
-        eventId: 'e1',
-        title: 'ארוחת ערב',
-        date: DateTime(2026, 10, 20),
-        notes: 'בחדר האוכל',
-      );
-      await pumpScreen(
-        tester,
-        user: dana,
-        tasks: const [],
-        stages: [notesOnly],
-      );
-      await showAll(tester);
-
-      expect(find.text('בחדר האוכל'), findsOneWidget);
-      expect(find.byKey(const Key('stage-details-toggle-st5')), findsNothing);
-    });
-
-    testWidgets('a task whose stage is gone is not shown', (tester) async {
-      final stray = buildTask(
-        id: 'stray',
-        title: 'משימה יתומה',
-        stageId: 'gone',
-        assigneeIds: const ['m1'],
-      );
-      await pumpScreen(tester, user: dana, tasks: [mine, stray]);
-
-      expect(find.text('להזמין אוטובוס'), findsOneWidget);
-      expect(find.text('משימה יתומה'), findsNothing);
-    });
-
+  group('event', () {
     testWidgets(
         'an event with no stages says so, and tells a manager how to '
         'add one', (tester) async {
@@ -1267,6 +828,14 @@ void main() {
       expect(find.byKey(const Key('stage-add')), findsNothing);
     });
 
+    testWidgets('the title is the event\'s name', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.text('דו יומי צפון')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the back arrow returns to the event list', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
@@ -1276,56 +845,42 @@ void main() {
       expect(find.text('רשימת האירועים'), findsOneWidget);
     });
 
-    testWidgets('a manager adds a stage on a day of the event', (tester) async {
-      await pumpScreen(tester, user: admin, tasks: const []);
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const Key('stage-add')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('stage-form-title')), 'ערב');
-      await tester.tap(find.byKey(const Key('stage-form-date')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('21/10/2026').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('stage-form-save')));
-      await tester.pumpAndSettle();
-
-      expect(repository.calls, ['insertStage:ערב']);
-      expect(find.byKey(const Key('stage-form-title')), findsNothing);
-    });
-
-    testWidgets('a manager edits a stage', (tester) async {
-      await pumpScreen(tester, user: admin, tasks: [mine]);
-      await showAll(tester);
-
-      await tester.tap(find.byKey(const Key('stage-edit-st1')));
-      await tester.pumpAndSettle();
-      expect(find.text('קליטה'), findsWidgets);
-      await tester.enterText(
-        find.byKey(const Key('stage-form-title')),
-        'קליטה ורישום',
-      );
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('stage-form-save')));
-      await tester.pumpAndSettle();
-
-      expect(repository.calls, ['updateStage:st1']);
-    });
-
-    testWidgets('deleting a stage warns that its tasks go too, then sends it',
+    testWidgets('shows the test-environment banner in test mode only',
         (tester) async {
-      await pumpScreen(tester, user: admin, tasks: [mine, theirs]);
-      await showAll(tester);
+      EnvironmentService.instance.updateFromPath('/test/tasks');
+      addTearDown(() => EnvironmentService.instance.updateFromPath('/tasks'));
+      // Wide: the test font draws every letter as a full square, so the
+      // banner's line is far longer here than in the app.
+      await pumpScreen(
+        tester,
+        user: dana,
+        tasks: [mine],
+        size: const Size(900, 1800),
+      );
+      expect(find.textContaining('סביבת בדיקות'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('stage-delete-st1')));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('יימחקו גם 2 המשימות שבו'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('stage-delete-confirm')));
-      await tester.pumpAndSettle();
-
-      expect(repository.calls, ['deleteStage:st1']);
-      expect(find.byKey(const Key('stage-delete-confirm')), findsNothing);
+      EnvironmentService.instance.updateFromPath('/tasks');
+      await tester.pump();
+      expect(find.textContaining('סביבת בדיקות'), findsNothing);
     });
+  });
+
+  testWidgets('the debug preview shows a member\'s timeline, read-only',
+      (tester) async {
+    await pumpScreen(tester, user: admin, tasks: [mine, theirs]);
+    await openTab(tester, 'המשימות שלי');
+    expect(find.byKey(const Key('my-task-mine')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('view-as')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('view-as-m1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('my-task-mine')), findsOneWidget);
+    expect(find.byKey(const Key('my-task-theirs')), findsNothing);
+    expect(
+      tester.widget<Checkbox>(find.byKey(const Key('my-task-tick-mine'))).onChanged,
+      isNull,
+    );
   });
 }

@@ -6,14 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
-import 'package:shavtzak/core/utils/task_utils.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/assignee_update_dialog.dart';
-import 'package:shavtzak/presentation/screens/task/widgets/task_filter_modal.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/task_form_modal.dart';
 
 import '../../../../support/task_fixtures.dart';
@@ -1133,164 +1131,6 @@ void main() {
         expect(form.closed, isFalse);
         expect(leave, findsOneWidget);
       });
-    });
-  });
-
-  group('task filter', () {
-    /// Opens the filter and returns every selection it reported, in order.
-    Future<List<TaskFilterSelection>> openFilter(
-      WidgetTester tester, {
-      TaskFilterSelection current = const TaskFilterSelection(),
-      List<TeamMember>? members,
-    }) async {
-      final reported = <TaskFilterSelection>[];
-      await _openDialog<bool>(
-        tester,
-        (context) async {
-          await showTaskFilterModal(
-            context,
-            current: current,
-            members: members ?? [dana, yoav],
-            onChanged: reported.add,
-          );
-          return true;
-        },
-      );
-      return reported;
-    }
-
-    final closeButton = find.byKey(const Key('filter-close'));
-
-    testWidgets('every tick is reported at once, with no apply step',
-        (tester) async {
-      final reported = await openFilter(tester);
-      expect(find.byKey(const Key('filter-apply')), findsNothing);
-
-      await tester.tap(find.byKey(const Key('filter-status-overdue')));
-      await tester.pump();
-      expect(reported, [
-        const TaskFilterSelection(statuses: {TaskDueStatus.overdue}),
-      ]);
-
-      await tester.tap(find.byKey(const Key('filter-assignee-m1')));
-      await tester.pump();
-
-      expect(
-        reported.last,
-        const TaskFilterSelection(
-          statuses: {TaskDueStatus.overdue},
-          assigneeIds: {'m1'},
-        ),
-      );
-      expect(reported, hasLength(2));
-    });
-
-    testWidgets('offers the assembly half-hour option and no event section',
-        (tester) async {
-      final reported = await openFilter(tester);
-      expect(find.text('התייצבות בחצי שעה הקרובה'), findsOneWidget);
-      expect(find.text('אירוע'), findsNothing);
-
-      await tester.tap(find.byKey(const Key('filter-due-soon')));
-      await tester.pump();
-
-      expect(reported, [const TaskFilterSelection(dueSoon: true)]);
-    });
-
-    testWidgets('with no members offered there is no assignee section',
-        (tester) async {
-      await openFilter(tester, members: const []);
-      expect(find.text('אחראי'), findsNothing);
-    });
-
-    testWidgets(
-        'starts from the current selection, and unticking reports '
-        'what is left', (tester) async {
-      final reported = await openFilter(
-        tester,
-        current: const TaskFilterSelection(
-          dueSoon: true,
-          statuses: {TaskDueStatus.completed},
-          assigneeIds: {'m1'},
-        ),
-      );
-
-      bool ticked(String key) =>
-          tester.widget<CheckboxListTile>(find.byKey(Key(key))).value ?? false;
-      expect(ticked('filter-due-soon'), isTrue);
-      expect(ticked('filter-status-completed'), isTrue);
-      expect(ticked('filter-assignee-m1'), isTrue);
-      expect(ticked('filter-assignee-m2'), isFalse);
-
-      await tester.tap(find.byKey(const Key('filter-status-completed')));
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('filter-due-soon')));
-      await tester.pump();
-
-      expect(reported.last, const TaskFilterSelection(assigneeIds: {'m1'}));
-    });
-
-    testWidgets('a reported selection is not changed by later ticks',
-        (tester) async {
-      final reported = await openFilter(tester);
-
-      await tester.tap(find.byKey(const Key('filter-assignee-m1')));
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('filter-assignee-m2')));
-      await tester.pump();
-
-      expect(reported.first, const TaskFilterSelection(assigneeIds: {'m1'}));
-    });
-
-    testWidgets(
-        'clear reports an empty selection, unticks everything and '
-        'leaves the filter open', (tester) async {
-      final reported = await openFilter(
-        tester,
-        current: const TaskFilterSelection(dueSoon: true, assigneeIds: {'m1'}),
-      );
-
-      await tester.tap(find.byKey(const Key('filter-clear')));
-      await tester.pumpAndSettle();
-
-      expect(reported, [const TaskFilterSelection()]);
-      expect(reported.single.isEmpty, isTrue);
-      expect(closeButton, findsOneWidget);
-      expect(
-        tester
-            .widget<CheckboxListTile>(
-                find.byKey(const Key('filter-assignee-m1')))
-            .value,
-        isFalse,
-      );
-    });
-
-    testWidgets('close shuts the filter and reports nothing more',
-        (tester) async {
-      final reported = await openFilter(tester);
-      await tester.tap(find.byKey(const Key('filter-status-open')));
-      await tester.pump();
-
-      await tester.tap(closeButton);
-      await tester.pumpAndSettle();
-
-      expect(closeButton, findsNothing);
-      expect(reported, [
-        const TaskFilterSelection(statuses: {TaskDueStatus.open}),
-      ]);
-    });
-
-    test('activeCount counts the groups in use', () {
-      expect(const TaskFilterSelection().activeCount, 0);
-      expect(
-        const TaskFilterSelection(
-          statuses: {TaskDueStatus.open, TaskDueStatus.overdue},
-          assigneeIds: {'m1'},
-        ).activeCount,
-        2,
-      );
-      expect(const TaskFilterSelection(dueSoon: true).activeCount, 1);
-      expect(const TaskFilterSelection(dueSoon: true).isEmpty, isFalse);
     });
   });
 

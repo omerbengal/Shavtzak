@@ -1,38 +1,37 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' hide TextDirection;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/debug/logger.dart';
 import '../../../core/debug/search_action_logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/task_import_files.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
-import '../../../core/utils/task_import/task_import_template.dart';
+import '../../../core/utils/task_progress.dart';
 import '../../../core/utils/task_utils.dart';
-import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
-import '../../../domain/entities/stage.dart';
-import '../../../domain/entities/subtask.dart';
 import '../../../domain/entities/task_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/task/task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/test_environment_indicator.dart';
-import 'widgets/assignee_update_dialog.dart';
-import 'widgets/confirm_delete_dialog.dart';
-import 'widgets/stage_card.dart';
-import 'widgets/stage_form_modal.dart';
+import 'row_hold.dart';
+import 'sheet_view.dart';
+import 'task_screen_actions.dart';
+import 'task_style.dart';
+import 'widgets/legacy_stage_list.dart';
+import 'widgets/member_timeline.dart';
 import 'widgets/task_card.dart';
-import 'widgets/task_filter_modal.dart';
-import 'widgets/task_form_modal.dart';
-import 'widgets/task_import_dialog.dart';
+import 'widgets/task_detail.dart';
+import 'widgets/task_results_list.dart';
+import 'widgets/task_row.dart';
+import 'widgets/task_sheet.dart';
 
 final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
@@ -43,11 +42,16 @@ String taskEventDates(Event event) {
   return '${_dateFormat.format(days.first)} – ${_dateFormat.format(days.last)}';
 }
 
-/// One דו יומי event's tasks, at `/tasks/<eventId>`: its stages, and the tasks
-/// under each.
+/// The event screen's two views.
+enum EventTasksTab { mine, all }
+
+/// One דו יומי event's tasks, at `/tasks/<eventId>`.
 ///
-/// Every signed-in member can read it. The screen opens on the member's own
-/// tasks; "כל המשימות" shows everyone's and every stage.
+/// Two tabs over one low sheet: "המשימות שלי", the viewer's tasks threaded
+/// through the stages, and "כל השלבים", every stage. Managers land on the
+/// second, everyone else on the first; both are open to every signed-in
+/// member. The sheet is where a task, a stage or a list of results is read
+/// and acted on, from either tab; the search in the app bar fills it too.
 class EventTasksScreen extends StatefulWidget {
   const EventTasksScreen({
     super.key,
@@ -68,34 +72,35 @@ class EventTasksScreen extends StatefulWidget {
   State<EventTasksScreen> createState() => _EventTasksScreenState();
 }
 
-class _EventTasksScreenState extends State<EventTasksScreen> {
+class _EventTasksScreenState extends State<EventTasksScreen>
+    with TaskScreenActions<EventTasksScreen> {
+  @override
+  DateTime get actionTime => _now;
+
+  @override
+  TaskImportFiles get importFiles => widget.importFiles;
+
   final TextEditingController _searchController = TextEditingController();
-  final SearchActionLogger _searchLog = SearchActionLogger('tasks');
-
-  bool _showAll = false;
-  String _query = '';
-
-  // Each tab keeps a filter of its own. "My tasks" is the member's personal
-  // view and has no assignee section; "all tasks" is the general one.
-  TaskFilterSelection _mineFilter = const TaskFilterSelection();
-  TaskFilterSelection _allFilter = const TaskFilterSelection();
-
-  TaskFilterSelection get _filter => _showAll ? _allFilter : _mineFilter;
-
-  // Kept here, not in the cards: the list re-sorts on every change, and a card
-  // that moved would otherwise close.
-  final Set<String> _openStageIds = <String>{};
-  final Set<String> _openStageDetails = <String>{};
-
   late final FocusNode _searchFocusNode =
       createRtlCursorFixedFocusNode(_searchController);
+  final SearchActionLogger _searchLog = SearchActionLogger('tasks');
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+  final RowHold _rowHold = RowHold();
+
+  /// Chosen on the first build that knows the user.
+  EventTasksTab? _tab;
+  SheetView? _sheet;
+  bool _searching = false;
+
+  /// Whose timeline "המשימות שלי" shows; null is the signed-in member. Only
+  /// a debug build lets a manager pick someone else.
+  String? _viewAsId;
 
   late DateTime _now;
   Timer? _ticker;
 
   DateTime _readClock() => (widget.clock ?? DateTime.now)();
-
-  bool get _isNarrowed => _query.trim().isNotEmpty || !_filter.isEmpty;
 
   @override
   void initState() {
@@ -115,245 +120,89 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
     _searchLog.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
+    _sheetController.dispose();
     super.dispose();
   }
 
-  // ---- actions ----
+  // ---- navigation within the screen ----
 
-  Future<CrudActionResult> _send(
-    TaskEvent Function(CrudActionCompleter completion) build,
-  ) {
-    final completion = CrudActionCompleter();
-    context.read<TaskBloc>().add(build(completion));
-    return completion.future;
+  void _setTab(EventTasksTab tab) {
+    Logger.action('toggle:tasksTab', {'tab': tab.name});
+    setState(() => _tab = tab);
   }
 
-  /// For the ticks, which have no dialog: a failure goes to a snackbar.
-  Future<void> _dispatch(
-    TaskEvent Function(CrudActionCompleter completion) build,
-  ) async {
-    final result = await _send(build);
-    if (!mounted || result.isSuccess) return;
-    _showError(result.message ?? 'הפעולה נכשלה. נסו שוב.');
+  void _openSheet(SheetView view) {
+    Logger.action('open:taskSheet', {'view': _viewName(view)});
+    setState(() => _sheet = view);
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.red.shade700,
-        ),
-      );
+  void _closeSheet() {
+    Logger.action('close:taskSheet');
+    setState(() {
+      _sheet = null;
+      _rowHold.clear();
+    });
   }
 
-  Future<void> _createStage(Event event, TeamMember user) {
-    Logger.action('tap:stageAdd');
-    return showStageFormModal(
-      context,
-      event: event,
-      onSave: (stage) =>
-          _send((completion) => CreateStage(stage, completion: completion)),
-      currentUserId: user.id,
-      now: _now,
-    );
+  static String _viewName(SheetView view) => switch (view) {
+        StageView() => 'stage',
+        ResultsView(:final kind) => kind.name,
+        TaskView() => 'task',
+      };
+
+  /// Whether [view] is the search results, or a task opened from them.
+  static bool _isSearch(SheetView? view) => switch (view) {
+        ResultsView(kind: ResultsKind.search) => true,
+        TaskView(:final back) => _isSearch(back),
+        _ => false,
+      };
+
+  void _openSearch() {
+    Logger.action('tap:tasksSearch');
+    setState(() => _searching = true);
   }
 
-  Future<void> _editStage(Stage stage, Event event, TeamMember user) {
-    Logger.action('tap:stageEdit');
-    return showStageFormModal(
-      context,
-      existing: stage,
-      event: event,
-      onSave: (next) =>
-          _send((completion) => UpdateStage(next, completion: completion)),
-      currentUserId: user.id,
-      now: _now,
-    );
-  }
-
-  Future<void> _importFromExcel(Event event, TeamMember user) async {
-    Logger.action('tap:tasksImport');
-    final file = await widget.importFiles.pickXlsx();
-    if (file == null || !mounted) return;
-    final result = await showTaskImportDialog(
-      context,
-      file: file,
-      event: event,
-      files: widget.importFiles,
-      assignees: context.read<TaskRepository>().watchEventAssignees(event.id),
-      onImport: (stages) => _send(
-        (completion) => ImportStages(event.id, stages, completion: completion),
-      ),
-      currentUserId: user.id,
-      now: _now,
-    );
-    if (result == null || !mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(
-          'יובאו ${result.stages.length} שלבים ו-${result.taskCount} משימות',
-        ),
-      ));
-  }
-
-  void _downloadTemplate(Event event) {
-    Logger.action('tap:tasksImportTemplate');
-    widget.importFiles.saveXlsx(
-      buildTaskImportTemplate(event),
-      taskImportTemplateFileName,
-    );
-  }
-
-  Future<void> _deleteStage(Stage stage, int taskCount) {
-    Logger.action('tap:stageDelete', {'tasks': taskCount});
-    final tasksLine = switch (taskCount) {
-      0 => '',
-      1 => ' תימחק גם המשימה שבו.',
-      _ => ' יימחקו גם $taskCount המשימות שבו.',
-    };
-    return showConfirmDeleteDialog(
-      context,
-      title: 'מחיקת שלב',
-      message: 'למחוק את השלב "${stage.title}"?$tasksLine לא ניתן לשחזר.',
-      keyPrefix: 'stage-delete',
-      onDelete: () =>
-          _send((completion) => DeleteStage(stage.id, completion: completion)),
-    );
-  }
-
-  Future<void> _createTask(Event event, Stage stage, TeamMember user) {
-    Logger.action('tap:taskAdd');
-    return showTaskFormModal(
-      context,
-      event: event,
-      stage: stage,
-      watchEventAssignees: context.read<TaskRepository>().watchEventAssignees,
-      onSave: (task) =>
-          _send((completion) => CreateTask(task, completion: completion)),
-      currentUserId: user.id,
-      now: _now,
-    );
-  }
-
-  Future<void> _editTask(
-    TaskItem existing,
-    Event event,
-    Stage stage,
-    TeamMember user,
-  ) {
-    Logger.action('tap:taskEdit');
-    return showTaskFormModal(
-      context,
-      existing: existing,
-      event: event,
-      stage: stage,
-      watchEventAssignees: context.read<TaskRepository>().watchEventAssignees,
-      onSave: (task) =>
-          _send((completion) => UpdateTask(task, completion: completion)),
-      currentUserId: user.id,
-      now: _now,
-    );
-  }
-
-  Future<void> _deleteTask(TaskItem task) {
-    Logger.action('tap:taskDelete');
-    return showConfirmDeleteDialog(
-      context,
-      title: 'מחיקת משימה',
-      message: 'למחוק את "${task.title}"? לא ניתן לשחזר.',
-      keyPrefix: 'task-delete',
-      onDelete: () =>
-          _send((completion) => DeleteTask(task.id, completion: completion)),
-    );
-  }
-
-  Future<void> _editUpdate(TaskItem task) {
-    Logger.action('tap:taskUpdate');
-    return showAssigneeUpdateDialog(
-      context,
-      initialText: task.assigneeUpdate,
-      onSave: (text) => _send(
-        (completion) => SaveAssigneeUpdate(
-          taskId: task.id,
-          text: text,
-          completion: completion,
-        ),
-      ),
-    );
-  }
-
-  void _toggleSubtask(TaskItem task, Subtask subtask, bool isDone) {
-    Logger.action('toggle:subtask', {'on': isDone});
-    _dispatch(
-      (completion) => ToggleSubtask(
-        taskId: task.id,
-        subtaskId: subtask.id,
-        isDone: isDone,
-        completion: completion,
-      ),
-    );
-  }
-
-  void _setComplete(TaskItem task, bool isComplete) {
-    Logger.action('toggle:taskComplete', {'on': isComplete});
-    _dispatch(
-      (completion) => SetTaskComplete(
-        taskId: task.id,
-        isComplete: isComplete,
-        completion: completion,
-      ),
-    );
-  }
-
-  Future<void> _callPhone(String phone) async {
-    Logger.action('tap:stageContactCall');
-    final uri =
-        Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'[-\s()]'), ''));
-    final launched = await canLaunchUrl(uri) && await launchUrl(uri);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('טלפון: $phone')));
-    }
-  }
-
-  void _openFilter(List<TaskItem> eventTasks, TeamMember user) {
-    Logger.action('open:taskFilterModal');
-    final forAllTasks = _showAll;
-    final membersById = <String, TeamMember>{};
-    for (final task in eventTasks) {
-      for (final member in task.assignees) {
-        membersById[member.id] = member;
+  void _closeSearch() {
+    Logger.action('tap:tasksSearchClose');
+    _searchController.clear();
+    _searchLog.onQueryChanged('');
+    setState(() {
+      _searching = false;
+      if (_isSearch(_sheet)) {
+        _sheet = null;
+        _rowHold.clear();
       }
-    }
-    final members = membersById.values.toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    });
+  }
 
-    showTaskFilterModal(
-      context,
-      current: _filter,
-      // No assignee section under "my tasks": they are all the member's own.
-      members: forAllTasks ? members : const [],
-      onChanged: (selection) {
-        if (!mounted) return;
-        Logger.action('filter:tasks', {'groups': selection.activeCount});
-        setState(() {
-          if (forAllTasks) {
-            _allFilter = selection;
-          } else {
-            _mineFilter = selection;
-          }
-        });
-      },
-    );
+  void _onQueryChanged(String value) {
+    _searchLog.onQueryChanged(value);
+    final query = value.trim();
+    setState(() {
+      if (query.isNotEmpty) {
+        _sheet = ResultsView(ResultsKind.search, query: query);
+      } else if (_isSearch(_sheet)) {
+        _sheet = null;
+        _rowHold.clear();
+      }
+    });
   }
 
   void _backToEvents() {
     Logger.action('tap:tasksBackToEvents');
     context.go('${EnvironmentService.instance.routePrefix}/tasks');
+  }
+
+  /// [view] as it can be shown on [board]: a task that is gone gives way to
+  /// the list it was opened from, a stage that is gone closes the sheet.
+  SheetView? _resolve(SheetView? view, EventTaskBoard board) {
+    return switch (view) {
+      null => null,
+      TaskView(:final taskId, :final back) =>
+        board.taskById(taskId) != null ? view : _resolve(back, board),
+      StageView(:final stageId) => board.stageById(stageId) != null ? view : null,
+      ResultsView() => view,
+    };
   }
 
   // ---- build ----
@@ -370,32 +219,30 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
             );
           }
           final user = authState.user;
+          _tab ??=
+              canManageTasks(user) ? EventTasksTab.all : EventTasksTab.mine;
           return BlocBuilder<TaskBloc, TaskState>(
             builder: (context, state) {
               final loaded = state is TasksLoaded ? state : null;
               final event = loaded == null ? null : _findEvent(loaded);
+              final board = event == null
+                  ? null
+                  : eventTaskBoard(
+                      event,
+                      stages: loaded!.stages,
+                      tasks: loaded.tasks,
+                    );
               return Scaffold(
-                appBar: AppBar(
-                  title: Text(event?.name ?? 'משימות דו יומי'),
-                  // On the far left, pointing left.
-                  automaticallyImplyLeading: false,
-                  actions: [
-                    IconButton(
-                      key: const Key('tasks-back'),
-                      tooltip: 'חזרה לרשימת האירועים',
-                      // Mirrored under RTL, so it draws pointing left.
-                      icon: const Icon(Icons.arrow_forward),
-                      onPressed: _backToEvents,
-                    ),
-                  ],
-                ),
+                appBar: _buildAppBar(event),
                 body: TestEnvironmentIndicator(
-                  child: _buildBody(state, event, user),
+                  child: _buildBody(state, board, user),
                 ),
-                floatingActionButton: event != null && canManageTasks(user)
+                floatingActionButton: board != null &&
+                        canManageTasks(user) &&
+                        _tab == EventTasksTab.all
                     ? FloatingActionButton.extended(
                         key: const Key('stage-add'),
-                        onPressed: () => _createStage(event, user),
+                        onPressed: () => createStage(board.event, user),
                         icon: const Icon(Icons.add),
                         label: const Text('שלב חדש'),
                       )
@@ -405,6 +252,52 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
           );
         },
       ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(Event? event) {
+    return AppBar(
+      title: _searching
+          ? TextField(
+              key: const Key('tasks-search'),
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              autofocus: true,
+              cursorColor: Colors.white,
+              style: const TextStyle(color: Colors.white, fontSize: 17),
+              decoration: const InputDecoration(
+                hintText: 'חיפוש משימה או אדם...',
+                hintStyle: TextStyle(color: Colors.white70),
+                border: InputBorder.none,
+              ),
+              onChanged: _onQueryChanged,
+            )
+          : Text(event?.name ?? 'משימות דו יומי'),
+      // The back arrow on the far left, pointing left, with search beside it.
+      automaticallyImplyLeading: false,
+      actions: [
+        if (_searching)
+          IconButton(
+            key: const Key('tasks-search-close'),
+            tooltip: 'סגירת החיפוש',
+            icon: const Icon(Icons.close),
+            onPressed: _closeSearch,
+          )
+        else
+          IconButton(
+            key: const Key('tasks-search-open'),
+            tooltip: 'חיפוש',
+            icon: const Icon(Icons.search),
+            onPressed: _openSearch,
+          ),
+        IconButton(
+          key: const Key('tasks-back'),
+          tooltip: 'חזרה לרשימת האירועים',
+          // Mirrored under RTL, so it draws pointing left.
+          icon: const Icon(Icons.arrow_forward),
+          onPressed: _backToEvents,
+        ),
+      ],
     );
   }
 
@@ -420,7 +313,7 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
     return null;
   }
 
-  Widget _buildBody(TaskState state, Event? event, TeamMember user) {
+  Widget _buildBody(TaskState state, EventTaskBoard? board, TeamMember user) {
     if (state is TasksError) {
       return Center(
         child: Column(
@@ -443,141 +336,325 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
     if (state is! TasksLoaded) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (event == null) return _buildUnknownEvent();
+    if (board == null) return _buildUnknownEvent();
 
-    final stages =
-        state.stages.where((stage) => stage.eventId == event.id).toList();
-    final stageIds = {for (final stage in stages) stage.id};
-    // A task whose stage is gone has nowhere to be shown.
-    final eventTasks = state.tasks
-        .where((task) =>
-            task.eventId == event.id && stageIds.contains(task.stageId))
-        .toList();
-    final filter = _filter;
-    final visible = sortTasks(
-      filterTasks(
-        eventTasks,
-        now: _now,
-        query: _query,
-        onlyAssigneeId: _showAll ? null : user.id,
-        statuses: filter.statuses,
-        assigneeIds: filter.assigneeIds,
-        dueWithin: filter.dueSoon ? taskDueSoonWindow : null,
-      ),
-    );
-    final groups = stagesToShow(
-      stages: stages,
-      visibleTasks: visible,
-      showEveryStage: _showAll && !_isNarrowed,
-    );
+    final sheet = _resolve(_sheet, board);
+    if (sheet != _sheet) {
+      // What the sheet showed is gone; settle on what it shows now.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _sheet = _resolve(_sheet, board);
+          if (_sheet == null) _rowHold.clear();
+        });
+      });
+    }
 
     return Column(
       children: [
-        _buildHeader(event),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<bool>(
-              showSelectedIcon: false,
-              // Explicit colours: the app theme's defaults for a selected
-              // segment are white text on light orange, which is unreadable.
-              style: SegmentedButton.styleFrom(
-                selectedBackgroundColor: AppTheme.primaryDark,
-                selectedForegroundColor: Colors.white,
-              ),
-              segments: const [
-                ButtonSegment(value: false, label: Text('המשימות שלי')),
-                ButtonSegment(value: true, label: Text('כל המשימות')),
-              ],
-              selected: {_showAll},
-              onSelectionChanged: (selection) {
-                Logger.action('toggle:tasksShowAll', {'on': selection.first});
-                setState(() => _showAll = selection.first);
-              },
-            ),
-          ),
-        ),
-        _buildSearchBar(eventTasks, user),
+        _buildTabs(),
         Expanded(
-          child: groups.isEmpty
-              ? _buildEmptyState(
-                  hasStages: stages.isNotEmpty,
-                  user: user,
-                  event: event,
-                )
-              : ListView.builder(
-                  // Room for the floating button below the last card.
-                  padding: const EdgeInsets.only(top: 4, bottom: 96),
-                  itemCount: groups.length,
-                  itemBuilder: (context, index) {
-                    final group = groups[index];
-                    final stage = group.stage;
-                    final stageTasks = eventTasks
-                        .where((task) => task.stageId == stage.id)
-                        .toList();
-                    return StageCard(
-                      key: ValueKey(stage.id),
-                      stage: stage,
-                      tasks: group.tasks,
-                      allTasks: stageTasks,
-                      canManage: canManageTasks(user),
-                      isOpen: _openStageIds.contains(stage.id),
-                      onToggleOpen: () => setState(() {
-                        if (!_openStageIds.remove(stage.id)) {
-                          _openStageIds.add(stage.id);
-                        }
-                      }),
-                      isDetailsOpen: _openStageDetails.contains(stage.id),
-                      onToggleDetails: () => setState(() {
-                        if (!_openStageDetails.remove(stage.id)) {
-                          _openStageDetails.add(stage.id);
-                        }
-                      }),
-                      onEdit: () => _editStage(stage, event, user),
-                      onDelete: () => _deleteStage(stage, stageTasks.length),
-                      onAddTask: () => _createTask(event, stage, user),
-                      onCallPhone: _callPhone,
-                      taskBuilder: (task) => TaskCard(
-                        key: ValueKey(task.id),
-                        task: task,
-                        now: _now,
-                        canManage: canManageTasks(user),
-                        canUpdateProgress: canUpdateTaskProgress(task, user),
-                        onToggleSubtask: (subtask, isDone) =>
-                            _toggleSubtask(task, subtask, isDone),
-                        onSetComplete: (isComplete) =>
-                            _setComplete(task, isComplete),
-                        onEditUpdate: () => _editUpdate(task),
-                        onEdit: () => _editTask(task, event, stage, user),
-                        onDelete: () => _deleteTask(task),
-                      ),
-                    );
-                  },
-                ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final sheetRoom = sheet == null
+                  ? 0.0
+                  : constraints.maxHeight * TaskStyle.sheetInitialSize;
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: _tab == EventTasksTab.mine
+                        ? _buildMine(board, user, sheetRoom)
+                        : _buildAll(board, user),
+                  ),
+                  if (sheet != null)
+                    TaskSheet(
+                      controller: _sheetController,
+                      viewKey: sheet,
+                      content: _sheetContent(sheet, board, user),
+                      onClose: _closeSheet,
+                      onBack: switch (sheet) {
+                        TaskView(:final back?) => () => _openSheet(back),
+                        _ => null,
+                      },
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildHeader(Event event) {
-    final theme = Theme.of(context);
-    return Container(
-      key: const Key('event-header'),
-      width: double.infinity,
-      color: theme.colorScheme.primary.withValues(alpha: 0.06),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 4,
-        children: [
-          _HeaderItem(icon: Icons.event, text: taskEventDates(event)),
-          if (event.location.isNotEmpty)
-            _HeaderItem(icon: Icons.place_outlined, text: event.location),
-        ],
+  Widget _buildTabs() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<EventTasksTab>(
+          showSelectedIcon: false,
+          // Explicit colours: the app theme's defaults for a selected
+          // segment are white text on light orange, which is unreadable.
+          style: SegmentedButton.styleFrom(
+            selectedBackgroundColor: AppTheme.primaryDark,
+            selectedForegroundColor: Colors.white,
+          ),
+          segments: const [
+            ButtonSegment(
+              value: EventTasksTab.mine,
+              label: Text('המשימות שלי', key: Key('tab-mine')),
+            ),
+            ButtonSegment(
+              value: EventTasksTab.all,
+              label: Text('כל השלבים', key: Key('tab-all')),
+            ),
+          ],
+          selected: {_tab!},
+          onSelectionChanged: (selection) => _setTab(selection.first),
+        ),
       ),
     );
   }
+
+  // ---- "המשימות שלי" ----
+
+  Widget _buildMine(EventTaskBoard board, TeamMember user, double sheetRoom) {
+    if (board.stages.isEmpty) {
+      return _buildNoStages(user, board.event, forManagers: false);
+    }
+    final viewerId = _viewAsId ?? user.id;
+    final timeline = MemberTimeline(
+      key: ValueKey('timeline-$viewerId'),
+      board: board,
+      viewerId: viewerId,
+      now: _now,
+      canTick: viewerId == user.id,
+      onOpenTask: (task) => _openSheet(TaskView(task.id)),
+      onOpenStage: (stage) => _openSheet(StageView(stage.id)),
+      onSetComplete: setComplete,
+      onToggleSubtask: toggleSubtask,
+      onOpenMyLate: () => _openSheet(const ResultsView(ResultsKind.myLate)),
+      onShowAllStages: () => _setTab(EventTasksTab.all),
+      bottomPadding: sheetRoom,
+    );
+    if (!(kDebugMode && canManageTasks(user))) return timeline;
+    return Column(
+      children: [
+        _buildViewAs(board, user),
+        Expanded(child: timeline),
+      ],
+    );
+  }
+
+  /// Debug runs only: lets a manager see any member's timeline, read-only,
+  /// to judge it on real data.
+  Widget _buildViewAs(EventTaskBoard board, TeamMember user) {
+    final people = <String, String>{user.id: user.name};
+    for (final task in board.tasks) {
+      for (final member in task.assignees) {
+        people[member.id] = member.name;
+      }
+    }
+    final viewerId = _viewAsId ?? user.id;
+    return Material(
+      color: TaskStyle.soonLight,
+      child: InkWell(
+        key: const Key('view-as'),
+        onTap: () => _pickViewer(people, user),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Row(
+            children: [
+              const Icon(Icons.visibility_outlined, size: 18),
+              const SizedBox(width: 6),
+              Expanded(child: Text('תצוגה בתור: ${people[viewerId] ?? ''}')),
+              const Text(
+                'הרצה מקומית בלבד',
+                style: TextStyle(fontSize: 11, color: TaskStyle.neutralText),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickViewer(Map<String, String> people, TeamMember user) async {
+    Logger.action('tap:viewAs');
+    final sorted = people.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SimpleDialog(
+          title: const Text('תצוגה בתור'),
+          children: [
+            for (final person in sorted)
+              SimpleDialogOption(
+                key: Key('view-as-${person.key}'),
+                onPressed: () => Navigator.of(context).pop(person.key),
+                child: Text(person.value),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => _viewAsId = chosen == user.id ? null : chosen);
+  }
+
+  // ---- "כל השלבים" ----
+
+  Widget _buildAll(EventTaskBoard board, TeamMember user) {
+    if (board.stages.isEmpty) {
+      return _buildNoStages(user, board.event, forManagers: true);
+    }
+    final event = board.event;
+    return LegacyStageList(
+      groups: stagesToShow(
+        stages: board.stages,
+        visibleTasks: board.tasks,
+        showEveryStage: true,
+      ),
+      eventTasks: board.tasks,
+      canManage: canManageTasks(user),
+      onEditStage: (stage) => editStage(stage, event, user),
+      onDeleteStage: deleteStage,
+      onAddTask: (stage) => createTask(event, stage, user),
+      onCallPhone: callPhone,
+      taskBuilder: (task, stage) => TaskCard(
+        key: ValueKey(task.id),
+        task: task,
+        now: _now,
+        canManage: canManageTasks(user),
+        canUpdateProgress: canUpdateTaskProgress(task, user),
+        onToggleSubtask: (subtask, isDone) =>
+            toggleSubtask(task, subtask, isDone),
+        onSetComplete: (isComplete) => setComplete(task, isComplete),
+        onEditUpdate: () => editUpdate(task),
+        onEdit: () => editTask(task, event, stage, user),
+        onDelete: () => deleteTask(task),
+      ),
+    );
+  }
+
+  // ---- the sheet ----
+
+  SheetContent _sheetContent(
+    SheetView view,
+    EventTaskBoard board,
+    TeamMember user,
+  ) {
+    switch (view) {
+      case TaskView(:final taskId):
+        final task = board.taskById(taskId)!;
+        final stage = board.stageById(task.stageId)!;
+        return SheetContent(
+          header: const Text('פרטי המשימה'),
+          body: TaskDetail(
+            task: task,
+            now: _now,
+            canManage: canManageTasks(user),
+            canUpdateProgress: canUpdateTaskProgress(task, user),
+            onToggleSubtask: (subtask, isDone) =>
+                toggleSubtask(task, subtask, isDone),
+            onSetComplete: (isComplete) => setComplete(task, isComplete),
+            onEditUpdate: () => editUpdate(task),
+            onEdit: () => editTask(task, board.event, stage, user),
+            onDelete: () => deleteTask(task),
+            onCallPhone: callPhone,
+          ),
+        );
+      case StageView(:final stageId, :final missingOnly):
+        final stage = board.stageById(stageId)!;
+        final stageTasks = board.tasksOf(stageId);
+        final rows = _rowHold.rows(
+          view,
+          matching: missingOnly
+              ? [for (final task in stageTasks) if (!task.isComplete) task]
+              : stageTasks,
+          all: stageTasks,
+        );
+        return SheetContent(
+          header: Text(stage.title),
+          body: _resultsBody(
+            view,
+            board,
+            user,
+            rows,
+            emptyText: 'אין עדיין משימות בשלב זה',
+          ),
+        );
+      case ResultsView(:final kind, :final query):
+        final (String title, List<TaskItem> matching) = switch (kind) {
+          ResultsKind.search => _searchResults(board, query),
+          ResultsKind.myLate => _myLateResults(board, user),
+          // The calendar tab's lists arrive with the calendar.
+          _ => ('', const <TaskItem>[]),
+        };
+        final rows = _rowHold.rows(view, matching: matching, all: board.tasks);
+        return SheetContent(
+          header: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          body: _resultsBody(
+            view,
+            board,
+            user,
+            rows,
+            emptyText: 'לא נמצאו משימות תואמות',
+          ),
+        );
+    }
+  }
+
+  (String, List<TaskItem>) _searchResults(EventTaskBoard board, String query) {
+    final matching = sortTasks(filterTasks(board.tasks, now: _now, query: query));
+    return ('חיפוש: "$query" · ${matching.length}', matching);
+  }
+
+  (String, List<TaskItem>) _myLateResults(EventTaskBoard board, TeamMember user) {
+    final viewerId = _viewAsId ?? user.id;
+    final matching = lateTasks(
+      [for (final task in board.tasks) if (task.isAssignedTo(viewerId)) task],
+      _now,
+    );
+    return (
+      hebrewCount(
+        matching.length,
+        one: 'משימה אחת שלך באיחור',
+        many: 'משימות שלך באיחור',
+      ),
+      matching,
+    );
+  }
+
+  Widget _resultsBody(
+    SheetView view,
+    EventTaskBoard board,
+    TeamMember user,
+    List<TaskItem> rows, {
+    required String emptyText,
+  }) {
+    return TaskResultsList(
+      groups: stagesToShow(
+        stages: board.stages,
+        visibleTasks: rows,
+        showEveryStage: false,
+      ),
+      emptyText: emptyText,
+      rowBuilder: (task) => TaskRow(
+        task: task,
+        now: _now,
+        viewerId: user.id,
+        canTick: canUpdateTaskProgress(task, user),
+        onSetComplete: (isComplete) => setComplete(task, isComplete),
+        onOpen: () => _openSheet(TaskView(task.id, back: view)),
+        onCallPhone: callPhone,
+      ),
+    );
+  }
+
+  // ---- empty and unknown ----
 
   Widget _buildUnknownEvent() {
     return Center(
@@ -604,78 +681,15 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
     );
   }
 
-  /// Mirrors the look of `EventSearchFilterBar`: one field with the clear and
-  /// filter buttons inside it.
-  Widget _buildSearchBar(List<TaskItem> eventTasks, TeamMember user) {
-    final count = _filter.activeCount;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: TextField(
-        key: const Key('tasks-search'),
-        controller: _searchController,
-        focusNode: _searchFocusNode,
-        decoration: InputDecoration(
-          hintText: 'חיפוש משימה...',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_query.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.clear),
-                  tooltip: 'נקה חיפוש',
-                  onPressed: () {
-                    Logger.action('tap:clearSearch', {'field': 'tasks'});
-                    _searchController.clear();
-                    _searchLog.onQueryChanged('');
-                    setState(() => _query = '');
-                  },
-                ),
-              IconButton(
-                key: const Key('tasks-filter'),
-                icon: Badge(
-                  isLabelVisible: count > 0,
-                  label: Text('$count'),
-                  child: Icon(
-                    Icons.filter_list,
-                    color: count > 0 ? Colors.blue.shade700 : null,
-                  ),
-                ),
-                tooltip: count == 0 ? 'סינון' : 'סינון: $count פעילים',
-                onPressed: () => _openFilter(eventTasks, user),
-              ),
-            ],
-          ),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          filled: true,
-          fillColor: Colors.grey.shade50,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-        onChanged: (value) {
-          _searchLog.onQueryChanged(value);
-          setState(() => _query = value);
-        },
-      ),
-    );
-  }
-
-  Widget _buildEmptyState({
-    required bool hasStages,
-    required TeamMember user,
-    required Event event,
+  /// An event with no stages yet. On "כל השלבים" a manager also gets the way
+  /// to add one, and the Excel import, which fills an empty event only.
+  Widget _buildNoStages(
+    TeamMember user,
+    Event event, {
+    required bool forManagers,
   }) {
-    final String title;
-    String? hint;
-    if (!hasStages) {
-      title = 'אין עדיין שלבים לאירוע זה';
-      if (canManageTasks(user)) hint = 'אפשר להוסיף שלב בכפתור "שלב חדש"';
-    } else if (_isNarrowed) {
-      title = 'לא נמצאו משימות תואמות';
-    } else {
-      title = 'אין לך משימות באירוע זה';
-      hint = 'אפשר לעבור ל"כל המשימות" כדי לראות את כל השלבים';
-    }
+    final isManager = forManagers && canManageTasks(user);
+    final theme = Theme.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -684,20 +698,15 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
           children: [
             Icon(Icons.task_alt, size: 56, color: Colors.grey.shade400),
             const SizedBox(height: 12),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            if (hint != null) ...[
+            Text('אין עדיין שלבים לאירוע זה', style: theme.textTheme.titleMedium),
+            if (isManager) ...[
               const SizedBox(height: 6),
               Text(
-                hint,
+                'אפשר להוסיף שלב בכפתור "שלב חדש"',
                 textAlign: TextAlign.center,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
+                style: theme.textTheme.bodyMedium
                     ?.copyWith(color: Colors.grey.shade600),
               ),
-            ],
-            // Import fills an empty event only; once a stage exists, never.
-            if (!hasStages && canManageTasks(user)) ...[
               const SizedBox(height: 16),
               Wrap(
                 alignment: WrapAlignment.center,
@@ -706,13 +715,13 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
                 children: [
                   FilledButton.icon(
                     key: const Key('tasks-import'),
-                    onPressed: () => _importFromExcel(event, user),
+                    onPressed: () => importFromExcel(event, user),
                     icon: const Icon(Icons.upload_file),
                     label: const Text('ייבוא מאקסל'),
                   ),
                   OutlinedButton.icon(
                     key: const Key('tasks-import-template'),
-                    onPressed: () => _downloadTemplate(event),
+                    onPressed: () => downloadTemplate(event),
                     icon: const Icon(Icons.download),
                     label: const Text('הורדת תבנית'),
                   ),
@@ -722,25 +731,6 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _HeaderItem extends StatelessWidget {
-  const _HeaderItem({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18, color: Colors.grey.shade800),
-        const SizedBox(width: 4),
-        Text(text, style: Theme.of(context).textTheme.bodyMedium),
-      ],
     );
   }
 }
