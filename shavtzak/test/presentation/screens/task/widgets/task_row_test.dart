@@ -250,7 +250,7 @@ void main() {
     expect(completions, isEmpty);
   });
 
-  testWidgets('an 80-character title on a 320 px phone ends in an ellipsis',
+  testWidgets('an 80-character title on a 320 px phone wraps onto more lines',
       (tester) async {
     final title = 'משימה ארוכה מאוד ' * 5;
     await pumpRow(
@@ -261,7 +261,9 @@ void main() {
 
     expect(tester.takeException(), isNull);
     final text = tester.widget<Text>(find.text(title));
-    expect(text.maxLines, 2);
-    expect(text.overflow, TextOverflow.ellipsis);
+    expect(text.maxLines, isNull);
+    expect(text.overflow, isNot(TextOverflow.ellipsis));
+    // The test font draws a 15 px letter 15 px tall: three lines or more.
+    expect(tester.getSize(find.text(title)).height, greaterThanOrEqualTo(45));
   });
 }

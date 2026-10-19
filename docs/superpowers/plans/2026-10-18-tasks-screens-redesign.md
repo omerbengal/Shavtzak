@@ -22,6 +22,7 @@
 - Spec copy, verbatim: "המשימות שלי" | "כל השלבים"; "סינון:", "באיחור (n)", "התייצבות בחצי שעה הקרובה (n)"; count button "N חסרות" / "1 חסרה", a done stage a tick and "n/n"; "X/Y הושלמו"; "N משימות של מי שכבר לא משובץ לאירוע" (wide: "לבדיקה: " before it); "כבר לא משובץ לאירוע"; "חסרות (n)" | "הכל (m)"; "באיחור · N משימות"; "התייצבות בחצי שעה הקרובה · N"; "עכשיו"; "השלב הבא"; "N פתוחות שלך"; "אין לך משימות"; "N שלבים קודמים · M משימות שלך הושלמו"; "התייצבות"; "ללא שעה"; "N משימות שלך באיחור"; "מתקיים עכשיו"; "אירועים קרובים"; "אירועים שעברו"; "שלב חדש"; "משימה חדשה"; "ייבוא מאקסל"; "הורדת תבנית".
 - Copy that is this plan's call: singulars through `hebrewCount` (Task 2): "משימה אחת", "שלב קודם אחד", "משימה אחת שלך הושלמה", "פתוחה אחת שלך", "משימה אחת שלך", "משימה אחת של מי שכבר לא משובץ לאירוע"; results subtitles "מכל השלבים, הוותיקה ראשונה" (late) and "מכל השלבים, הקרובה ראשונה" (half hour); search header `חיפוש: "<q>" · N`; one late task "משימה שלך באיחור · <task> · <stage>, <time>"; a removed member with no record "חבר צוות שנמחק"; wide hint "בחרו שלב בלוח כדי לראות את המשימות שלו"; search hint "חיפוש משימה או אדם...".
 - No countdown ("בעוד …") and no "להיום" chip anywhere.
+- Names wrap onto new lines; they never collapse into "…" (the user, 2026-10-19, after trying the phone view). Only places with a fixed height cut text: a calendar block shows as many lines as it has room for, and the one-line late banner and the sheet's results title keep their ellipsis.
 - The filter row is one row at every width: `FittedBox(fit: BoxFit.scaleDown)`, never `Wrap`.
 - Nothing moves under the reader: an open list keeps its rows (`RowHold`, Task 4); ticking never moves a row; the minute ticker never scrolls, re-folds or switches the day.
 - Sizes and colours come from `TaskStyle` (Task 3), never inline.
@@ -35,7 +36,7 @@
 
 1. A sheet whose stage or task is deleted while it is open (by another manager, or from the sheet itself) goes back to its list or closes: no exception, no empty sheet. Tests: Task 6 (task), Task 8 (stage).
 2. A stage dated outside the event's days (the event moved after its stages were made) still appears on the calendar, under a day tab of its own. Tests: Task 1 (`calendarDays`), Task 10.
-3. Long Hebrew titles in narrow places (three overlapping stages on a 320 px phone, an 80-character task title) end in an ellipsis with no RenderFlex overflow. Tests: Task 3 (row), Task 9 (block).
+3. Long Hebrew titles in narrow places (three overlapping stages on a 320 px phone, an 80-character task title) wrap, or in a block too short to wrap end in an ellipsis, with no RenderFlex overflow. Tests: Task 3 (row), Task 5 (timeline), Task 9 (block).
 4. A stage whose end is not after its start, or an old malformed time such as "9:00", draws as a start-only block or in the all-day row, never with a negative height or a throw. Tests: Task 1.
 5. Before `watchEventAssignees` first emits, the assignee check shows nothing, not "every task flagged" for a moment. Test: Task 10.
 

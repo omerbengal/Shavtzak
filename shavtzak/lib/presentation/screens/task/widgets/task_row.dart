@@ -128,10 +128,9 @@ class TaskRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
+            // Wraps in full: a name never collapses into "…".
             child: Text(
               task.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: TaskStyle.rowTitleSize,
                 fontWeight: FontWeight.w600,

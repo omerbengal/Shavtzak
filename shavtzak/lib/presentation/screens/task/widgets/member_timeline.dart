@@ -437,13 +437,13 @@ class _StageLine extends StatelessWidget {
     final kickerWidget = _buildKicker();
     final place = stage.hotelLocation;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (kickerWidget != null) ...[kickerWidget, const SizedBox(width: 6)],
+        // Wraps in full: a name never collapses into "…".
         Expanded(
           child: Text(
             place.isEmpty ? stage.title : '${stage.title} · $place',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ),
@@ -725,12 +725,7 @@ class _TaskLine extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              task.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: _titleStyle(14),
-            ),
+            Text(task.title, style: _titleStyle(14)),
             if (others.isNotEmpty) _withOthers(others),
           ],
         ),

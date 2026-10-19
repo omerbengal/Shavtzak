@@ -288,6 +288,43 @@ void main() {
     expect(boxes.every((box) => box.onChanged == null), isTrue);
   });
 
+  testWidgets('long stage and task names wrap onto new lines instead of ending in "…"',
+      (tester) async {
+    final longStage = buildStage(
+      id: 'long',
+      title: 'התכנסות וקבלת פנים לכל המשתתפים באולם הגדול של המלון',
+      date: sampleWed,
+      startTime: '09:00',
+      endTime: '10:00',
+    );
+    final longTask = buildTask(
+      id: 'long-task',
+      title: 'לוודא שכל הערכות, השלטים והתגים מוכנים בכניסה לאולם הגדול',
+      stage: stBreakfast,
+      assemblyTime: '07:45',
+      event: sampleEvent,
+      assigneeIds: const ['m1'],
+      assignees: [sDana],
+    );
+    await pumpTimeline(
+      tester,
+      board: sampleBoard(
+        stages: [...sampleStages, longStage],
+        tasks: [...sampleTasks, longTask],
+      ),
+    );
+
+    for (final name in [longStage.title, longTask.title]) {
+      final finder = find.text(name);
+      final text = tester.widget<Text>(finder);
+      expect(text.maxLines, isNull, reason: name);
+      expect(text.overflow, isNot(TextOverflow.ellipsis), reason: name);
+      // The test font draws a 14 px letter 14 px tall: two lines or more.
+      expect(tester.getSize(finder).height, greaterThanOrEqualTo(28), reason: name);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a deleted opening stage is replaced by the next one',
       (tester) async {
     await pumpTimeline(tester);
