@@ -19,14 +19,11 @@ class SheetContent {
 class TaskSheet extends StatefulWidget {
   const TaskSheet({
     super.key,
-    required this.controller,
     required this.viewKey,
     required this.content,
     required this.onClose,
     this.onBack,
   });
-
-  final DraggableScrollableController controller;
 
   /// What is being shown; a new one starts the content at its top.
   final Object viewKey;
@@ -57,7 +54,6 @@ class _TaskSheetState extends State<TaskSheet> {
     return NotificationListener<DraggableScrollableNotification>(
       onNotification: _onExtent,
       child: DraggableScrollableSheet(
-        controller: widget.controller,
         initialChildSize: TaskStyle.sheetInitialSize,
         minChildSize: 0,
         maxChildSize: TaskStyle.sheetMaxSize,

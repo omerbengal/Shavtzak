@@ -154,14 +154,97 @@ void main() {
     expect(inside('my-task-ws-later', find.textContaining('עם ')), findsNothing);
   });
 
-  testWidgets('the next stage reads השלב הבא and its tasks are compact',
+  testWidgets('the next stage reads השלב הבא and its tasks are compact, still tickable',
       (tester) async {
     await pumpTimeline(tester);
 
     expect(inside('my-stage-dinner', find.text('השלב הבא')), findsOneWidget);
     expect(inside('my-stage-dinner', find.text('משימה אחת שלך')), findsOneWidget);
     expect(find.byKey(const Key('my-task-dinner-guests')), findsOneWidget);
-    expect(find.byKey(const Key('my-task-tick-dinner-guests')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('my-task-tick-dinner-guests')));
+    expect(completions, ['dinner-guests:true']);
+    expect(openedTasks, isEmpty);
+  });
+
+  testWidgets('ticking my only late task leaves the list where it is',
+      (tester) async {
+    await pumpTimeline(tester);
+    final before = top(tester, find.byKey(const Key('my-task-ws-later')));
+
+    await tester.pumpWidget(timeline(
+      board: sampleBoard(tasks: [
+        for (final task in sampleTasks)
+          task.id == 'lunch-late' ? task.copyWith(isComplete: true) : task,
+      ]),
+      now: sampleNow,
+    ));
+
+    expect(top(tester, find.byKey(const Key('my-task-ws-later'))), before);
+    expect(
+      inside('my-late-banner', find.text('אין לך יותר משימות באיחור')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a task turning late while I read does not push the list down',
+      (tester) async {
+    await pumpTimeline(tester, now: DateTime(2026, 10, 20, 12, 30));
+    expect(find.byKey(const Key('my-late-banner')), findsNothing);
+    final before = top(tester, find.byKey(const Key('my-stage-lunch')));
+
+    await tester.pumpWidget(timeline(
+      board: sampleBoard(),
+      now: DateTime(2026, 10, 20, 13, 30),
+    ));
+
+    expect(find.byKey(const Key('my-late-banner')), findsNothing);
+    expect(top(tester, find.byKey(const Key('my-stage-lunch'))), before);
+  });
+
+  testWidgets('coming back to the page reopens it on the current stage, banner included',
+      (tester) async {
+    await pumpTimeline(tester);
+    final evening = DateTime(2026, 10, 20, 20);
+    await tester.pumpWidget(timeline(board: sampleBoard(), now: evening));
+    expect(find.textContaining('2 שלבים קודמים'), findsOneWidget);
+
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pump();
+
+    expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
+    // At 20:00 the lunch task, both workshop tasks and the 19:00 dinner task
+    // are late.
+    expect(inside('my-late-banner', find.text('4 משימות שלך באיחור')), findsOneWidget);
+  });
+
+  testWidgets('the fold line counts my open tasks hidden in it', (tester) async {
+    final hidden = buildTask(
+      id: 'lunch-untimed',
+      title: 'איסוף מגשים',
+      stage: stLunch,
+      event: sampleEvent,
+      assigneeIds: const ['m1'],
+      assignees: [sDana],
+    );
+    await pumpTimeline(
+      tester,
+      board: sampleBoard(tasks: [...sampleTasks, hidden]),
+    );
+
+    expect(
+      find.text('2 שלבים קודמים · משימה אחת שלך הושלמה · אחת עדיין פתוחה'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a stage without my tasks is one line', (tester) async {

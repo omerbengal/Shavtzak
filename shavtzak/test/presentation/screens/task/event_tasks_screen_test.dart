@@ -326,6 +326,50 @@ void main() {
       expect(inSheet(find.text('חיפוש: "אוטובוס" · 0')), findsOneWidget);
     });
 
+    testWidgets('coming back to the page reopens my timeline at the time of now',
+        (tester) async {
+      var clockNow = sampleNow;
+      await pumpEventTasks(
+        tester,
+        user: sDana,
+        clock: () => clockNow,
+        board: sampleTaskBoard(),
+      );
+      expect(find.textContaining('2 שלבים קודמים'), findsOneWidget);
+
+      // Hours later the phone brings the tab back to the front.
+      clockNow = DateTime(2026, 10, 20, 20);
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pump();
+
+      expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
+    });
+
+    testWidgets('crossing the wide breakpoint with a sheet open keeps it working',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine], size: phoneSize);
+      await openMyTask(tester, 'mine', 'להזמין אוטובוס');
+
+      tester.view.physicalSize = wideSize;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(inSheet(find.byKey(const Key('task-detail-mine'))), findsOneWidget);
+
+      tester.view.physicalSize = phoneSize;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(inSheet(find.byKey(const Key('task-detail-mine'))), findsOneWidget);
+    });
+
     testWidgets('the late banner opens my late tasks', (tester) async {
       final setupLate = buildTask(
         id: 'setup-late',

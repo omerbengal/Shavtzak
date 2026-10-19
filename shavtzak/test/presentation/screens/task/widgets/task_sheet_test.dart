@@ -7,9 +7,8 @@ void main() {
   late int backs;
   late int aboveTaps;
 
-  Future<DraggableScrollableController> pumpSheet(
+  Future<void> pumpSheet(
     WidgetTester tester, {
-    DraggableScrollableController? reuse,
     Object viewKey = 'one',
     bool withBack = false,
     int bodyLines = 3,
@@ -20,8 +19,6 @@ void main() {
     closes = 0;
     backs = 0;
     aboveTaps = 0;
-    final controller = reuse ?? DraggableScrollableController();
-    if (reuse == null) addTearDown(controller.dispose);
     await tester.pumpWidget(MaterialApp(
       home: Directionality(
         textDirection: TextDirection.rtl,
@@ -36,7 +33,6 @@ void main() {
                 ),
               ),
               TaskSheet(
-                controller: controller,
                 viewKey: viewKey,
                 content: SheetContent(
                   header: const Text('כותרת'),
@@ -56,7 +52,6 @@ void main() {
       ),
     ));
     await tester.pump();
-    return controller;
   }
 
   testWidgets('opens at half the height', (tester) async {
@@ -83,10 +78,10 @@ void main() {
   });
 
   testWidgets('the back arrow shows only with onBack', (tester) async {
-    final controller = await pumpSheet(tester);
+    await pumpSheet(tester);
     expect(find.byKey(const Key('task-sheet-back')), findsNothing);
 
-    await pumpSheet(tester, reuse: controller, withBack: true);
+    await pumpSheet(tester, withBack: true);
     await tester.tap(find.byKey(const Key('task-sheet-back')));
     expect(backs, 1);
   });
@@ -103,7 +98,7 @@ void main() {
   });
 
   testWidgets('new content starts at its top', (tester) async {
-    final controller = await pumpSheet(tester, bodyLines: 40);
+    await pumpSheet(tester, bodyLines: 40);
     // The first drag grows the sheet to its full height; the second scrolls.
     await tester.drag(find.byKey(const Key('task-sheet-handle')),
         const Offset(0, -600));
@@ -114,7 +109,7 @@ void main() {
     // be seen.
     expect(find.text('שורה 0').hitTestable(), findsNothing);
 
-    await pumpSheet(tester, reuse: controller, viewKey: 'two', bodyLines: 40);
+    await pumpSheet(tester, viewKey: 'two', bodyLines: 40);
     await tester.pumpAndSettle();
     expect(find.text('שורה 0').hitTestable(), findsOneWidget);
   });

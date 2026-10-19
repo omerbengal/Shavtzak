@@ -11,6 +11,7 @@ void main() {
     WidgetTester tester, {
     SheetContent? content,
     bool withBack = false,
+    Object viewKey = 'one',
   }) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
@@ -22,6 +23,7 @@ void main() {
         textDirection: TextDirection.rtl,
         child: Scaffold(
           body: StagePanel(
+            viewKey: viewKey,
             content: content,
             onClose: () => closes++,
             onBack: withBack ? () => backs++ : null,
@@ -35,6 +37,17 @@ void main() {
     header: Text('סדנאות'),
     body: Column(children: [Text('גוף השלב'), SizedBox(height: 2000)]),
   );
+
+  testWidgets('new content starts at its top', (tester) async {
+    await pumpPanel(tester, content: content);
+    await tester.drag(find.text('גוף השלב'), const Offset(0, -800));
+    await tester.pumpAndSettle();
+    expect(find.text('גוף השלב').hitTestable(), findsNothing);
+
+    await pumpPanel(tester, content: content, viewKey: 'two');
+    await tester.pumpAndSettle();
+    expect(find.text('גוף השלב').hitTestable(), findsOneWidget);
+  });
 
   testWidgets('without content it shows the hint', (tester) async {
     await pumpPanel(tester);

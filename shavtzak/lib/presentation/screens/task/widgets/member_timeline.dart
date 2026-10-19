@@ -71,10 +71,33 @@ class _MemberTimelineState extends State<MemberTimeline> {
   Set<String> _folded = const {};
   bool _earlierOpen = false;
 
+  /// Whether the late banner has its place on top. Decided with the anchor,
+  /// so a banner appearing, or going once its tasks are ticked, never moves
+  /// the list under the reader; what it says stays live.
+  bool _hasBanner = false;
+
+  /// Set when the page comes back to the foreground: nobody is reading at
+  /// that moment, so the timeline may open again on the stage of now.
+  bool _retakeOnBuild = false;
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
     _takeAnchor();
+    // A phone keeps the tab for hours; coming back to it reopens the
+    // timeline on the current stage. Retaken on the next build, by which
+    // time the screen has brought "now" up to date.
+    _lifecycle = AppLifecycleListener(onResume: () {
+      if (!mounted) return;
+      setState(() => _retakeOnBuild = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   @override
@@ -93,6 +116,13 @@ class _MemberTimelineState extends State<MemberTimeline> {
     _folded = anchor == null
         ? const {}
         : foldedStageIds(widget.board.stages, anchor);
+    _hasBanner = lateTasks(
+      [
+        for (final task in widget.board.tasks)
+          if (task.isAssignedTo(widget.viewerId)) task,
+      ],
+      widget.now,
+    ).isNotEmpty;
   }
 
   void _toggleEarlier() {
@@ -102,6 +132,11 @@ class _MemberTimelineState extends State<MemberTimeline> {
 
   @override
   Widget build(BuildContext context) {
+    if (_retakeOnBuild) {
+      _retakeOnBuild = false;
+      _earlierOpen = false;
+      _takeAnchor();
+    }
     final board = widget.board;
     final now = widget.now;
     final mine = [
@@ -135,7 +170,7 @@ class _MemberTimelineState extends State<MemberTimeline> {
 
     return CustomScrollView(
       slivers: [
-        if (late.isNotEmpty)
+        if (_hasBanner)
           SliverToBoxAdapter(
             child: _LateBanner(
               late: late,
@@ -186,7 +221,17 @@ class _MemberTimelineState extends State<MemberTimeline> {
         mine.where((task) => folded.contains(task.stageId)).toList();
     if (mineThere.isEmpty) return stages;
     final done = mineThere.where((task) => task.isComplete).length;
-    return '$stages · ${hebrewCount(done, one: 'משימה אחת שלך הושלמה', many: 'משימות שלך הושלמו')}';
+    final text =
+        '$stages · ${hebrewCount(done, one: 'משימה אחת שלך הושלמה', many: 'משימות שלך הושלמו')}';
+    // Open tasks of mine in there that the late banner does not show, such
+    // as one with no report time, which is late only once its day is over.
+    final hidden = mineThere
+        .where((task) =>
+            !task.isComplete &&
+            taskDueStatus(task, widget.now) != TaskDueStatus.overdue)
+        .length;
+    if (hidden == 0) return text;
+    return '$text · ${hebrewCount(hidden, one: 'אחת עדיין פתוחה', many: 'עדיין פתוחות')}';
   }
 
   /// The first timed stage, in screen order, that has not started yet.
@@ -716,17 +761,53 @@ class _TaskLine extends StatelessWidget {
     );
   }
 
+  /// One line per task, with its tick box (or its subtasks done over total),
+  /// so a task can be ticked from any stage, as in the mockup.
   Widget _buildCompact(List<String> others) {
     return InkWell(
       onTap: onOpen,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        child: Column(
+        padding: const EdgeInsetsDirectional.fromSTEB(0, 2, 4, 2),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(task.title, style: _titleStyle(14)),
-            if (others.isNotEmpty) _withOthers(others),
+            SizedBox(
+              width: 40,
+              child: task.hasSubtasks
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        ltr('${task.doneSubtaskCount}/${task.subtasks.length}'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: TaskStyle.rowMetaSize,
+                          fontWeight: FontWeight.w600,
+                          color: TaskStyle.neutralText,
+                        ),
+                      ),
+                    )
+                  : Checkbox(
+                      key: Key('my-task-tick-${task.id}'),
+                      value: task.isComplete,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: canTick
+                          ? (value) => onSetComplete(value ?? false)
+                          : null,
+                    ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(task.title, style: _titleStyle(14)),
+                    if (others.isNotEmpty) _withOthers(others),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -772,9 +853,15 @@ class _LateBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Once everything late is ticked the banner stays, green and the same
+    // height, until the timeline opens again: the list must not move.
+    final isClear = late.isEmpty;
     final String text;
-    final VoidCallback onTap;
-    if (late.length == 1) {
+    final VoidCallback? onTap;
+    if (isClear) {
+      text = 'אין לך יותר משימות באיחור';
+      onTap = null;
+    } else if (late.length == 1) {
       final task = late.single;
       final time = task.hasAssemblyTime ? ', ${ltr(task.assemblyTime!)}' : '';
       text = 'משימה שלך באיחור · ${task.title} · '
@@ -784,13 +871,15 @@ class _LateBanner extends StatelessWidget {
       text = '${late.length} משימות שלך באיחור';
       onTap = onOpenMyLate;
     }
+    final strong = isClear ? TaskStyle.done : TaskStyle.late;
+    final dark = isClear ? TaskStyle.doneDark : TaskStyle.lateDark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Material(
-        color: TaskStyle.lateLight,
+        color: isClear ? TaskStyle.doneLight : TaskStyle.lateLight,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
-          side: BorderSide(color: TaskStyle.late.withValues(alpha: 0.45)),
+          side: BorderSide(color: strong.withValues(alpha: 0.45)),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -804,18 +893,20 @@ class _LateBanner extends StatelessWidget {
                   width: 20,
                   height: 20,
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    color: TaskStyle.late,
+                  decoration: BoxDecoration(
+                    color: strong,
                     shape: BoxShape.circle,
                   ),
-                  child: const Text(
-                    '!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: isClear
+                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                      : const Text(
+                          '!',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -823,14 +914,17 @@ class _LateBanner extends StatelessWidget {
                     text,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: TaskStyle.lateDark,
+                      color: dark,
                     ),
                   ),
                 ),
-                const Icon(Icons.chevron_left, color: TaskStyle.lateDark),
+                if (isClear)
+                  const SizedBox(width: 24, height: 24)
+                else
+                  Icon(Icons.chevron_left, color: dark),
               ],
             ),
           ),

@@ -13,10 +13,14 @@ class StagePanel extends StatelessWidget {
     required this.content,
     required this.onClose,
     this.onBack,
+    this.viewKey,
   });
 
   /// What is open; null shows the hint.
   final SheetContent? content;
+
+  /// What is being shown; a new one starts the body at its top.
+  final Object? viewKey;
 
   final VoidCallback onClose;
 
@@ -75,6 +79,7 @@ class StagePanel extends StatelessWidget {
         const Divider(height: 1),
         Expanded(
           child: SingleChildScrollView(
+            key: ValueKey(viewKey),
             child: content.body,
           ),
         ),

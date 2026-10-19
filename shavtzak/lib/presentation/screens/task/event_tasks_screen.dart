@@ -84,8 +84,6 @@ class _EventTasksScreenState extends State<EventTasksScreen>
   late final FocusNode _searchFocusNode =
       createRtlCursorFixedFocusNode(_searchController);
   final SearchActionLogger _searchLog = SearchActionLogger('tasks');
-  final DraggableScrollableController _sheetController =
-      DraggableScrollableController();
   final RowHold _rowHold = RowHold();
 
   /// Chosen on the first build that knows the user.
@@ -118,6 +116,10 @@ class _EventTasksScreenState extends State<EventTasksScreen>
   late DateTime _now;
   Timer? _ticker;
 
+  /// A hidden tab's timers sleep, so coming back brings "now" up to date at
+  /// once rather than at the next tick.
+  late final AppLifecycleListener _lifecycle;
+
   DateTime _readClock() => (widget.clock ?? DateTime.now)();
 
   @override
@@ -130,6 +132,9 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     // A task turns orange or red because time passed, not because data
     // changed, so the colours need their own heartbeat.
     _ticker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _now = _readClock());
+    });
+    _lifecycle = AppLifecycleListener(onResume: () {
       if (mounted) setState(() => _now = _readClock());
     });
     final auth = context.read<UserSelectionBloc>().state;
@@ -147,11 +152,11 @@ class _EventTasksScreenState extends State<EventTasksScreen>
   @override
   void dispose() {
     _assignedSubscription?.cancel();
+    _lifecycle.dispose();
     _ticker?.cancel();
     _searchLog.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
-    _sheetController.dispose();
     super.dispose();
   }
 
@@ -451,7 +456,6 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                       ),
                       if (sheet != null)
                         TaskSheet(
-                          controller: _sheetController,
                           viewKey: sheet,
                           content: _sheetContent(sheet, board, user),
                           onClose: _closeSheet,
@@ -567,6 +571,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
               Expanded(
                 flex: TaskStyle.panelFlex,
                 child: StagePanel(
+                  viewKey: sheet,
                   content: sheet == null
                       ? null
                       : _sheetContent(sheet, board, user, wide: true),
