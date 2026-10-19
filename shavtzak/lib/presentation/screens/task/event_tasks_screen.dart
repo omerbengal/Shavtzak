@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/debug/logger.dart';
 import '../../../core/debug/search_action_logger.dart';
-import '../../../core/services/environment_service.dart';
 import '../../../core/services/task_import_files.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -27,7 +26,7 @@ import 'row_hold.dart';
 import 'sheet_view.dart';
 import 'task_screen_actions.dart';
 import 'task_style.dart';
-import 'tasks_auto_open.dart';
+import 'tasks_place.dart';
 import 'widgets/assignee_check_line.dart';
 import 'widgets/calendar_tab.dart';
 import 'widgets/day_calendar.dart';
@@ -44,8 +43,9 @@ import 'widgets/task_sheet.dart';
 /// The event screen's two views.
 enum EventTasksTab { mine, all }
 
-/// One דו יומי event's tasks, at `/tasks/<eventId>`.
+/// One דו יומי event's tasks, at `<place>/<eventId>` (see [TasksPlace]).
 ///
+/// The title, the event's name and days, leads to the list of events.
 /// Two tabs over one low sheet: "המשימות שלי", the viewer's tasks threaded
 /// through the stages, and "כל השלבים", every stage. Managers land on the
 /// second, everyone else on the first; both are open to every signed-in
@@ -55,11 +55,14 @@ class EventTasksScreen extends StatefulWidget {
   const EventTasksScreen({
     super.key,
     required this.eventId,
+    required this.place,
     this.clock,
     this.importFiles = const BrowserTaskImportFiles(),
   });
 
   final String eventId;
+
+  final TasksPlace place;
 
   /// Picking the import file and saving the template; faked in tests.
   final TaskImportFiles importFiles;
@@ -137,8 +140,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
   @override
   void initState() {
     super.initState();
-    // Back from here to the list must not bounce into an event again.
-    TasksAutoOpen.spend();
+    TasksResume.rememberEvent(widget.place, widget.eventId);
     _now = _readClock();
     context.read<TaskBloc>().add(const LoadTasks());
     // A task turns orange or red because time passed, not because data
@@ -262,7 +264,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
 
   void _backToEvents() {
     Logger.action('tap:tasksBackToEvents');
-    context.go('${EnvironmentService.instance.routePrefix}/tasks');
+    TasksResume.rememberList(widget.place);
+    context.go(widget.place.listRoute);
   }
 
   /// [view] as it can be shown on [board]: a task that is gone gives way to
@@ -306,8 +309,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                     );
               return Scaffold(
                 appBar: _buildAppBar(event),
-                body: TestEnvironmentIndicator(
-                  child: _buildBody(state, board, user),
+                body: _withBanner(
+                  _buildBody(state, board, user),
                 ),
                 // It steps aside while the sheet is open.
                 floatingActionButton: board != null &&
@@ -346,8 +349,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
               ),
               onChanged: _onQueryChanged,
             )
-          : Text(event?.name ?? 'משימות דו יומי'),
-      // The back arrow on the far left, pointing left, with search beside it.
+          : _buildTitle(event),
       automaticallyImplyLeading: false,
       actions: [
         if (_searching)
@@ -364,16 +366,60 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             icon: const Icon(Icons.search),
             onPressed: _openSearch,
           ),
-        IconButton(
-          key: const Key('tasks-back'),
-          tooltip: 'חזרה לרשימת האירועים',
-          // Mirrored under RTL, so it draws pointing left.
-          icon: const Icon(Icons.arrow_forward),
-          onPressed: _backToEvents,
-        ),
       ],
     );
   }
+
+  /// The event's name and days, with a mark saying they open the list.
+  Widget _buildTitle(Event? event) {
+    return Semantics(
+      button: true,
+      label: 'לרשימת אירועי הדו יומי',
+      child: InkWell(
+        key: const Key('tasks-title'),
+        borderRadius: BorderRadius.circular(8),
+        onTap: _backToEvents,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event?.name ?? 'משימות דו יומי',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (event != null)
+                      Text(
+                        eventDaysLabel(event),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.white70,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The tab sits inside the member shell, which shows the banner already.
+  Widget _withBanner(Widget child) => widget.place == TasksPlace.standalone
+      ? TestEnvironmentIndicator(child: child)
+      : child;
 
   /// The screen's event, if it is an active דו יומי event.
   Event? _findEvent(TasksLoaded state) {

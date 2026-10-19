@@ -67,7 +67,7 @@ Uses `flutter_bloc` with the BLoC (Business Logic Component) pattern:
 - **EventBloc**: Manages events with real-time updates, handles role quotas
 - **AssignmentBloc**: Most complex - manages assignments with related Event and TeamMember data
 - **UserSelectionBloc**: Manages user authentication, selection, and session persistence
-- **TaskBloc**: Manages the דו יומי task screens. One live subscription to every task plus the stages, events and members they are joined with; subscribes only when a tasks screen opens. Mutations (tasks and stages) report through the event's completer, not the state. Ticking a subtask or a task is optimistic: the bloc lays the unconfirmed tick over the stream's board (`_pending`), sends it in the background and takes it back if the backend refuses. Structure: `/tasks` lists the events of the "דו יומי" category (`duYomiCategoryId` in `task_utils.dart`, matched by id); the first time it opens in an app session it goes straight into the nearest event that has not ended (`TasksAutoOpen`, spent by either tasks screen, so back never bounces). The event screen has two tabs and one sheet that slides up to full height: "המשימות שלי" (a card per stage holding the member's tasks, threaded through every stage, opening on the current one) and "כל השלבים" (every day in one scroll: a calendar whose hours stretch so every name wraps in full, overlapping stages side by side, long empty stretches squashed; a one-row filter bar and, for managers, the "assignee taken off the event" check); on a window ≥ 1000 px the same one-scroll calendar spans the full width and the sheet is centred, at most 960 px wide, with a stage's tasks as a table. The rules are pure functions in `task_schedule.dart` and `task_progress.dart`; every size and colour is in `task_style.dart`; an open list holds its rows (`RowHold`) so a ticked row never jumps. Each event has **stages** (title, one day of the event, optional time or range, hotel details, contacts) and every task sits under a stage. A task's due moment is its stage's day at its optional assembly time (`TaskItem.assemblyTime`), or 23:59 that day without one (`TaskItem.dueAt` is derived, not stored). Assignees are only the members assigned to the event (`TaskRepository.watchEventAssignees`, live) — enforced in the form, not by the backend; the stage date being one of the event's days **is** enforced by the backend. An event with no stages can be filled from an Excel file ("ייבוא מאקסל" / "הורדת תבנית" in the event screen's empty state): parsed in the browser by `lib/core/utils/task_import/`, every problem listed before anything is saved, then one backend call `stage.import` writes all stages and tasks in a single transaction (refused once the event has stages)
+- **TaskBloc**: Manages the דו יומי task screens. One live subscription to every task plus the stages, events and members they are joined with; subscribes only when a tasks screen opens. Mutations (tasks and stages) report through the event's completer, not the state. Ticking a subtask or a task is optimistic: the bloc lays the unconfirmed tick over the stream's board (`_pending`), sends it in the background and takes it back if the backend refuses. Structure: the screens live in two places (`TasksPlace`): the members' "דו יומי" tab (`/user/du-yomi`) and the admins' own screen (`/du-yomi`, from the "דו יומי" card on the admin home). Each lists the events of the "דו יומי" category (`duYomiCategoryId` in `task_utils.dart`, matched by id), with one event's screen as a child route on top of the list. The first time a place opens in an app session it goes straight into the nearest event that has not ended; the event's title (name + days) opens the list. After that each place reopens what it last showed — the last event, or the list once chosen (`TasksResume`, per place) — so leaving the tab and coming back keeps it. The event screen has two tabs and one sheet that slides up to full height: "המשימות שלי" (a card per stage holding the member's tasks, threaded through every stage, opening on the current one) and "כל השלבים" (every day in one scroll: a calendar whose hours stretch so every name wraps in full, overlapping stages side by side, long empty stretches squashed; a one-row filter bar and, for managers, the "assignee taken off the event" check); on a window ≥ 1000 px the same one-scroll calendar spans the full width and the sheet is centred, at most 960 px wide, with a stage's tasks as a table. The rules are pure functions in `task_schedule.dart` and `task_progress.dart`; every size and colour is in `task_style.dart`; an open list holds its rows (`RowHold`) so a ticked row never jumps. Each event has **stages** (title, one day of the event, optional time or range, hotel details, contacts) and every task sits under a stage. A task's due moment is its stage's day at its optional assembly time (`TaskItem.assemblyTime`), or 23:59 that day without one (`TaskItem.dueAt` is derived, not stored). Assignees are only the members assigned to the event (`TaskRepository.watchEventAssignees`, live) — enforced in the form, not by the backend; the stage date being one of the event's days **is** enforced by the backend. An event with no stages can be filled from an Excel file ("ייבוא מאקסל" / "הורדת תבנית" in the event screen's empty state): parsed in the browser by `lib/core/utils/task_import/`, every problem listed before anything is saved, then one backend call `stage.import` writes all stages and tasks in a single transaction (refused once the event has stages)
 
 Each BLoC follows the pattern:
 ```dart
@@ -141,8 +141,9 @@ Production:              Test:
 /admin/assignments      /test/admin/assignments
 /user/assignments       /test/user/assignments
 /user/constraints       /test/user/constraints
-/tasks                  /test/tasks              (link-only: opens the nearest event; event list one step back)
-/tasks/<eventId>        /test/tasks/<eventId>    (one event's stages and tasks)
+/user/du-yomi[/<id>]    /test/user/du-yomi[/<id>]  (members' דו יומי tab)
+/du-yomi[/<id>]         /test/du-yomi[/<id>]       (admins' own דו יומי screen)
+/tasks                  /test/tasks                (link-only checklist)
 ```
 
 ### User Authentication System
@@ -153,7 +154,7 @@ The app uses a **user-based authentication** system via the "מי את/ה?" (Who
 - **TeamMember.uniqueKey**: UUID for each team member (stored in DB, not shown in UI)
 - **TeamMember.isAdmin**: Boolean flag for admin permissions
 - **TeamMember.isPermanent**: Boolean flag distinguishing permanent vs non-permanent members
-- **TeamMember.canManageTasks**: Boolean flag letting a non-admin create, edit and delete tasks on `/tasks` (admins always can). Toggled in the team-member modal
+- **TeamMember.canManageTasks**: Boolean flag letting a non-admin create, edit and delete דו יומי tasks (admins always can). Toggled in the team-member modal
 - **UserSelectionRepository**: Manages user selection, validation, and caching
 - **UserCacheService**: Browser localStorage with environment-aware keys
 - **UserSelectionBloc**: State management for authentication flow
@@ -187,6 +188,7 @@ Root (GoRouter)
 │
 ├── /admin (AdminChoiceScreen) - Landing page for admins
 │   ├── Choice 1: Personal area (/user/assignments)
+│   ├── Choice 3: דו יומי (/du-yomi, own screen, non-admins redirected to the tab)
 │   └── Choice 2: Management interface (SwipeablePageView)
 │       ├── /admin/team-members - TeamListScreen
 │       ├── /admin/events - EventListScreen
@@ -194,14 +196,15 @@ Root (GoRouter)
 │
 ├── /user (UserNavigationShell with bottom navigation)
 │   ├── /user/assignments - UserAssignmentsScreen (default)
-│   └── /user/constraints - ConstraintsScreen OR AvailabilityScreen
-│       (depends on isPermanent field)
+│   ├── /user/constraints - ConstraintsScreen OR AvailabilityScreen
+│   │   (depends on isPermanent field)
+│   └── /user/du-yomi (TasksScreen) - דו יומי tab: event list
+│       └── /user/du-yomi/<eventId> (EventTasksScreen) - one event's stages and tasks
 │
-├── /tasks (TasksScreen) - opens the nearest דו יומי event; the list one step back
-│   └── /tasks/<eventId> (EventTasksScreen) - that event's stages and tasks
-│   Link-only: no tab, menu or card navigates here. Any authenticated
-│   member may open either; a signed-out visitor is returned to the
-│   link after signing in (AppRouter.postAuthDestination).
+├── /tasks (ChecklistLinkScreen) - the checklist: admin version for admins,
+│   the member's own items otherwise. Link-only: no tab, menu or card
+│   navigates here; a signed-out visitor is returned to the link after
+│   signing in (AppRouter.postAuthDestination).
 │
 └── /test/* - Mirror routes for test environment
     └── (same structure as above with /test prefix)
@@ -209,7 +212,7 @@ Root (GoRouter)
 
 **Navigation Patterns**:
 - **Admin Management**: SwipeablePageView (horizontal swipe between screens)
-- **User Interface**: UserNavigationShell (bottom navigation bar with 2 tabs)
+- **User Interface**: UserNavigationShell (bottom navigation bar with 3 tabs: האירועים שלי, מגבלות/זמינות, דו יומי)
 - **Modal Dialogs**: Event creation/editing, assignment creation, quota reduction
 
 **Route Protection**:

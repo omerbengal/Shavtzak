@@ -337,6 +337,19 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                   },
                                 ),
                                 SizedBox(height: cardSpacing),
+                                _buildChoiceCard(
+                                  width: cardWidth,
+                                  icon: Icons.event_note,
+                                  iconColor: Colors.indigo,
+                                  title: 'דו יומי',
+                                  subtitle: 'שלבים ומשימות של הדו יומי',
+                                  isCompact: isCompact,
+                                  onTap: () {
+                                    Logger.action('tap:duYomi');
+                                    context.go('$envPrefix/du-yomi');
+                                  },
+                                ),
+                                SizedBox(height: cardSpacing),
                               ],
 
                               // Summary/Manager Screen Card

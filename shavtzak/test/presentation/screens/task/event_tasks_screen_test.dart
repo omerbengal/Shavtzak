@@ -17,7 +17,7 @@ import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/screens/task/event_tasks_screen.dart';
-import 'package:shavtzak/presentation/screens/task/tasks_auto_open.dart';
+import 'package:shavtzak/presentation/screens/task/tasks_place.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/calendar_tab.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/day_calendar.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
@@ -106,9 +106,11 @@ void main() {
     ThemeData? theme,
     String eventId = 'e1',
     FakeTaskImportFiles? importFiles,
+    TasksPlace place = TasksPlace.tab,
   }) async {
     final harness = await pumpEventTasks(
       tester,
+      place: place,
       user: user,
       size: size,
       theme: theme,
@@ -1455,34 +1457,59 @@ void main() {
       expect(find.byKey(const Key('stage-add')), findsNothing);
     });
 
-    testWidgets('the title is the event\'s name', (tester) async {
+    testWidgets('the title is the event\'s name and days', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
+      final title = find.byKey(const Key('tasks-title'));
       expect(
-        find.descendant(of: find.byType(AppBar), matching: find.text('דו יומי צפון')),
+        find.descendant(of: title, matching: find.text('דו יומי צפון')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: title,
+          matching: find.text(eventDaysLabel(event)),
+        ),
         findsOneWidget,
       );
     });
 
-    testWidgets('opening an event spends the automatic opening of the list',
+    testWidgets('opening an event remembers it for its place',
         (tester) async {
-      TasksAutoOpen.debugReset();
-      addTearDown(TasksAutoOpen.debugReset);
+      TasksResume.debugReset();
+      addTearDown(TasksResume.debugReset);
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
-      expect(TasksAutoOpen.isPending, isFalse);
+      expect(TasksResume.lastEvent(TasksPlace.tab), event.id);
     });
 
-    testWidgets('the back arrow returns to the event list', (tester) async {
+    testWidgets('the title opens the event list, and the list stays chosen',
+        (tester) async {
+      TasksResume.debugReset();
+      addTearDown(TasksResume.debugReset);
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
-      await tester.tap(find.byKey(const Key('tasks-back')));
+      await tester.tap(find.byKey(const Key('tasks-title')));
       await tester.pumpAndSettle();
 
       expect(find.text('רשימת האירועים'), findsOneWidget);
+      expect(TasksResume.isListChosen(TasksPlace.tab), isTrue);
     });
 
-    testWidgets('shows the test-environment banner in test mode only',
+    testWidgets('in the tab, leaves the test-environment banner to the shell',
         (tester) async {
+      EnvironmentService.instance.updateFromPath('/test/tasks');
+      addTearDown(() => EnvironmentService.instance.updateFromPath('/tasks'));
+      await pumpScreen(
+        tester,
+        user: dana,
+        tasks: [mine],
+        size: const Size(900, 1800),
+      );
+      expect(find.textContaining('סביבת בדיקות'), findsNothing);
+    });
+
+    testWidgets('on its own screen, shows the test-environment banner in '
+        'test mode only', (tester) async {
       EnvironmentService.instance.updateFromPath('/test/tasks');
       addTearDown(() => EnvironmentService.instance.updateFromPath('/tasks'));
       // Wide: the test font draws every letter as a full square, so the
@@ -1492,6 +1519,7 @@ void main() {
         user: dana,
         tasks: [mine],
         size: const Size(900, 1800),
+        place: TasksPlace.standalone,
       );
       expect(find.textContaining('סביבת בדיקות'), findsOneWidget);
 

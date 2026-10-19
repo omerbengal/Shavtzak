@@ -12,19 +12,20 @@ import '../../presentation/screens/whoami/whoami_screen.dart';
 import '../../presentation/screens/user/user_navigation_shell.dart';
 import '../../presentation/screens/user/constraints_screen.dart';
 import '../../presentation/screens/user/user_assignments_screen.dart';
-import '../../presentation/screens/user/user_checklist_screen.dart';
+import '../../presentation/screens/user/checklist_link_screen.dart';
 import '../../presentation/screens/admin/admin_choice_screen.dart';
-import '../../presentation/screens/admin/checklist_screen.dart';
 import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
 import '../../presentation/screens/summary/summary_screen.dart';
 import '../../presentation/screens/task/event_tasks_screen.dart';
+import '../../presentation/screens/task/tasks_place.dart';
 import '../../presentation/screens/task/tasks_screen.dart';
 import '../../presentation/screens/db/db_preview_screen.dart';
 import '../../presentation/screens/privacy_policy/privacy_policy_screen.dart';
 import '../../presentation/screens/terms_of_service/terms_of_service_screen.dart';
 import '../../../data/repositories/user_selection_repository.dart';
+import '../../domain/entities/team_member.dart';
 
 /// Global navigator key for showing snackbars from outside widget tree
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -39,15 +40,16 @@ class AppRouter {
   /// This is set by main.dart at the very start
   static String? capturedInitialHash;
 
-  /// The tasks link the app was opened on, kept until the member is signed in.
+  /// The checklist link the app was opened on, kept until the member is
+  /// signed in.
   ///
-  /// The tasks screen is reachable only by link. Without this, a member who
-  /// follows the link while signed out is sent to "מי את/ה?" and from there to
-  /// their home, and the link is lost.
+  /// The checklist at `/tasks` is reachable only by link. Without this, a
+  /// member who follows the link while signed out is sent to "מי את/ה?" and
+  /// from there to their home, and the link is lost.
   static String? _pendingDeepLink;
 
-  /// The route to restore after sign-in when [initialHash] is a tasks link
-  /// (`#/tasks`, `#/tasks/<eventId>`, or either under `#/test`), otherwise null.
+  /// The route to restore after sign-in when [initialHash] is the checklist
+  /// link (`#/tasks` or `#/test/tasks`), otherwise null.
   static String? pendingTasksLinkFor(String? initialHash) {
     if (initialHash == null) return null;
     var path =
@@ -60,9 +62,8 @@ class AppRouter {
     return _tasksLink.hasMatch(path) ? path : null;
   }
 
-  // The event list, or one event's screen, in either environment.
-  static final RegExp _tasksLink =
-      RegExp(r'^(/test)?/tasks(/[A-Za-z0-9_-]+)?$');
+  // The checklist, in either environment.
+  static final RegExp _tasksLink = RegExp(r'^(/test)?/tasks$');
 
   /// Remember [route] when it is the tasks link. Called whenever a visitor who
   /// is not signed in is turned away from a route, which also covers a tab
@@ -82,10 +83,21 @@ class AppRouter {
     return pending;
   }
 
-  /// Drop the pending link once the member is on the tasks screen, so a later
+  /// Drop the pending link once the member is on the checklist, so a later
   /// sign-out and sign-in goes home as usual.
   static void clearPendingDeepLinkIfArrived(String route) {
     if (route == _pendingDeepLink) _pendingDeepLink = null;
+  }
+
+  /// A signed-in member's home, without the environment prefix.
+  static String homeFor(TeamMember user) {
+    if (user.isAdmin) return '/admin';
+    if (user.canAccessSummaryScreen ||
+        user.canAccessShamapExport ||
+        user.canAccessConstraintsExamining) {
+      return '/choice';
+    }
+    return '/user/assignments';
   }
 
   @visibleForTesting
@@ -404,6 +416,10 @@ class AppRouter {
             if (strippedRoute.startsWith('/admin')) {
               return '$envPrefix/user/assignments';
             }
+            // The admins' own דו יומי screen: members have the tab.
+            if (strippedRoute.startsWith(TasksPlace.standalone.path)) {
+              return '$envPrefix/user$strippedRoute';
+            }
             if (strippedRoute.startsWith('/summary')) {
               if (!currentState.user.canAccessSummaryScreen) {
                 return '$envPrefix/user/assignments';
@@ -483,26 +499,16 @@ class AppRouter {
           ),
         ),
 
-        // Tasks screens - link-only, open to every authenticated member: the
-        // list of דו יומי events, and one event's stages and tasks.
+        // Checklist - link-only, open to every authenticated member.
         GoRoute(
           path: '/tasks',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: TasksScreen(key: ValueKey('tasks_prod')),
+            child: ChecklistLinkScreen(key: ValueKey('checklist_link_prod')),
           ),
         ),
-        GoRoute(
-          path: '/tasks/:eventId',
-          pageBuilder: (context, state) {
-            final eventId = state.pathParameters['eventId']!;
-            return NoTransitionPage(
-              child: EventTasksScreen(
-                key: ValueKey('event_tasks_prod_$eventId'),
-                eventId: eventId,
-              ),
-            );
-          },
-        ),
+
+        // The admins' own דו יומי screen, opened from the admin home.
+        _tasksRoute('/du-yomi', TasksPlace.standalone, 'prod'),
 
         // Admin routes shell - uses existing SwipeablePageView
         StatefulShellRoute.indexedStack(
@@ -547,13 +553,6 @@ class AppRouter {
                       child: AssignmentListScreen(
                           key: ValueKey('assignments_prod'))))
             ]),
-            StatefulShellBranch(routes: [
-              GoRoute(
-                  path: '/admin/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                      child: AdminChecklistScreen(
-                          key: ValueKey('admin_checklist_prod'))))
-            ]),
           ],
         ),
 
@@ -588,11 +587,7 @@ class AppRouter {
                           key: ValueKey('user_constraints_prod'))))
             ]),
             StatefulShellBranch(routes: [
-              GoRoute(
-                  path: '/user/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                      child: UserChecklistScreen(
-                          key: ValueKey('user_checklist_prod'))))
+              _tasksRoute('/user/du-yomi', TasksPlace.tab, 'prod'),
             ]),
           ],
         ),
@@ -628,18 +623,9 @@ class AppRouter {
         GoRoute(
             path: '/test/tasks',
             pageBuilder: (context, state) => const NoTransitionPage(
-                child: TasksScreen(key: ValueKey('tasks_test')))),
-        GoRoute(
-            path: '/test/tasks/:eventId',
-            pageBuilder: (context, state) {
-              final eventId = state.pathParameters['eventId']!;
-              return NoTransitionPage(
-                child: EventTasksScreen(
-                  key: ValueKey('event_tasks_test_$eventId'),
-                  eventId: eventId,
-                ),
-              );
-            }),
+                child:
+                    ChecklistLinkScreen(key: ValueKey('checklist_link_test')))),
+        _tasksRoute('/test/du-yomi', TasksPlace.standalone, 'test'),
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -683,13 +669,6 @@ class AppRouter {
                       child: AssignmentListScreen(
                           key: ValueKey('assignments_test'))))
             ]),
-            StatefulShellBranch(routes: [
-              GoRoute(
-                  path: '/test/admin/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                      child: AdminChecklistScreen(
-                          key: ValueKey('admin_checklist_test'))))
-            ]),
           ],
         ),
 
@@ -723,17 +702,42 @@ class AppRouter {
                           key: ValueKey('user_constraints_test'))))
             ]),
             StatefulShellBranch(routes: [
-              GoRoute(
-                  path: '/test/user/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                      child: UserChecklistScreen(
-                          key: ValueKey('user_checklist_test'))))
+              _tasksRoute('/test/user/du-yomi', TasksPlace.tab, 'test'),
             ]),
           ],
         ),
       ],
 
       errorBuilder: (context, state) => const WhoamiScreen(),
+    );
+  }
+
+  /// The list of דו יומי events at [path], with one event's screen on top of
+  /// it at `[path]/<eventId>`.
+  static GoRoute _tasksRoute(String path, TasksPlace place, String env) {
+    return GoRoute(
+      path: path,
+      pageBuilder: (context, state) => NoTransitionPage(
+        child: TasksScreen(
+          key: ValueKey('tasks_${place.name}_$env'),
+          place: place,
+        ),
+      ),
+      routes: [
+        GoRoute(
+          path: ':eventId',
+          pageBuilder: (context, state) {
+            final eventId = state.pathParameters['eventId']!;
+            return NoTransitionPage(
+              child: EventTasksScreen(
+                key: ValueKey('event_tasks_${place.name}_${env}_$eventId'),
+                eventId: eventId,
+                place: place,
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 

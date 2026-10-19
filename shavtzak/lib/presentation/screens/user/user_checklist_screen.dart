@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:developer' as developer;
+import 'package:go_router/go_router.dart';
+import '../../../core/router/app_router.dart';
+import '../../../core/services/environment_service.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
@@ -86,6 +89,15 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
             child: Scaffold(
               appBar: AppBar(
                 title: const Text('הצ\'קליסט שלי'),
+                leading: IconButton(
+                  key: const Key('checklist-home'),
+                  tooltip: 'חזרה לדף הבית',
+                  icon: const Icon(Icons.home_outlined),
+                  onPressed: () => context.go(
+                    '${EnvironmentService.instance.routePrefix}'
+                    '${AppRouter.homeFor(currentUser)}',
+                  ),
+                ),
                 bottom: TabBar(
                   controller: _tabController,
                   indicator: UnderlineTabIndicator(

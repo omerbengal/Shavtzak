@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/debug/logger.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/task_schedule.dart';
 import '../../../core/utils/task_utils.dart';
@@ -13,18 +14,19 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/test_environment_indicator.dart';
 import 'task_style.dart';
-import 'tasks_auto_open.dart';
+import 'tasks_place.dart';
 
-/// The דו יומי task screen, at `/tasks`: the list of דו יומי events.
+/// The list of דו יומי events, in the member's "דו יומי" tab or on the
+/// admins' own screen (see [TasksPlace]).
 ///
 /// The first time it opens in a session it goes straight into the nearest
-/// event that has not ended; the list is one step back. Choosing an event
-/// opens its own screen at `/tasks/<eventId>`.
-///
-/// Reachable only by link: nothing in the app navigates here. Every signed-in
-/// member can read it.
+/// event that has not ended; the event's title leads back here. After that
+/// it opens whatever was last shown in [place] ([TasksResume]). Choosing an
+/// event opens its own screen on top of the list.
 class TasksScreen extends StatefulWidget {
-  const TasksScreen({super.key, this.clock});
+  const TasksScreen({super.key, required this.place, this.clock});
+
+  final TasksPlace place;
 
   /// The current time. Injected by tests; defaults to [DateTime.now].
   final DateTime Function()? clock;
@@ -36,9 +38,11 @@ class TasksScreen extends StatefulWidget {
 class _TasksScreenState extends State<TasksScreen> {
   bool _isPastExpanded = false;
 
-  /// On the way into the nearest event: keep the spinner instead of
-  /// flashing the list.
-  bool _isOpeningNearest = false;
+  /// Whether this list has decided between staying and opening an event.
+  bool _hasDecided = false;
+
+  /// On the way into an event: keep the spinner instead of flashing the list.
+  bool _isOpeningEvent = false;
 
   @override
   void initState() {
@@ -48,23 +52,28 @@ class _TasksScreenState extends State<TasksScreen> {
 
   void _openEvent(Event event) {
     Logger.action('tap:taskEvent');
-    context.go('${EnvironmentService.instance.routePrefix}/tasks/${event.id}');
+    context.go(widget.place.eventRoute(event.id));
   }
 
   void _goHome(TeamMember user) {
     Logger.action('tap:tasksHome');
-    final prefix = EnvironmentService.instance.routePrefix;
-    final String home;
-    if (user.isAdmin) {
-      home = '/admin';
-    } else if (user.canAccessSummaryScreen ||
-        user.canAccessShamapExport ||
-        user.canAccessConstraintsExamining) {
-      home = '/choice';
-    } else {
-      home = '/user/assignments';
-    }
-    context.go('$prefix$home');
+    context.go(
+      '${EnvironmentService.instance.routePrefix}${AppRouter.homeFor(user)}',
+    );
+  }
+
+  /// The tab sits inside the member shell, which shows the banner already.
+  Widget _withBanner(Widget child) => widget.place == TasksPlace.standalone
+      ? TestEnvironmentIndicator(child: child)
+      : child;
+
+  /// The event to open instead of showing the list, if any.
+  String? _eventToOpen(({List<Event> upcoming, List<Event> past}) events) {
+    final place = widget.place;
+    if (TasksResume.isListChosen(place)) return null;
+    final last = TasksResume.lastEvent(place);
+    if (last != null) return last;
+    return events.upcoming.isEmpty ? null : events.upcoming.first.id;
   }
 
   @override
@@ -82,15 +91,19 @@ class _TasksScreenState extends State<TasksScreen> {
           return Scaffold(
             appBar: AppBar(
               title: const Text('משימות דו יומי'),
-              leading: IconButton(
-                key: const Key('tasks-home'),
-                tooltip: 'חזרה לדף הבית',
-                icon: const Icon(Icons.home_outlined),
-                onPressed: () => _goHome(user),
-              ),
+              automaticallyImplyLeading: false,
+              // The tab has the bottom bar to leave by.
+              leading: widget.place == TasksPlace.standalone
+                  ? IconButton(
+                      key: const Key('tasks-home'),
+                      tooltip: 'חזרה לדף הבית',
+                      icon: const Icon(Icons.home_outlined),
+                      onPressed: () => _goHome(user),
+                    )
+                  : null,
             ),
-            body: TestEnvironmentIndicator(
-              child: BlocBuilder<TaskBloc, TaskState>(
+            body: _withBanner(
+              BlocBuilder<TaskBloc, TaskState>(
                 builder: (context, state) => _buildBody(state),
               ),
             ),
@@ -126,22 +139,24 @@ class _TasksScreenState extends State<TasksScreen> {
 
     final now = (widget.clock ?? DateTime.now)();
     final events = taskEvents(state.events, now: now);
-    if (TasksAutoOpen.isPending) {
-      // Decided once, on the session's first look at the events.
-      TasksAutoOpen.spend();
-      if (events.upcoming.isNotEmpty) {
-        _isOpeningNearest = true;
-        final nearest = events.upcoming.first;
+    if (!_hasDecided) {
+      _hasDecided = true;
+      // Under an event's screen (a link straight to it) there is nothing to
+      // decide: the list is only shown once the member asks for it.
+      final isShown = ModalRoute.of(context)?.isCurrent ?? true;
+      final eventId = isShown ? _eventToOpen(events) : null;
+      if (eventId != null) {
+        _isOpeningEvent = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          Logger.action('auto:openNearestTaskEvent');
-          context.go(
-            '${EnvironmentService.instance.routePrefix}/tasks/${nearest.id}',
-          );
+          Logger.action('auto:openTaskEvent');
+          context.go(widget.place.eventRoute(eventId));
+          // The list stays underneath the event, ready for its title.
+          setState(() => _isOpeningEvent = false);
         });
       }
     }
-    if (_isOpeningNearest) {
+    if (_isOpeningEvent) {
       return const Center(child: CircularProgressIndicator());
     }
 

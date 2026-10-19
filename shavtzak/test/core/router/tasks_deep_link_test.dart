@@ -17,19 +17,13 @@ void main() {
       expect(AppRouter.pendingTasksLinkFor('#/test/tasks/?x=1'), '/test/tasks');
     });
 
-    test('recognises an event\'s tasks link in either environment', () {
-      expect(
-        AppRouter.pendingTasksLinkFor('#/tasks/9d130a08-cc9c-4052'),
-        '/tasks/9d130a08-cc9c-4052',
-      );
-      expect(
-        AppRouter.pendingTasksLinkFor('#/test/tasks/e1/?x=1'),
-        '/test/tasks/e1',
-      );
-    });
-
-    test('ignores deeper or odd paths under the tasks link', () {
-      for (final hash in ['#/tasks/a/b', '#/tasks/a b', '#/test/tasks/x/y']) {
+    test('ignores anything under the link: events moved to the דו יומי tab',
+        () {
+      for (final hash in [
+        '#/tasks/9d130a08-cc9c-4052',
+        '#/test/tasks/e1/?x=1',
+        '#/tasks/a/b',
+      ]) {
         expect(AppRouter.pendingTasksLinkFor(hash), isNull, reason: hash);
       }
     });

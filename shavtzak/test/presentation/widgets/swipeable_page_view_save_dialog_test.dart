@@ -18,7 +18,7 @@
 //   BottomNavWithDebugTrigger in isolation instead). This test takes the
 //   other path: build a minimal GoRouter with the same branch shape as the
 //   real admin shell in app_router.dart (home / team-members / events /
-//   assignments / checklist, in that order) with trivial placeholder
+//   assignments, in that order) with trivial placeholder
 //   screens standing in for the real ones, and pump SwipeablePageView as the
 //   shell's actual branch builder — then drive it exactly like a user would
 //   (tap a bottom-nav icon -> tap a dialog button -> ...).
@@ -190,7 +190,7 @@ void main() {
   );
 
   /// Builds a minimal admin shell (matching app_router.dart's branch order:
-  /// home / team-members / events / assignments / checklist) starting on
+  /// home / team-members / events / assignments) starting on
   /// the assignments tab, with SwipeablePageView as the real shell builder.
   Future<_MockAssignmentBloc> pumpAdminShellOnAssignmentsTab(
     WidgetTester tester, {
@@ -252,13 +252,6 @@ void main() {
                 path: '/admin/assignments',
                 builder: (context, state) =>
                     const Scaffold(body: Text('Assignments')),
-              ),
-            ]),
-            StatefulShellBranch(routes: [
-              GoRoute(
-                path: '/admin/checklist',
-                builder: (context, state) =>
-                    const Scaffold(body: Text('Checklist')),
               ),
             ]),
           ],
@@ -331,11 +324,11 @@ void main() {
 
       expect(find.text('שומר שינויים...'), findsNothing);
 
-      // Navigation proceeded to the team-members branch (bottom-nav index 3
-      // per SwipeablePageView._getBottomNavIndex(): page index 1 -> 3).
+      // Navigation proceeded to the team-members branch (bottom-nav index 2
+      // per SwipeablePageView._getBottomNavIndex(): page index 1 -> 2).
       final bottomNav =
           tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
-      expect(bottomNav.currentIndex, 3);
+      expect(bottomNav.currentIndex, 2);
     },
   );
 
@@ -363,10 +356,10 @@ void main() {
 
       expect(find.text('שומר שינויים...'), findsNothing);
 
-      // Stayed on the assignments tab (bottom-nav index 1).
+      // Stayed on the assignments tab (bottom-nav index 0).
       final bottomNav =
           tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
-      expect(bottomNav.currentIndex, 1);
+      expect(bottomNav.currentIndex, 0);
     },
   );
 
@@ -426,10 +419,10 @@ void main() {
           reason: 'cancelling the conflict dialog must not save',
         );
 
-        // Stayed on the assignments tab (bottom-nav index 1).
+        // Stayed on the assignments tab (bottom-nav index 0).
         final bottomNav = tester
             .widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
-        expect(bottomNav.currentIndex, 1);
+        expect(bottomNav.currentIndex, 0);
       },
     );
 
@@ -482,10 +475,10 @@ void main() {
         expect(find.text('שומר שינויים...'), findsNothing);
 
         // Navigation proceeded to the team-members branch (bottom-nav
-        // index 3).
+        // index 2).
         final bottomNav = tester
             .widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
-        expect(bottomNav.currentIndex, 3);
+        expect(bottomNav.currentIndex, 2);
       },
     );
   });

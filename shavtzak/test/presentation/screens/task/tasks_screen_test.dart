@@ -14,7 +14,7 @@ import 'package:shavtzak/presentation/bloc/task/task_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_state.dart';
 import 'package:shavtzak/presentation/screens/task/task_style.dart';
-import 'package:shavtzak/presentation/screens/task/tasks_auto_open.dart';
+import 'package:shavtzak/presentation/screens/task/tasks_place.dart';
 import 'package:shavtzak/presentation/screens/task/tasks_screen.dart';
 
 import '../../../support/fake_task_repository.dart';
@@ -60,22 +60,24 @@ void main() {
   late FakeTaskRepository repository;
   late TaskBloc taskBloc;
 
-  setUp(TasksAutoOpen.debugReset);
+  setUp(TasksResume.debugReset);
 
-  /// [comingBack] is the member returning to the list from an event, after
-  /// the session's one automatic opening; turn it off to arrive fresh.
+  /// [comingBack] is the member having chosen the list with an event's
+  /// title; turn it off to arrive fresh.
   Future<void> pumpList(
     WidgetTester tester, {
     TeamMember? user,
     List<Event>? events,
     bool deliver = true,
     bool comingBack = true,
+    TasksPlace place = TasksPlace.tab,
+    String? initialLocation,
     Size size = const Size(900, 2400),
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    if (comingBack) TasksAutoOpen.spend();
+    if (comingBack) TasksResume.rememberList(place);
 
     // Built inside the test's fake-async zone; see the event screen tests.
     repository = FakeTaskRepository();
@@ -102,17 +104,20 @@ void main() {
         ],
         child: MaterialApp.router(
           routerConfig: GoRouter(
-            initialLocation: '/tasks',
+            initialLocation: initialLocation ?? place.listRoute,
             routes: [
               GoRoute(
-                path: '/tasks',
-                builder: (context, state) => TasksScreen(clock: () => now),
-              ),
-              GoRoute(
-                path: '/tasks/:eventId',
-                builder: (context, state) => Scaffold(
-                  body: Text('event:${state.pathParameters['eventId']}'),
-                ),
+                path: place.listRoute,
+                builder: (context, state) =>
+                    TasksScreen(place: place, clock: () => now),
+                routes: [
+                  GoRoute(
+                    path: ':eventId',
+                    builder: (context, state) => Scaffold(
+                      body: Text('event:${state.pathParameters['eventId']}'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -151,13 +156,53 @@ void main() {
       expect(find.textContaining('event:'), findsNothing);
     });
 
-    testWidgets('coming back does not bounce into the event again',
-        (tester) async {
+    testWidgets('once the list was chosen, it stays the list', (tester) async {
       await pumpList(tester);
       await tester.pumpAndSettle();
 
       expect(row('running'), findsOneWidget);
       expect(find.text('event:running'), findsNothing);
+    });
+
+    testWidgets('goes back to the event last looked at', (tester) async {
+      TasksResume.rememberEvent(TasksPlace.tab, 'south');
+      await pumpList(tester, comingBack: false);
+      await tester.pumpAndSettle();
+
+      expect(find.text('event:south'), findsOneWidget);
+    });
+
+    testWidgets('each place remembers on its own', (tester) async {
+      TasksResume.rememberList(TasksPlace.standalone);
+      await pumpList(tester, comingBack: false);
+      await tester.pumpAndSettle();
+
+      expect(find.text('event:running'), findsOneWidget);
+    });
+
+    testWidgets('under a link to an event, opens nothing else', (tester) async {
+      await pumpList(
+        tester,
+        comingBack: false,
+        initialLocation: TasksPlace.tab.eventRoute('south'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('event:south'), findsOneWidget);
+      expect(find.text('event:running'), findsNothing);
+    });
+
+    testWidgets('the list under an opened event shows once asked for',
+        (tester) async {
+      await pumpList(tester, comingBack: false);
+      await tester.pumpAndSettle();
+      expect(find.text('event:running'), findsOneWidget);
+
+      GoRouter.of(tester.element(find.text('event:running')))
+          .go(TasksPlace.tab.listRoute);
+      await tester.pumpAndSettle();
+
+      expect(row('running'), findsOneWidget);
     });
 
     testWidgets('waits on a spinner until the board arrives', (tester) async {
@@ -166,7 +211,8 @@ void main() {
     });
   });
 
-  testWidgets('lists every upcoming event nearest first, and nothing but events',
+  testWidgets(
+      'lists every upcoming event nearest first, and nothing but events',
       (tester) async {
     await pumpList(tester);
 
@@ -253,6 +299,16 @@ void main() {
     expect(find.text('event:north'), findsOneWidget);
   });
 
+  testWidgets('only the admins\' own screen has a home button', (tester) async {
+    await pumpList(tester);
+    expect(find.byKey(const Key('tasks-home')), findsNothing);
+  });
+
+  testWidgets('the admins\' own screen has a home button', (tester) async {
+    await pumpList(tester, place: TasksPlace.standalone);
+    expect(find.byKey(const Key('tasks-home')), findsOneWidget);
+  });
+
   testWidgets('says so when there is no upcoming event', (tester) async {
     await pumpList(tester, events: [past]);
     expect(find.text('אין אירועי דו יומי קרובים'), findsOneWidget);
@@ -280,10 +336,19 @@ void main() {
     expect(centre, closeTo(640, 1));
   });
 
-  testWidgets('shows the test-environment banner in test mode', (tester) async {
+  testWidgets('on its own screen, shows the test-environment banner',
+      (tester) async {
+    EnvironmentService.instance.updateFromPath('/test/tasks');
+    addTearDown(() => EnvironmentService.instance.updateFromPath('/tasks'));
+    await pumpList(tester, place: TasksPlace.standalone);
+    expect(find.textContaining('סביבת בדיקות'), findsOneWidget);
+  });
+
+  testWidgets('in the tab, leaves the test-environment banner to the shell',
+      (tester) async {
     EnvironmentService.instance.updateFromPath('/test/tasks');
     addTearDown(() => EnvironmentService.instance.updateFromPath('/tasks'));
     await pumpList(tester);
-    expect(find.textContaining('סביבת בדיקות'), findsOneWidget);
+    expect(find.textContaining('סביבת בדיקות'), findsNothing);
   });
 }

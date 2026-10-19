@@ -34,7 +34,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
   static const List<String> _kUserTabRoutes = [
     '/user/assignments',
     '/user/constraints',
-    '/user/checklist',
+    '/user/du-yomi',
   ];
 
   int? _previousIndex;
@@ -212,9 +212,9 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               label: isPermanent ? 'המגבלות שלי' : 'הזמינות שלי',
             ),
             const BottomNavigationBarItem(
-              icon: Icon(Icons.checklist),
-              activeIcon: Icon(Icons.checklist),
-              label: 'צ\'קליסט',
+              icon: Icon(Icons.event_note_outlined),
+              activeIcon: Icon(Icons.event_note),
+              label: 'דו יומי',
             ),
           ],
         );
