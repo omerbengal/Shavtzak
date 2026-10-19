@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,7 @@ import 'presentation/bloc/team/team_bloc.dart';
 import 'presentation/bloc/team/team_event.dart';
 import 'presentation/bloc/event/event_bloc.dart';
 import 'presentation/bloc/user_selection/user_selection_bloc.dart';
+import 'presentation/bloc/user_selection/user_selection_event.dart';
 import 'presentation/bloc/user_selection/user_selection_state.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_event.dart';
@@ -72,14 +74,13 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Bloc.observer = LoggingBlocObserver();
 
-  // Ensure Rubik glyphs are registered before any Flutter text renders.
-  await _preloadStartupFonts();
-
-  // Show loading screen immediately
+  // Show loading screen immediately (the HTML splash covers it until the
+  // real app's first frame, so it needs no fonts of its own).
   runApp(const LoadingApp());
 
-  // Initialize in background
-  _initialize();
+  // Initialize in background. Rubik loads alongside; the real app waits for
+  // it before its first frame, so no text ever renders without its glyphs.
+  _initialize(_preloadStartupFonts());
 }
 
 /// Helper to time operations
@@ -108,7 +109,7 @@ Future<T> _timedAsync<T>(String name, Future<T> Function() fn) async {
   }
 }
 
-Future<void> _initialize() async {
+Future<void> _initialize(Future<void> fontsReady) async {
   final totalSw = Stopwatch()..start();
 
   try {
@@ -187,20 +188,13 @@ Future<void> _initialize() async {
       DriveService.instance.initialize();
     });
 
-    final calendarConfig = await _timedAsync<Map<String, String?>?>(
-        'Backend.calendarConfigFetch', () async {
-      return await _fetchCalendarConfigFromBackend();
-    });
-
-    if (calendarConfig != null) {
-      _timed('CalendarSyncBloc.init (from firestore)', () {
-        _initializeCalendarBlocWithConfig(bloc, calendarConfig);
-      });
-    } else {
-      _timed('CalendarSyncBloc.init (disabled)', () {
-        _initializeCalendarBlocWithConfig(bloc, const {'calendarId': null});
-      });
-    }
+    // Not awaited: a Cloud Function round-trip (a cold start can take
+    // seconds) must not hold up the first screen. The bloc defers anything
+    // that arrives before it is initialised (`_syncService == null`).
+    unawaited(_fetchCalendarConfigFromBackend().then((calendarConfig) {
+      _initializeCalendarBlocWithConfig(
+          bloc, calendarConfig ?? const {'calendarId': null});
+    }));
 
     // Initialize repositories
     final repositories = _timed('Repositories creation', () {
@@ -228,7 +222,18 @@ Future<void> _initialize() async {
           return await repositories.userSelection.hasCachedUser();
         });
 
+    // A returning member opens straight away on the snapshot this device
+    // kept of them; the backend confirms the session in the background
+    // (RevalidateRestoredSession). Only without a snapshot does the first
+    // screen wait on the backend.
+    var restoredFromSnapshot = false;
     if (shouldAttemptSessionRestore) {
+      preAuthenticatedUser =
+          await repositories.userSelection.restoreFromSnapshot();
+      restoredFromSnapshot = preAuthenticatedUser != null;
+    }
+
+    if (shouldAttemptSessionRestore && !restoredFromSnapshot) {
       try {
         final validatedUser = await _timedAsync(
           'UserSelectionRepository.getCachedUser',
@@ -243,6 +248,8 @@ Future<void> _initialize() async {
         await userCacheService.clearSelection();
       }
     }
+
+    await fontsReady;
 
     // Replace loading app with main app
     _timed('runApp(MyApp)', () {
@@ -259,6 +266,7 @@ Future<void> _initialize() async {
         userSelectionRepository: repositories.userSelection,
         calendarSyncBloc: bloc,
         preAuthenticatedUser: preAuthenticatedUser,
+        revalidateRestoredSession: restoredFromSnapshot,
       ));
     });
 
@@ -321,6 +329,7 @@ class MyApp extends StatelessWidget {
   final UserSelectionRepository userSelectionRepository;
   final CalendarSyncBloc calendarSyncBloc;
   final TeamMember? preAuthenticatedUser;
+  final bool revalidateRestoredSession;
 
   const MyApp({
     super.key,
@@ -336,6 +345,7 @@ class MyApp extends StatelessWidget {
     required this.userSelectionRepository,
     required this.calendarSyncBloc,
     this.preAuthenticatedUser,
+    this.revalidateRestoredSession = false,
   });
 
   @override
@@ -403,9 +413,14 @@ class MyApp extends StatelessWidget {
               ),
               BlocProvider(
                 create: (context) {
-                  return serviceLocator.createUserSelectionBloc(
+                  final userSelectionBloc =
+                      serviceLocator.createUserSelectionBloc(
                     preAuthenticatedUser: preAuthenticatedUser,
                   );
+                  if (revalidateRestoredSession) {
+                    userSelectionBloc.add(const RevalidateRestoredSession());
+                  }
+                  return userSelectionBloc;
                 },
               ),
               BlocProvider(

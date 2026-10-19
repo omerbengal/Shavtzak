@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +8,7 @@ import '../../domain/entities/vehicle_info.dart';
 import '../../core/services/backend_api_service.dart';
 import '../../core/services/user_cache_service.dart';
 import '../data_sources/database_interface.dart';
+import '../models/team_member_model.dart';
 
 /// Repository for user selection operations
 /// Handles business logic for user authentication and session management
@@ -57,6 +59,7 @@ class UserSelectionRepository {
 
       await _cacheService.saveSelectedUser(teamMember.uniqueKey);
       await _cacheService.clearSessionToken();
+      await saveMemberSnapshot(teamMember);
 
       return teamMember;
     } catch (e) {
@@ -94,12 +97,62 @@ class UserSelectionRepository {
 
       await _cacheService.saveSelectedUser(teamMember.uniqueKey);
       await _cacheService.clearSessionToken();
+      await saveMemberSnapshot(teamMember);
       return teamMember;
     } catch (e) {
       await clearUserSelection();
       throw UserSelectionException('Failed to get cached user: $e');
     }
   }
+
+  /// The member to open the app with straight away, read from this device
+  /// only — no network. Null when there is no live Firebase session or no
+  /// snapshot of that session's member; the caller then falls back to
+  /// [getCachedUser]. Whatever this returns must still be confirmed with
+  /// [revalidateSession], which is what a restored session is checked by.
+  Future<TeamMember?> restoreFromSnapshot() async {
+    final firebaseUser = _firebaseAuth.currentUser;
+    if (firebaseUser == null) return null;
+    final raw = await _cacheService.getMemberSnapshot();
+    if (raw == null) return null;
+    try {
+      final member =
+          TeamMemberModel.fromJson(jsonDecode(raw) as Map<String, dynamic>)
+              .toEntity();
+      return member.id == firebaseUser.uid ? member : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Keep [member] on this device for the next [restoreFromSnapshot].
+  Future<void> saveMemberSnapshot(TeamMember member) async {
+    final json = TeamMemberModel.fromEntity(member).toJson()
+      ..['passcode'] = null;
+    await _cacheService.saveMemberSnapshot(jsonEncode(json));
+  }
+
+  /// Confirm a session opened from [restoreFromSnapshot] with the backend and
+  /// return the member as stored now, or null when the member is gone.
+  ///
+  /// Unlike [getCachedUser] it clears nothing: a network failure says nothing
+  /// about the session, so the caller decides (see
+  /// [isDefinitiveSessionFailure]).
+  Future<TeamMember?> revalidateSession() async {
+    final firebaseUser = _firebaseAuth.currentUser;
+    if (firebaseUser == null) return null;
+    await _backendApiService.validateSession();
+    final member = await _database.getTeamMemberById(firebaseUser.uid);
+    if (member != null) await saveMemberSnapshot(member);
+    return member;
+  }
+
+  /// Whether [error] from [revalidateSession] means the backend refused the
+  /// session, as opposed to the request never getting an answer.
+  static bool isDefinitiveSessionFailure(Object error) =>
+      error is BackendApiException &&
+      !error.isNetworkError &&
+      (error.statusCode == 401 || error.statusCode == 403);
 
   /// Clear the current user selection from cache
   Future<void> clearUserSelection() async {

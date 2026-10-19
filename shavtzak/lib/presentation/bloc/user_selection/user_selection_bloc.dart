@@ -33,6 +33,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<LoadAllTeamMembers>(_onLoadAllTeamMembers);
     on<SignOut>(_onSignOut);
     on<SessionLost>(_onSessionLost);
+    on<RevalidateRestoredSession>(_onRevalidateRestoredSession);
     on<RefreshUserData>(_onRefreshUserData);
     on<UpdatePhoneNumber>(_onUpdatePhoneNumber);
     on<UpdateBirthday>(_onUpdateBirthday);
@@ -105,6 +106,48 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     Emitter<UserSelectionState> emit,
   ) async {
     emit(UserAuthenticated(event.user));
+    await _saveSnapshot(event.user);
+  }
+
+  /// Keep the device's member snapshot current, so the next load opens on
+  /// today's permissions. Best-effort: a failure costs a slower next load.
+  Future<void> _saveSnapshot(TeamMember user) async {
+    try {
+      await _userSelectionRepository.saveMemberSnapshot(user);
+    } catch (_) {}
+  }
+
+  Future<void> _onRevalidateRestoredSession(
+    RevalidateRestoredSession event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    final opened = state;
+    if (opened is! UserAuthenticated) return;
+
+    TeamMember? fresh;
+    try {
+      fresh = await _userSelectionRepository.revalidateSession();
+    } catch (e) {
+      if (!UserSelectionRepository.isDefinitiveSessionFailure(e)) {
+        // No answer is not a refusal: keep the session, the live streams and
+        // the next backend call will tell.
+        developer.log(
+          'restored session not confirmed (kept): $e',
+          name: 'UserSelectionBloc',
+        );
+        return;
+      }
+    }
+
+    final current = state;
+    if (current is! UserAuthenticated || current.user.id != opened.user.id) {
+      return;
+    }
+    if (fresh == null) {
+      add(const SessionLost());
+      return;
+    }
+    if (fresh != current.user) emit(UserAuthenticated(fresh));
   }
 
   Future<void> _stopTeamStream() async {
