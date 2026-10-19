@@ -58,7 +58,7 @@ class _TaskSheetState extends State<TaskSheet> {
         minChildSize: 0,
         maxChildSize: TaskStyle.sheetMaxSize,
         snap: true,
-        snapSizes: const [TaskStyle.sheetInitialSize],
+        snapSizes: const [TaskStyle.sheetHalfSize],
         builder: (context, scrollController) => Material(
           key: const Key('task-sheet'),
           color: Colors.white,

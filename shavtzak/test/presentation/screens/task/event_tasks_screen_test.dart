@@ -1096,33 +1096,22 @@ void main() {
       expect(find.byKey(const Key('stage-block-stray')), findsOneWidget);
     });
 
-    testWidgets('tapping a block opens the stage low; the calendar stays visible and tappable',
+    testWidgets('tapping a block opens the stage all the way up; closing returns to the calendar',
         (tester) async {
       await pumpCalendar(tester);
 
       await tester.tap(find.byKey(const Key('stage-block-ws')));
       await tester.pumpAndSettle();
       expect(inSheet(find.byKey(const Key('stage-sheet-ws'))), findsOneWidget);
+      final sheetTop = tester.getTopLeft(find.byKey(const Key('task-sheet'))).dy;
+      expect(sheetTop, lessThan(tester.view.physicalSize.height * 0.2));
 
-      // The stage under it is still on screen above the sheet.
+      await tester.tap(find.byKey(const Key('task-sheet-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('task-sheet')), findsNothing);
       await tester.tap(find.byKey(const Key('stage-block-dinner')));
       await tester.pumpAndSettle();
       expect(inSheet(find.byKey(const Key('stage-sheet-dinner'))), findsOneWidget);
-      expect(find.byKey(const Key('task-sheet')), findsOneWidget);
-    });
-
-    testWidgets('the opened stage sits just above the sheet', (tester) async {
-      await pumpCalendar(tester);
-
-      await tester.tap(find.byKey(const Key('stage-block-ws')));
-      await tester.pumpAndSettle();
-
-      final block = tester.getRect(find.byKey(const Key('stage-block-ws')));
-      final pinnedBottom =
-          tester.getBottomLeft(find.byKey(const Key('calendar-pinned'))).dy;
-      final sheetTop = tester.getTopLeft(find.byKey(const Key('task-sheet'))).dy;
-      expect(block.top, greaterThanOrEqualTo(pinnedBottom - 0.5));
-      expect(block.bottom, lessThanOrEqualTo(sheetTop + 0.5));
     });
 
     testWidgets('the count opens חסרות, the block הכל', (tester) async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/presentation/screens/task/task_style.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/task_sheet.dart';
 
 void main() {
@@ -54,12 +55,12 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('opens at half the height', (tester) async {
+  testWidgets('opens all the way up', (tester) async {
     await pumpSheet(tester);
 
     expect(
       tester.getTopLeft(find.byKey(const Key('task-sheet'))).dy,
-      closeTo(500, 2),
+      closeTo(1000 * (1 - TaskStyle.sheetMaxSize), 2),
     );
   });
 
@@ -91,7 +92,7 @@ void main() {
 
     await tester.drag(
       find.byKey(const Key('task-sheet-handle')),
-      const Offset(0, 600),
+      const Offset(0, 950),
     );
     await tester.pumpAndSettle();
     expect(closes, 1);

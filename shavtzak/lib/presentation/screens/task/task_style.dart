@@ -58,8 +58,13 @@ abstract final class TaskStyle {
   static const double focusTopMargin = 8;
 
   // The low sheet, as shares of the screen's height.
-  static const double sheetInitialSize = 0.5;
   static const double sheetMaxSize = 0.92;
+
+  /// The sheet opens all the way up.
+  static const double sheetInitialSize = sheetMaxSize;
+
+  /// Where it rests when dragged down part way, before it closes.
+  static const double sheetHalfSize = 0.5;
   static const double sheetCloseBelow = 0.12;
 
   // Layout.
