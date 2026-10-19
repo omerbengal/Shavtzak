@@ -43,6 +43,10 @@
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://us-central1-tsevet-shir-shavtzak.cloudfunctions.net" crossorigin>
   <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin>
+  <!-- The Firebase JS SDK modules firebase_core_web imports once
+       main.dart.js runs; tool/generate_service_worker.mjs writes their
+       versioned URLs here so they download alongside main.dart.js. -->
+  <!-- __FIREBASE_SDK_MODULEPRELOAD__ -->
   <link rel="preload" href="assets/assets/fonts/Rubik-Regular.ttf" as="fetch" crossorigin>
   <link rel="preload" href="assets/assets/fonts/Rubik-Medium.ttf" as="fetch" crossorigin>
   <link rel="preload" href="assets/assets/fonts/Rubik-Bold.ttf" as="fetch" crossorigin>

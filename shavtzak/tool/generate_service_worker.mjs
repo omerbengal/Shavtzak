@@ -1,5 +1,6 @@
 // Pins build/web/sw.js to this build: writes {path: sha256} of every file the
-// app loads into the worker's precache manifest (see web/sw.js).
+// app loads into the worker's precache manifest (see web/sw.js). Also writes
+// the Firebase JS SDK preloads into build/web/index.html.
 //
 // Run after `flutter build web`, from shavtzak/:
 //   node tool/generate_service_worker.mjs [build/web]
@@ -8,7 +9,8 @@
 
 import {createHash} from 'node:crypto';
 import {readFileSync, readdirSync, statSync, writeFileSync} from 'node:fs';
-import {join, relative, sep} from 'node:path';
+import {join, relative, resolve, sep} from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const root = process.argv[2] ?? 'build/web';
 
@@ -28,7 +30,37 @@ const EXCLUDED = [
   /^favicon\.png$/,
   /\.symbols$/,
   /\.map$/,
+  /\.info\.json$/,
 ];
+
+// firebase_core_web imports these SDK modules from the CDN only after
+// main.dart.js has run; index.html preloads them so they arrive with it.
+// The version is the one the resolved firebase_core_web pins.
+const FIREBASE_SERVICES = ['app', 'auth', 'firestore'];
+
+function firebaseSdkVersion() {
+  const config = JSON.parse(readFileSync('.dart_tool/package_config.json', 'utf8'));
+  const pkg = config.packages.find((p) => p.name === 'firebase_core_web');
+  if (!pkg) throw new Error('firebase_core_web not in package_config.json');
+  const root = fileURLToPath(new URL(pkg.rootUri.endsWith('/') ? pkg.rootUri : pkg.rootUri + '/',
+    pathToFileURL(resolve('.dart_tool') + '/')));
+  const src = readFileSync(join(root, 'lib/src/firebase_sdk_version.dart'), 'utf8');
+  const version = src.match(/supportedFirebaseJsSdkVersion\s*=\s*'([0-9.]+)'/)?.[1];
+  if (!version) throw new Error('supportedFirebaseJsSdkVersion not found');
+  return version;
+}
+
+function preloadFirebaseSdk() {
+  const indexPath = join(root, 'index.html');
+  const marker = '<!-- __FIREBASE_SDK_MODULEPRELOAD__ -->';
+  const html = readFileSync(indexPath, 'utf8');
+  if (!html.includes(marker)) throw new Error(`${marker} missing in ${indexPath}`);
+  const version = firebaseSdkVersion();
+  const links = FIREBASE_SERVICES.map((s) =>
+    `<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/${version}/firebase-${s}.js">`);
+  writeFileSync(indexPath, html.replace(marker, links.join('\n  ')));
+  return version;
+}
 
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -36,6 +68,9 @@ function walk(dir) {
     return statSync(full).isDirectory() ? walk(full) : [full];
   });
 }
+
+// Before hashing: this rewrites index.html.
+const firebaseVersion = preloadFirebaseSdk();
 
 const files = {};
 for (const full of walk(root).sort()) {
@@ -69,4 +104,5 @@ writeFileSync(
 const bytes = Object.keys(files)
   .reduce((sum, p) => sum + statSync(join(root, p)).size, 0);
 console.log(`sw.js pinned to build ${build}: ${Object.keys(files).length} files, ` +
-  `${(bytes / 1e6).toFixed(1)} MB, engine ${engine.slice(0, 10)}`);
+  `${(bytes / 1e6).toFixed(1)} MB, engine ${engine.slice(0, 10)}, ` +
+  `Firebase JS SDK ${firebaseVersion} preloaded`);
