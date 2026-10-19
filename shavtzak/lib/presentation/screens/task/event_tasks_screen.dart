@@ -12,8 +12,11 @@ import '../../../core/services/task_import_files.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/task_progress.dart';
+import '../../../core/utils/task_schedule.dart';
 import '../../../core/utils/task_utils.dart';
+import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/stage.dart';
 import '../../../domain/entities/task_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/task/task_bloc.dart';
@@ -25,11 +28,14 @@ import 'sheet_view.dart';
 import 'task_screen_actions.dart';
 import 'task_style.dart';
 import 'tasks_auto_open.dart';
-import 'widgets/legacy_stage_list.dart';
+import 'widgets/assignee_check_line.dart';
+import 'widgets/calendar_tab.dart';
+import 'widgets/day_calendar.dart';
+import 'widgets/event_summary.dart';
 import 'widgets/member_timeline.dart';
 import 'widgets/stage_sheet_view.dart';
-import 'widgets/task_card.dart';
 import 'widgets/task_detail.dart';
+import 'widgets/task_filter_bar.dart';
 import 'widgets/task_results_list.dart';
 import 'widgets/task_row.dart';
 import 'widgets/task_sheet.dart';
@@ -89,6 +95,24 @@ class _EventTasksScreenState extends State<EventTasksScreen>
   /// a debug build lets a manager pick someone else.
   String? _viewAsId;
 
+  /// The day "כל השלבים" shows: today during the event, the first day
+  /// otherwise, taken once; then wherever the member or the sheet moves it.
+  DateTime? _calendarDay;
+
+  /// The stage the calendar scrolls to, and a counter asking it to.
+  String? _focusStageId;
+  int _focusRequest = 0;
+  final GlobalKey _focusKey = GlobalKey();
+
+  /// The members assigned to the event, for the managers' check. Null until
+  /// the first answer, and null means no check: never flag every task while
+  /// the list is still on its way.
+  Set<String>? _assignedIds;
+  StreamSubscription<List<TeamMember>>? _assignedSubscription;
+
+  /// The board as last built, to find the stage a sheet is about.
+  EventTaskBoard? _board;
+
   late DateTime _now;
   Timer? _ticker;
 
@@ -106,10 +130,21 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     _ticker = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() => _now = _readClock());
     });
+    final auth = context.read<UserSelectionBloc>().state;
+    if (auth is UserAuthenticated && canManageTasks(auth.user)) {
+      _assignedSubscription = context
+          .read<TaskRepository>()
+          .watchEventAssignees(widget.eventId)
+          .listen((members) {
+        if (!mounted) return;
+        setState(() => _assignedIds = {for (final member in members) member.id});
+      });
+    }
   }
 
   @override
   void dispose() {
+    _assignedSubscription?.cancel();
     _ticker?.cancel();
     _searchLog.dispose();
     _searchFocusNode.dispose();
@@ -127,7 +162,35 @@ class _EventTasksScreenState extends State<EventTasksScreen>
 
   void _openSheet(SheetView view) {
     Logger.action('open:taskSheet', {'view': _viewName(view)});
-    setState(() => _sheet = view);
+    setState(() {
+      final previous = _sheet;
+      _sheet = view;
+      // A stage, or a task, brings the calendar to its day and its block;
+      // results move nothing, and neither does switching within a stage.
+      final stage = _stageOf(view);
+      if (stage != null &&
+          (previous == null || _stageOf(previous)?.id != stage.id)) {
+        final date = stage.date;
+        _calendarDay = DateTime(date.year, date.month, date.day);
+        _focusStageId = stage.id;
+        _focusRequest++;
+      }
+    });
+  }
+
+  /// The one stage [view] is about, if it is about one.
+  Stage? _stageOf(SheetView view) {
+    final board = _board;
+    if (board == null) return null;
+    switch (view) {
+      case StageView(:final stageId):
+        return board.stageById(stageId);
+      case TaskView(:final taskId):
+        final task = board.taskById(taskId);
+        return task == null ? null : board.stageById(task.stageId);
+      case ResultsView():
+        return null;
+    }
   }
 
   void _closeSheet() {
@@ -231,9 +294,11 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                 body: TestEnvironmentIndicator(
                   child: _buildBody(state, board, user),
                 ),
+                // Steps aside while the sheet is open, so it covers nothing.
                 floatingActionButton: board != null &&
                         canManageTasks(user) &&
-                        _tab == EventTasksTab.all
+                        _tab == EventTasksTab.all &&
+                        _sheet == null
                     ? FloatingActionButton.extended(
                         key: const Key('stage-add'),
                         onPressed: () => createStage(board.event, user),
@@ -332,6 +397,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     }
     if (board == null) return _buildUnknownEvent();
 
+    _board = board;
     final sheet = _resolve(_sheet, board);
     if (sheet != _sheet) {
       // What the sheet showed is gone; settle on what it shows now.
@@ -358,7 +424,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                   Positioned.fill(
                     child: _tab == EventTasksTab.mine
                         ? _buildMine(board, user, sheetRoom)
-                        : _buildAll(board, user),
+                        : _buildAll(board, user, sheet, sheetRoom),
                   ),
                   if (sheet != null)
                     TaskSheet(
@@ -500,37 +566,147 @@ class _EventTasksScreenState extends State<EventTasksScreen>
 
   // ---- "כל השלבים" ----
 
-  Widget _buildAll(EventTaskBoard board, TeamMember user) {
+  Widget _buildAll(
+    EventTaskBoard board,
+    TeamMember user,
+    SheetView? sheet,
+    double sheetRoom,
+  ) {
     if (board.stages.isEmpty) {
       return _buildNoStages(user, board.event, forManagers: true);
     }
-    final event = board.event;
-    return LegacyStageList(
-      groups: stagesToShow(
-        stages: board.stages,
-        visibleTasks: board.tasks,
-        showEveryStage: true,
+    final days = calendarDays(board.event, board.stages);
+    final chosen = _calendarDay ??= initialCalendarDay(days, _now);
+    final day = days.contains(chosen) ? chosen : days.first;
+    final removed = _removedAssigneeTasks(board, user);
+    return CalendarTab(
+      top: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          EventSummary(
+            event: board.event,
+            progress: taskProgress(board.tasks, _now),
+          ),
+          if (removed.isNotEmpty)
+            AssigneeCheckLine(
+              count: removed.length,
+              onTap: () =>
+                  _openSheet(const ResultsView(ResultsKind.removedAssignees)),
+            ),
+        ],
       ),
-      eventTasks: board.tasks,
-      canManage: canManageTasks(user),
-      onEditStage: (stage) => editStage(stage, event, user),
-      onDeleteStage: deleteStage,
-      onAddTask: (stage) => createTask(event, stage, user),
-      onCallPhone: callPhone,
-      taskBuilder: (task, stage) => TaskCard(
-        key: ValueKey(task.id),
-        task: task,
-        now: _now,
-        canManage: canManageTasks(user),
-        canUpdateProgress: canUpdateTaskProgress(task, user),
-        onToggleSubtask: (subtask, isDone) =>
-            toggleSubtask(task, subtask, isDone),
-        onSetComplete: (isComplete) => setComplete(task, isComplete),
-        onEditUpdate: () => editUpdate(task),
-        onEdit: () => editTask(task, event, stage, user),
-        onDelete: () => deleteTask(task),
+      filterBar: TaskFilterBar(
+        lateCount: lateTasks(board.tasks, _now).length,
+        soonCount: dueSoonTasks(board.tasks, _now).length,
+        active: _activeFilter(sheet),
+        onChanged: _onFilterChanged,
       ),
+      days: days,
+      selectedDay: day,
+      now: _now,
+      onSelectDay: (next) {
+        Logger.action('tap:calendarDay');
+        setState(() => _calendarDay = next);
+      },
+      calendar: _buildCalendar(board, user, sheet, [day]),
+      focusKey: _focusKey,
+      focusRequest: _focusRequest,
+      bottomPadding: sheetRoom,
     );
+  }
+
+  /// The calendar of [days], outlining what the sheet is about.
+  DayCalendar _buildCalendar(
+    EventTaskBoard board,
+    TeamMember user,
+    SheetView? sheet,
+    List<DateTime> days, {
+    double hourHeight = TaskStyle.hourHeight,
+    bool fadeOthers = true,
+  }) {
+    final stagesByDay = <DateTime, List<Stage>>{};
+    for (final stage in board.stages) {
+      final date = stage.date;
+      stagesByDay
+          .putIfAbsent(DateTime(date.year, date.month, date.day), () => [])
+          .add(stage);
+    }
+    return DayCalendar(
+      days: days,
+      stagesByDay: stagesByDay,
+      progressByStage: {
+        for (final stage in board.stages)
+          stage.id: taskProgress(board.tasksOf(stage.id), _now),
+      },
+      mineByStage: {
+        for (final stage in board.stages)
+          stage.id: board
+              .tasksOf(stage.id)
+              .where((task) => task.isAssignedTo(user.id))
+              .length,
+      },
+      currentStageIds: {
+        for (final stage in currentStages(board.stages, _now)) stage.id,
+      },
+      now: _now,
+      hourHeight: hourHeight,
+      outlinedStageIds: _outlinedStages(sheet, board, user),
+      fadeOthers: fadeOthers && sheet != null,
+      focusStageId: _focusStageId,
+      focusKey: _focusKey,
+      onOpenStage: (stage, {required missingOnly}) =>
+          _openSheet(StageView(stage.id, missingOnly: missingOnly)),
+    );
+  }
+
+  /// The stages the sheet is about: its stage, a task's stage, or the
+  /// stages its results come from.
+  Set<String> _outlinedStages(
+    SheetView? view,
+    EventTaskBoard board,
+    TeamMember user,
+  ) {
+    switch (view) {
+      case null:
+        return const {};
+      case StageView(:final stageId):
+        return {stageId};
+      case TaskView(:final taskId):
+        final task = board.taskById(taskId);
+        return task == null ? const {} : {task.stageId};
+      case ResultsView():
+        return {
+          for (final task in _results(view, board, user).$2) task.stageId,
+        };
+    }
+  }
+
+  /// The filter behind the sheet, also while a task opened from it shows.
+  static TaskFilter? _activeFilter(SheetView? view) => switch (view) {
+        ResultsView(kind: ResultsKind.late) => TaskFilter.late,
+        ResultsView(kind: ResultsKind.dueSoon) => TaskFilter.dueSoon,
+        TaskView(:final back) => _activeFilter(back),
+        _ => null,
+      };
+
+  void _onFilterChanged(TaskFilter? filter) {
+    Logger.action('toggle:taskFilter', {'filter': filter?.name});
+    switch (filter) {
+      case null:
+        _closeSheet();
+      case TaskFilter.late:
+        _openSheet(const ResultsView(ResultsKind.late));
+      case TaskFilter.dueSoon:
+        _openSheet(const ResultsView(ResultsKind.dueSoon));
+    }
+  }
+
+  /// The tasks whose assignee was taken off the event, for managers once
+  /// the event's assignees are known; none before that.
+  List<TaskItem> _removedAssigneeTasks(EventTaskBoard board, TeamMember user) {
+    final assigned = _assignedIds;
+    if (assigned == null || !canManageTasks(user)) return const [];
+    return tasksWithRemovedAssignees(board.tasks, assigned);
   }
 
   // ---- the sheet ----
@@ -590,16 +766,26 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             onCallPhone: callPhone,
           ),
         );
-      case ResultsView(:final kind, :final query):
-        final (String title, List<TaskItem> matching) = switch (kind) {
-          ResultsKind.search => _searchResults(board, query),
-          ResultsKind.myLate => _myLateResults(board, user),
-          // The calendar tab's lists arrive with the calendar.
-          _ => ('', const <TaskItem>[]),
-        };
+      case ResultsView():
+        final (title, matching, subtitle) = _results(view, board, user);
         final rows = _rowHold.rows(view, matching: matching, all: board.tasks);
         return SheetContent(
-          header: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (subtitle != null)
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.normal,
+                    color: TaskStyle.neutralText,
+                  ),
+                ),
+            ],
+          ),
           body: _resultsBody(
             view,
             board,
@@ -611,25 +797,52 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     }
   }
 
-  (String, List<TaskItem>) _searchResults(EventTaskBoard board, String query) {
-    final matching = sortTasks(filterTasks(board.tasks, now: _now, query: query));
-    return ('חיפוש: "$query" · ${matching.length}', matching);
-  }
-
-  (String, List<TaskItem>) _myLateResults(EventTaskBoard board, TeamMember user) {
-    final viewerId = _viewAsId ?? user.id;
-    final matching = lateTasks(
-      [for (final task in board.tasks) if (task.isAssignedTo(viewerId)) task],
-      _now,
-    );
-    return (
-      hebrewCount(
-        matching.length,
-        one: 'משימה אחת שלך באיחור',
-        many: 'משימות שלך באיחור',
-      ),
-      matching,
-    );
+  /// A list's title, the tasks matching it now, earliest due first, and an
+  /// optional line under the title. The count in the title is live; the
+  /// rows shown are held separately.
+  (String, List<TaskItem>, String?) _results(
+    ResultsView view,
+    EventTaskBoard board,
+    TeamMember user,
+  ) {
+    switch (view.kind) {
+      case ResultsKind.search:
+        final matching =
+            sortTasks(filterTasks(board.tasks, now: _now, query: view.query));
+        return ('חיפוש: "${view.query}" · ${matching.length}', matching, null);
+      case ResultsKind.myLate:
+        final viewerId = _viewAsId ?? user.id;
+        final matching = lateTasks(
+          [for (final task in board.tasks) if (task.isAssignedTo(viewerId)) task],
+          _now,
+        );
+        final title = hebrewCount(
+          matching.length,
+          one: 'משימה אחת שלך באיחור',
+          many: 'משימות שלך באיחור',
+        );
+        return (title, matching, null);
+      case ResultsKind.late:
+        final matching = lateTasks(board.tasks, _now);
+        final count =
+            hebrewCount(matching.length, one: 'משימה אחת', many: 'משימות');
+        return ('באיחור · $count', matching, 'מכל השלבים, הוותיקה ראשונה');
+      case ResultsKind.dueSoon:
+        final matching = dueSoonTasks(board.tasks, _now);
+        return (
+          'התייצבות בחצי שעה הקרובה · ${matching.length}',
+          matching,
+          'מכל השלבים, הקרובה ראשונה',
+        );
+      case ResultsKind.removedAssignees:
+        final matching = _removedAssigneeTasks(board, user);
+        final title = hebrewCount(
+          matching.length,
+          one: 'משימה אחת של מי שכבר לא משובץ לאירוע',
+          many: 'משימות של מי שכבר לא משובץ לאירוע',
+        );
+        return (title, matching, null);
+    }
   }
 
   Widget _resultsBody(
@@ -650,8 +863,10 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     );
   }
 
-  /// A task in one of the sheet's lists; it opens over [from].
+  /// A task in one of the sheet's lists; it opens over [from]. A manager
+  /// sees an assignee taken off the event struck through on any row.
   Widget _taskRow(TaskItem task, SheetView from, TeamMember user) {
+    final assigned = _assignedIds;
     return TaskRow(
       task: task,
       now: _now,
@@ -660,6 +875,9 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       onSetComplete: (isComplete) => setComplete(task, isComplete),
       onOpen: () => _openSheet(TaskView(task.id, back: from)),
       onCallPhone: callPhone,
+      removedAssigneeIds: assigned == null || !canManageTasks(user)
+          ? const []
+          : removedAssigneeIds(task, assigned),
     );
   }
 
