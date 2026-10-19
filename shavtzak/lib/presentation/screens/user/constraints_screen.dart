@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
@@ -21,6 +20,7 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/date_picker_dialog.dart';
+import '../event/widgets/event_time_field.dart';
 import '../../widgets/constraint_event_warning_dialog.dart';
 import 'availability_screen.dart';
 import 'user_navigation_shell.dart'; // Import for onConstraintsPageVisible callback
@@ -1082,77 +1082,6 @@ class _RepeatingConstraintDialogState
     }
   }
 
-  Future<void> _showTimePickerFor(TextEditingController controller) async {
-    final now = DateTime.now();
-    DateTime initialTime = now;
-    if (controller.text.isNotEmpty) {
-      final parts = controller.text.split(':');
-      if (parts.length == 2) {
-        final hour = int.tryParse(parts[0]);
-        final minute = int.tryParse(parts[1]);
-        if (hour != null && minute != null) {
-          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
-        }
-      }
-    }
-
-    DateTime selectedTime = initialTime;
-    final result = await showDialog<DateTime>(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox(
-          width: 280,
-          height: 220,
-          child: Column(
-            children: [
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  initialDateTime: initialTime,
-                  use24hFormat: true,
-                  onDateTimeChanged: (DateTime newTime) {
-                    selectedTime = newTime;
-                  },
-                ),
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      child: const Text('ביטול'),
-                      onPressed: () {
-                        Logger.action('tap:cancel:timePicker');
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    TextButton(
-                      child: const Text('אישור'),
-                      onPressed: () {
-                        Logger.action('tap:confirm:timePicker');
-                        Navigator.of(context).pop(selectedTime);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        controller.text =
-            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
-      });
-    }
-  }
-
   Future<void> _selectRepeatEndDate() async {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
@@ -1426,52 +1355,19 @@ class _RepeatingConstraintDialogState
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final compact = constraints.maxWidth < 360;
-                    final startField = TextFormField(
+                    final startField = EventTimeField(
                       controller: _startTimeController,
-                      readOnly: true,
-                      onTap: () {
-                        Logger.action('open:startTimePicker');
-                        _showTimePickerFor(_startTimeController);
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'שעת התחלה',
-                        hintText: 'למשל 09:00',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.access_time),
-                        suffixIcon: _startTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  Logger.action('tap:clearStartTime');
-                                  setState(
-                                      () => _startTimeController.clear());
-                                },
-                              )
-                            : null,
-                      ),
+                      label: 'שעת התחלה',
+                      hint: 'למשל 09:00',
+                      logKey: 'startTime',
+                      onChanged: () => setState(() {}),
                     );
-                    final endField = TextFormField(
+                    final endField = EventTimeField(
                       controller: _endTimeController,
-                      readOnly: true,
-                      onTap: () {
-                        Logger.action('open:endTimePicker');
-                        _showTimePickerFor(_endTimeController);
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'שעת סיום',
-                        hintText: 'למשל 17:00',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.access_time),
-                        suffixIcon: _endTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  Logger.action('tap:clearEndTime');
-                                  setState(() => _endTimeController.clear());
-                                },
-                              )
-                            : null,
-                      ),
+                      label: 'שעת סיום',
+                      hint: 'למשל 17:00',
+                      logKey: 'endTime',
+                      onChanged: () => setState(() {}),
                     );
 
                     if (compact) {
@@ -1822,82 +1718,6 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
     );
   }
 
-  /// Show time picker (Cupertino style)
-  Future<void> _showTimePickerFor(TextEditingController controller) async {
-    // Parse existing value as initial time, default to current time
-    final now = DateTime.now();
-    DateTime initialTime = now;
-    if (controller.text.isNotEmpty) {
-      final parts = controller.text.split(':');
-      if (parts.length == 2) {
-        final hour = int.tryParse(parts[0]);
-        final minute = int.tryParse(parts[1]);
-        if (hour != null && minute != null) {
-          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
-        }
-      }
-    }
-
-    DateTime selectedTime = initialTime;
-
-    final result = await showDialog<DateTime>(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox(
-          width: 280,
-          height: 220,
-          child: Column(
-            children: [
-              // Cupertino time picker wheel
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  initialDateTime: initialTime,
-                  use24hFormat: true,
-                  onDateTimeChanged: (DateTime newTime) {
-                    selectedTime = newTime;
-                  },
-                ),
-              ),
-              // Footer with cancel/confirm buttons
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      child: const Text('ביטול'),
-                      onPressed: () {
-                        Logger.action('tap:cancel:timePicker');
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    TextButton(
-                      child: const Text('אישור'),
-                      onPressed: () {
-                        Logger.action('tap:confirm:timePicker');
-                        Navigator.of(context).pop(selectedTime);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        controller.text =
-            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -1951,67 +1771,25 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final compact = constraints.maxWidth < 360;
-                    final startField = TextFormField(
+                    final startField = EventTimeField(
                       controller: startTimeController,
-                      readOnly: true,
-                      onTap: () {
-                        Logger.action('open:startTimePicker');
-                        _showTimePickerFor(startTimeController);
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'שעת התחלה',
-                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
-                            ? 'ביום הראשון'
-                            : null,
-                        hintText: 'למשל 09:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: startTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.clear,
-                                  color: Colors.grey,
-                                ),
-                                onPressed: () {
-                                  Logger.action('tap:clearStartTime');
-                                  setState(() {
-                                    startTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
+                      label: 'שעת התחלה',
+                      hint: 'למשל 09:00',
+                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                          ? 'ביום הראשון'
+                          : null,
+                      logKey: 'startTime',
+                      onChanged: () => setState(() {}),
                     );
-                    final endField = TextFormField(
+                    final endField = EventTimeField(
                       controller: endTimeController,
-                      readOnly: true,
-                      onTap: () {
-                        Logger.action('open:endTimePicker');
-                        _showTimePickerFor(endTimeController);
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'שעת סיום',
-                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
-                            ? 'ביום האחרון'
-                            : null,
-                        hintText: 'למשל 17:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: endTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.clear,
-                                  color: Colors.grey,
-                                ),
-                                onPressed: () {
-                                  Logger.action('tap:clearEndTime');
-                                  setState(() {
-                                    endTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
+                      label: 'שעת סיום',
+                      hint: 'למשל 17:00',
+                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                          ? 'ביום האחרון'
+                          : null,
+                      logKey: 'endTime',
+                      onChanged: () => setState(() {}),
                     );
 
                     if (compact) {
@@ -2377,82 +2155,6 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
     );
   }
 
-  /// Show time picker (Cupertino style)
-  Future<void> _showTimePickerFor(TextEditingController controller) async {
-    // Parse existing value as initial time, default to current time
-    final now = DateTime.now();
-    DateTime initialTime = now;
-    if (controller.text.isNotEmpty) {
-      final parts = controller.text.split(':');
-      if (parts.length == 2) {
-        final hour = int.tryParse(parts[0]);
-        final minute = int.tryParse(parts[1]);
-        if (hour != null && minute != null) {
-          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
-        }
-      }
-    }
-
-    DateTime selectedTime = initialTime;
-
-    final result = await showDialog<DateTime>(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox(
-          width: 280,
-          height: 220,
-          child: Column(
-            children: [
-              // Cupertino time picker wheel
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  initialDateTime: initialTime,
-                  use24hFormat: true,
-                  onDateTimeChanged: (DateTime newTime) {
-                    selectedTime = newTime;
-                  },
-                ),
-              ),
-              // Footer with cancel/confirm buttons
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      child: const Text('ביטול'),
-                      onPressed: () {
-                        Logger.action('tap:cancel:timePicker');
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    TextButton(
-                      child: const Text('אישור'),
-                      onPressed: () {
-                        Logger.action('tap:confirm:timePicker');
-                        Navigator.of(context).pop(selectedTime);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        controller.text =
-            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -2503,63 +2205,25 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final compact = constraints.maxWidth < 360;
-                    final startField = TextFormField(
+                    final startField = EventTimeField(
                       controller: startTimeController,
-                      readOnly: true,
-                      onTap: () {
-                        Logger.action('open:startTimePicker');
-                        _showTimePickerFor(startTimeController);
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'שעת התחלה',
-                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
-                            ? 'ביום הראשון'
-                            : null,
-                        hintText: 'למשל 09:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: startTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon:
-                                    const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () {
-                                  Logger.action('tap:clearStartTime');
-                                  setState(() {
-                                    startTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
+                      label: 'שעת התחלה',
+                      hint: 'למשל 09:00',
+                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                          ? 'ביום הראשון'
+                          : null,
+                      logKey: 'startTime',
+                      onChanged: () => setState(() {}),
                     );
-                    final endField = TextFormField(
+                    final endField = EventTimeField(
                       controller: endTimeController,
-                      readOnly: true,
-                      onTap: () {
-                        Logger.action('open:endTimePicker');
-                        _showTimePickerFor(endTimeController);
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'שעת סיום',
-                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
-                            ? 'ביום האחרון'
-                            : null,
-                        hintText: 'למשל 17:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: endTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon:
-                                    const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () {
-                                  Logger.action('tap:clearEndTime');
-                                  setState(() {
-                                    endTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
+                      label: 'שעת סיום',
+                      hint: 'למשל 17:00',
+                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                          ? 'ביום האחרון'
+                          : null,
+                      logKey: 'endTime',
+                      onChanged: () => setState(() {}),
                     );
 
                     if (compact) {
@@ -3336,79 +3000,6 @@ class _EditExpiredConstraintDialogState
     });
   }
 
-  /// Show time picker (Cupertino style)
-  Future<void> _showTimePickerFor(TextEditingController controller) async {
-    final now = DateTime.now();
-    DateTime initialTime = now;
-    if (controller.text.isNotEmpty) {
-      final parts = controller.text.split(':');
-      if (parts.length == 2) {
-        final hour = int.tryParse(parts[0]);
-        final minute = int.tryParse(parts[1]);
-        if (hour != null && minute != null) {
-          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
-        }
-      }
-    }
-
-    DateTime selectedTime = initialTime;
-
-    final result = await showDialog<DateTime>(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox(
-          width: 280,
-          height: 220,
-          child: Column(
-            children: [
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  initialDateTime: initialTime,
-                  use24hFormat: true,
-                  onDateTimeChanged: (DateTime newTime) {
-                    selectedTime = newTime;
-                  },
-                ),
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      child: const Text('ביטול'),
-                      onPressed: () {
-                        Logger.action('tap:cancel:timePicker');
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    TextButton(
-                      child: const Text('אישור'),
-                      onPressed: () {
-                        Logger.action('tap:confirm:timePicker');
-                        Navigator.of(context).pop(selectedTime);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        controller.text =
-            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -3463,61 +3054,25 @@ class _EditExpiredConstraintDialogState
               LayoutBuilder(
                 builder: (context, constraints) {
                   final compact = constraints.maxWidth < 360;
-                  final startField = TextFormField(
+                  final startField = EventTimeField(
                     controller: startTimeController,
-                    readOnly: true,
-                    onTap: () {
-                      Logger.action('open:startTimePicker');
-                      _showTimePickerFor(startTimeController);
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'שעת התחלה',
-                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
-                          ? 'ביום הראשון'
-                          : null,
-                      hintText: 'למשל 09:00',
-                      prefixIcon: const Icon(Icons.access_time),
-                      border: const OutlineInputBorder(),
-                      suffixIcon: startTimeController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.grey),
-                              onPressed: () {
-                                Logger.action('tap:clearStartTime');
-                                setState(() {
-                                  startTimeController.clear();
-                                });
-                              },
-                            )
-                          : null,
-                    ),
+                    label: 'שעת התחלה',
+                    hint: 'למשל 09:00',
+                    helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                        ? 'ביום הראשון'
+                        : null,
+                    logKey: 'startTime',
+                    onChanged: () => setState(() {}),
                   );
-                  final endField = TextFormField(
+                  final endField = EventTimeField(
                     controller: endTimeController,
-                    readOnly: true,
-                    onTap: () {
-                      Logger.action('open:endTimePicker');
-                      _showTimePickerFor(endTimeController);
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'שעת סיום',
-                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
-                          ? 'ביום האחרון'
-                          : null,
-                      hintText: 'למשל 17:00',
-                      prefixIcon: const Icon(Icons.access_time),
-                      border: const OutlineInputBorder(),
-                      suffixIcon: endTimeController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.grey),
-                              onPressed: () {
-                                Logger.action('tap:clearEndTime');
-                                setState(() {
-                                  endTimeController.clear();
-                                });
-                              },
-                            )
-                          : null,
-                    ),
+                    label: 'שעת סיום',
+                    hint: 'למשל 17:00',
+                    helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                        ? 'ביום האחרון'
+                        : null,
+                    logKey: 'endTime',
+                    onChanged: () => setState(() {}),
                   );
 
                   if (compact) {

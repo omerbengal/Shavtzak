@@ -29,6 +29,7 @@ import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import 'widgets/assignment_save_bar.dart';
+import 'widgets/member_picker_field.dart';
 import 'widgets/staged_save_conflict_flow.dart';
 import 'widgets/unsaved_changes_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
@@ -367,7 +368,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }
   }
 
-  /// Filter slots by search query (event name, role name, member name, label)
+  /// Filter slots by search query (event name, location, role name, member
+  /// name, label)
   List<AssignmentSlot> _searchSlots(List<AssignmentSlot> slots) {
     if (_searchQuery.isEmpty) {
       return slots;
@@ -377,6 +379,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return slots.where((slot) {
       // Search in event name
       if (normalizeForSearch(slot.event.name).contains(normalizedQuery)) {
+        return true;
+      }
+      // Search in event location, as displayed — a map-picked location is
+      // stored as "Name||lat,lng", so the coordinates must not be matched
+      if (slot.event.location.isNotEmpty &&
+          normalizeForSearch(_formatLocationForDisplay(slot.event.location))
+              .contains(normalizedQuery)) {
         return true;
       }
       // Search in role Hebrew name
@@ -776,7 +785,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'חיפוש באירוע, תפקיד, שם או לייבל...',
+                      hintText: 'חיפוש באירוע, מיקום, תפקיד, שם או לייבל...',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -2800,154 +2809,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           (m) => m.id == slot.currentAssignment?.teamMemberId,
         );
 
-    // Build items list using String values (member IDs)
-    final items = <DropdownMenuItem<String>>[];
-
-    // Add all available members with RTL and centered text
-    items.addAll(slot.availableMembers.map((member) {
-      final isCurrentlyAssigned = member.id == currentMember?.id;
-      return DropdownMenuItem<String>(
-        value: member.id,
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: SizedBox(
-            width: double.infinity,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    member.name,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 4,
-                    style: isCurrentlyAssigned
-                        ? const TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                          )
-                        : null,
-                  ),
-                ),
-                if (member.isPermanent) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.verified_user,
-                    size: 12,
-                    color: Colors.blue.shade700,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      );
-    }));
-
-    // If current member is from alreadyAssigned list, add them too so they can be displayed
-    if (currentMember != null &&
-        !slot.availableMembers.any((m) => m.id == currentMember.id)) {
-      items.insert(
-          0,
-          DropdownMenuItem<String>(
-            value: currentMember.id,
-            child: Directionality(
-              textDirection: TextDirection.rtl,
-              child: SizedBox(
-                width: double.infinity,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        currentMember.name,
-                        textAlign: TextAlign.center,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 4,
-                        style: const TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    if (currentMember.isPermanent) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.verified_user,
-                        size: 12,
-                        color: Colors.blue.shade700,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ));
-    }
-
-    // ALWAYS add "שובצו כבר" option (with top border as divider)
-    items.add(DropdownMenuItem<String>(
-      value: '__show_already_assigned__',
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: Colors.grey.shade300)),
-        ),
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.people, size: 16, color: Colors.orange.shade700),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'שובצו כבר',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.orange.shade700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ));
-
-    // Add "constrained/unavailable members" option (with top border as divider)
-    items.add(DropdownMenuItem<String>(
-      value: '__show_constrained__',
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: Colors.grey.shade300)),
-        ),
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.block, size: 16, color: Colors.red.shade700),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'בעלי מגבלות / לא זמינים',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ));
+    // Pickable members. A current member taken from the already-assigned
+    // list goes on top, so the menu can still show them as selected.
+    final members = [
+      if (currentMember != null &&
+          !slot.availableMembers.any((m) => m.id == currentMember.id))
+        currentMember,
+      ...slot.availableMembers,
+    ];
 
     // Determine if dropdown should be enabled
     // Enable if: there are available members, OR there's a current assignment, OR there are already assigned members
@@ -2955,229 +2824,160 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         currentMember != null ||
         slot.alreadyAssignedMembers.isNotEmpty;
 
-    return Row(
-      children: [
-        // Same-day double-booking mark. First child, so in RTL it renders to the
-        // RIGHT of the dropdown — the same side as the role column's ⚠ double-role
-        // mark, so the two read as a pair instead of bracketing the dropdown.
-        if (slot.isFilled && slot.sameDayOtherEvents.isNotEmpty) ...[
-          SameDayAssignmentMark(
-            otherEvents: slot.sameDayOtherEvents,
-            memberName: currentMember?.name ??
-                slot.currentAssignment?.teamMemberName ??
-                '',
-          ),
-          const SizedBox(width: 4),
-        ],
+    final showSameDayMark = slot.isFilled && slot.sameDayOtherEvents.isNotEmpty;
+    final showClear = slot.isFilled && currentMember != null;
 
-        // Main dropdown with string values
-        Expanded(
-          flex: 2,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(4),
-              color: hasOptions
-                  ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
-                  : Colors.grey.shade200,
+    Widget picker({required bool dense}) => MemberPickerField(
+          key: ValueKey(
+              '${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
+          selected: currentMember,
+          members: members,
+          dense: dense,
+          enabled: hasOptions,
+          backgroundColor: hasOptions
+              ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
+              : Colors.grey.shade200,
+          actions: [
+            MemberPickerAction(
+              value: '__show_already_assigned__',
+              label: 'שובצו כבר',
+              icon: Icons.people,
+              color: Colors.orange.shade700,
             ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final screenWidth = MediaQuery.of(context).size.width;
-                // On small screens, make menu wider (expand towards screen center).
-                // Use the full container width (constraints + padding) * 1.5
-                final double? menuWidth = screenWidth < 600
-                    ? (constraints.maxWidth + 24) *
-                        2 // 24 = horizontal padding (12*2)
-                    : null;
-                return DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    key: ValueKey(
-                        '${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
-                    value: currentMember?.id,
-                    isExpanded: true,
-                    menuWidth: menuWidth,
-                    hint: const Text(
-                      'בחר...',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                    style: const TextStyle(fontSize: 12, color: Colors.black),
-                    icon: const Icon(Icons.arrow_drop_down, size: 20),
-                    alignment: AlignmentDirectional.center,
-                    selectedItemBuilder: (context) {
-                      final selectedItems = <Widget>[];
-
-                      // Build custom selected item display with proper wrapping
-                      for (var member in slot.availableMembers) {
-                        selectedItems.add(
-                          DropdownMenuItem<String>(
-                            value: member.id,
-                            enabled: false,
-                            child: Container(
-                              constraints: const BoxConstraints(
-                                  minWidth: double.infinity),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      member.name,
-                                      textAlign: TextAlign.center,
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 4,
-                                      style: const TextStyle(
-                                          fontSize: 12, color: Colors.black),
-                                    ),
-                                  ),
-                                  if (member.isPermanent) ...[
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.verified_user,
-                                      size: 12,
-                                      color: Colors.blue.shade700,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      // Current member from already assigned (if exists)
-                      if (currentMember != null &&
-                          !slot.availableMembers
-                              .any((m) => m.id == currentMember.id)) {
-                        selectedItems.insert(
-                          0,
-                          DropdownMenuItem<String>(
-                            value: currentMember.id,
-                            enabled: false,
-                            child: Container(
-                              constraints: const BoxConstraints(
-                                  minWidth: double.infinity),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      currentMember.name,
-                                      textAlign: TextAlign.center,
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 4,
-                                      style: const TextStyle(
-                                          fontSize: 12, color: Colors.black),
-                                    ),
-                                  ),
-                                  if (currentMember.isPermanent) ...[
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.verified_user,
-                                      size: 12,
-                                      color: Colors.blue.shade700,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      // Add placeholders for button items to match items count
-                      // __show_already_assigned__, __show_constrained__
-                      for (var i = 0; i < 2; i++) {
-                        selectedItems.add(const SizedBox.shrink());
-                      }
-
-                      return selectedItems;
-                    },
-                    items: items,
-                    onChanged: hasOptions
-                        ? (selectedValue) {
-                            Logger.action('select:assignmentMember', {
-                              'eventId': slot.event.id,
-                              'role': slot.role.key,
-                              'value': selectedValue,
-                            });
-                            if (selectedValue == '__show_already_assigned__') {
-                              // Show dialog for already-assigned members
-                              _showAlreadyAssignedDialog(slot);
-                            } else if (selectedValue ==
-                                '__show_constrained__') {
-                              // Show dialog for constrained/unavailable members
-                              _showConstrainedMembersDialog(slot);
-                            } else if (selectedValue != null) {
-                              // Find the selected member by ID
-                              final member = slot.availableMembers
-                                      .firstWhereOrNull(
-                                    (m) => m.id == selectedValue,
-                                  ) ??
-                                  slot.alreadyAssignedMembers.firstWhereOrNull(
-                                    (m) => m.id == selectedValue,
-                                  );
-
-                              if (member != null) {
-                                _handleAssignmentChange(slot, member);
-                              }
-                            }
-                          }
-                        : null, // Disable dropdown when no options available
-                  ),
-                );
-              },
+            MemberPickerAction(
+              value: '__show_constrained__',
+              label: 'בעלי מגבלות / לא זמינים',
+              icon: Icons.block,
+              color: Colors.red.shade700,
             ),
-          ),
+          ],
+          onSelected: (selectedValue) {
+            Logger.action('select:assignmentMember', {
+              'eventId': slot.event.id,
+              'role': slot.role.key,
+              'value': selectedValue,
+            });
+            if (selectedValue == '__show_already_assigned__') {
+              // Show dialog for already-assigned members
+              _showAlreadyAssignedDialog(slot);
+            } else if (selectedValue == '__show_constrained__') {
+              // Show dialog for constrained/unavailable members
+              _showConstrainedMembersDialog(slot);
+            } else {
+              // Find the selected member by ID
+              final member = slot.availableMembers.firstWhereOrNull(
+                    (m) => m.id == selectedValue,
+                  ) ??
+                  slot.alreadyAssignedMembers.firstWhereOrNull(
+                    (m) => m.id == selectedValue,
+                  );
+
+              if (member != null) {
+                _handleAssignmentChange(slot, member);
+              }
+            }
+          },
+        );
+
+    // Same-day double-booking mark. First, so in RTL it renders to the RIGHT
+    // of the picker — the same side as the role column's ⚠ double-role mark,
+    // so the two read as a pair instead of bracketing the picker.
+    final leadingMarks = <Widget>[
+      if (showSameDayMark)
+        SameDayAssignmentMark(
+          otherEvents: slot.sameDayOtherEvents,
+          memberName: currentMember?.name ??
+              slot.currentAssignment?.teamMemberName ??
+              '',
+        ),
+    ];
+
+    final trailingButtons = <Widget>[
+      // "ניקוי" button - only show if slot is filled AND currentMember is valid
+      if (showClear)
+        IconButton(
+          onPressed: () {
+            Logger.action('tap:clearAssignment', {
+              'assignmentId': slot.currentAssignment?.id,
+            });
+            _handleClearAssignment(slot);
+          },
+          icon: const Icon(Icons.clear, size: 20),
+          color: Colors.red,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          tooltip: 'ניקוי',
+          splashRadius: 16,
         ),
 
-        const SizedBox(width: 4),
+      // Inline "↩" undo for a staged (unsaved) change on this slot —
+      // reverts just this slot to its DB baseline. Same operation as the
+      // per-row "קח מה-DB" resolution at Save. See "Discard" (per-slot) in
+      // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
+      if (isDirty)
+        IconButton(
+          onPressed: () {
+            final slotKey = _getSlotKey(slot);
+            Logger.action('tap:discardStagedSlot', {
+              'eventId': slot.event.id,
+              'role': slot.role.key,
+              'slotIndex': slot.slotIndex,
+            });
+            context.read<AssignmentBloc>().add(DiscardStagedSlot(slotKey));
+          },
+          icon: const Icon(Icons.undo, size: 20),
+          color: Colors.amber.shade800,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          tooltip: 'בטל שינוי',
+          splashRadius: 16,
+        ),
+    ];
 
-        // "ניקוי" button - only show if slot is filled AND currentMember is valid
-        if (slot.isFilled && currentMember != null)
-          IconButton(
-            onPressed: () {
-              Logger.action('tap:clearAssignment', {
-                'assignmentId': slot.currentAssignment?.id,
-              });
-              _handleClearAssignment(slot);
-            },
-            icon: const Icon(Icons.clear, size: 20),
-            color: Colors.red,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            tooltip: 'ניקוי',
-            splashRadius: 16,
-          ),
-
-        // Inline "↩" undo for a staged (unsaved) change on this slot —
-        // reverts just this slot to its DB baseline. Same operation as the
-        // per-row "קח מה-DB" resolution at Save. See "Discard" (per-slot) in
-        // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
-        if (isDirty)
-          IconButton(
-            onPressed: () {
-              final slotKey = _getSlotKey(slot);
-              Logger.action('tap:discardStagedSlot', {
-                'eventId': slot.event.id,
-                'role': slot.role.key,
-                'slotIndex': slot.slotIndex,
-              });
-              context.read<AssignmentBloc>().add(DiscardStagedSlot(slotKey));
-            },
-            icon: const Icon(Icons.undo, size: 20),
-            color: Colors.amber.shade800,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            tooltip: 'בטל שינוי',
-            splashRadius: 16,
-          ),
-
-        // Removed: "שובצו כבר" button - now integrated in dropdown
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Each mark/button is 32 px or less, plus a 4 px gap.
+        final iconsWidth =
+            (leadingMarks.length + trailingButtons.length) * 36.0;
+        // Below this the picker would squeeze the member's name out of
+        // sight, so the marks and buttons move to a line of their own.
+        const minPickerWidth = 90.0;
+        final pickerWidth = constraints.maxWidth - iconsWidth;
+        if (pickerWidth >= minPickerWidth) {
+          return Row(
+            children: [
+              for (final mark in leadingMarks) ...[
+                mark,
+                const SizedBox(width: 4),
+              ],
+              Expanded(child: picker(dense: pickerWidth < 130)),
+              if (trailingButtons.isNotEmpty) const SizedBox(width: 4),
+              ...trailingButtons,
+            ],
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            picker(dense: true),
+            if (leadingMarks.isNotEmpty || trailingButtons.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (final mark in leadingMarks) ...[
+                      mark,
+                      const SizedBox(width: 4),
+                    ],
+                    ...trailingButtons,
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 

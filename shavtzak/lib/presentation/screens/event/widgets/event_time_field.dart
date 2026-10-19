@@ -5,7 +5,8 @@ import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/time_input_formatter.dart';
 import '../../../../core/utils/validators.dart';
 
-/// One of the five optional time fields in the event form.
+/// An optional `HH:mm` time field: the five in the event form, and the
+/// start/end pair in the member's constraint dialogs.
 ///
 /// Typing is the primary path: the field raises a numpad and a formatter lays
 /// the digits into `HH:mm`. The Cupertino wheel is still there, behind the clock
@@ -16,6 +17,9 @@ class EventTimeField extends StatefulWidget {
   final TextEditingController controller;
   final String label;
   final String hint;
+
+  /// Optional line under the field, e.g. "ביום הראשון" on a multi-day range.
+  final String? helperText;
 
   /// Suffix for this field's `Logger.action` keys, e.g. `assembly`.
   final String logKey;
@@ -35,6 +39,7 @@ class EventTimeField extends StatefulWidget {
     required this.controller,
     required this.label,
     required this.hint,
+    this.helperText,
     required this.logKey,
     required this.onChanged,
     this.onTimeSet,
@@ -268,6 +273,7 @@ class _EventTimeFieldState extends State<EventTimeField> {
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hint,
+        helperText: widget.helperText,
         border: const OutlineInputBorder(),
         // RTL renders the suffix slot at the far left of the field.
         suffixIcon: Row(
