@@ -1034,6 +1034,9 @@ void main() {
     testWidgets('a manager lands on the calendar with the summary',
         (tester) async {
       await pumpCalendar(tester);
+      // It opens on the stage of now; the summary is at the top.
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 5000));
+      await tester.pumpAndSettle();
 
       expect(find.byType(DayCalendar), findsWidgets);
       expect(
