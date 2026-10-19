@@ -35,10 +35,22 @@
 
   <title>שבצק - ניהול צוות</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="preload" href="assets/assets/fonts/Rubik-Regular.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="preload" href="assets/assets/fonts/Rubik-Medium.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="preload" href="assets/assets/fonts/Rubik-Bold.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="preload" href="assets/fonts/MaterialIcons-Regular.otf" as="font" type="font/otf" crossorigin>
+  <!-- Start every download the first frame needs at once, instead of each
+       one waiting for the file before it (bootstrap -> main.dart.js -> fonts
+       -> Firebase). -->
+  <link rel="preload" href="main.dart.js" as="script">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://us-central1-tsevet-shir-shavtzak.cloudfunctions.net" crossorigin>
+  <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin>
+  <!-- The Firebase JS SDK modules firebase_core_web imports once
+       main.dart.js runs; tool/generate_service_worker.mjs writes their
+       versioned URLs here so they download alongside main.dart.js. -->
+  <!-- __FIREBASE_SDK_MODULEPRELOAD__ -->
+  <link rel="preload" href="assets/assets/fonts/Rubik-Regular.ttf" as="fetch" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/Rubik-Medium.ttf" as="fetch" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/Rubik-Bold.ttf" as="fetch" crossorigin>
+  <link rel="preload" href="assets/fonts/MaterialIcons-Regular.otf" as="fetch" crossorigin>
 
   <!-- Splash Screen Styles (inline for instant display) -->
   <style>
@@ -243,50 +255,56 @@
     <div class="splash-loading-text">טוען...</div>
   </div>
 
+  <!-- No waiting on fonts here: main.dart registers Rubik with the engine
+       before the first frame, and the splash stays up until then. -->
+  <script src="flutter_bootstrap.js" async></script>
+
   <script>
-    (async function bootstrapFlutterWithPreloadedRubik() {
-      if ('fonts' in document && 'FontFace' in window) {
-        const rubikFaces = [
-          { url: 'assets/assets/fonts/Rubik-Regular.ttf', weight: '400' },
-          { url: 'assets/assets/fonts/Rubik-Medium.ttf', weight: '500' },
-          { url: 'assets/assets/fonts/Rubik-Medium.ttf', weight: '600' },
-          { url: 'assets/assets/fonts/Rubik-Bold.ttf', weight: '700' },
-        ];
-        const materialIconsFace = {
-          url: 'assets/fonts/MaterialIcons-Regular.otf',
-          family: 'MaterialIcons',
-        };
-
-        try {
-          await Promise.all(rubikFaces.map(async (entry) => {
-            const face = new FontFace('Rubik', `url(${entry.url})`, {
-              weight: entry.weight,
-              style: 'normal',
-            });
-            await face.load();
-            document.fonts.add(face);
-          }));
-          const iconsFace = new FontFace(materialIconsFace.family, `url(${materialIconsFace.url})`);
-          await iconsFace.load();
-          document.fonts.add(iconsFace);
-
-          await Promise.all([
-            document.fonts.load('400 16px Rubik'),
-            document.fonts.load('500 16px Rubik'),
-            document.fonts.load('600 16px Rubik'),
-            document.fonts.load('700 16px Rubik'),
-            document.fonts.load('400 24px MaterialIcons'),
-          ]);
-        } catch (error) {
-          console.warn('Rubik web preload failed:', error);
-        }
-      }
-
-      const script = document.createElement('script');
-      script.src = 'flutter_bootstrap.js';
-      script.async = true;
-      document.body.appendChild(script);
+    // sw.js keeps the app on this device (see the comment at its top).
+    // Registered only after the first frame, so on a first visit it never
+    // competes with the page's own downloads; it then copies what the page
+    // just loaded out of the HTTP cache. Under `flutter run` sw.js has no
+    // manifest and stays inert.
+    (function registerAppCache() {
+      if (!('serviceWorker' in navigator)) return;
+      let done = false;
+      const register = () => {
+        if (done) return;
+        done = true;
+        navigator.serviceWorker
+          .register('sw.js', {updateViaCache: 'none'})
+          .catch((e) => console.warn('sw.js registration failed:', e));
+      };
+      window.addEventListener('flutter-first-frame', register, {once: true});
+      setTimeout(register, 20000);
     })();
+
+    // Called by the app's "refresh" button (WebHelper.reloadPage): fetch the
+    // newest build into the cache first, or the reload would be served the
+    // cached old one.
+    window.shavtzakReloadToLatest = async function () {
+      try {
+        const reg = await navigator.serviceWorker?.getRegistration();
+        if (reg) {
+          await reg.update();
+          const worker = reg.installing || reg.waiting;
+          if (worker) {
+            await new Promise((resolve) => {
+              const timer = setTimeout(resolve, 30000);
+              worker.addEventListener('statechange', () => {
+                if (worker.state === 'activated' || worker.state === 'redundant') {
+                  clearTimeout(timer);
+                  resolve();
+                }
+              });
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('update before reload failed:', e);
+      }
+      location.reload();
+    };
   </script>
 </body>
 </html>

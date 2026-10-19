@@ -45,6 +45,19 @@ jobs:
         working-directory: shavtzak
         run: flutter build web --release --base-href /Shavtzak/
 
+      # Pin sw.js (the worker that keeps the app on users' devices) to this
+      # build's exact files. Without this step sw.js stays inert, so the guard
+      # below fails the build instead of deploying an app that never caches.
+      - name: Pin the app-cache service worker to this build
+        working-directory: shavtzak
+        run: |
+          set -euo pipefail
+          node tool/generate_service_worker.mjs build/web
+          if grep -q '__PRECACHE_MANIFEST__' build/web/sw.js; then
+            echo "sw.js was not pinned"; exit 1
+          fi
+          grep -q "$(sha256sum build/web/main.dart.js | cut -d' ' -f1)" build/web/sw.js
+
       # Regression guard. An inert worker strands users on an old build with no
       # symptom visible anywhere in CI, so fail loudly rather than deploy it.
       # Trips if --pwa-strategy=none comes back (0 bytes) or if a future Flutter

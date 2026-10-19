@@ -94,6 +94,35 @@ class MockUserSelectionRepository extends _i1.Mock
       ) as _i5.Future<_i2.TeamMember?>);
 
   @override
+  _i5.Future<_i2.TeamMember?> restoreFromSnapshot() => (super.noSuchMethod(
+        Invocation.method(
+          #restoreFromSnapshot,
+          [],
+        ),
+        returnValue: _i5.Future<_i2.TeamMember?>.value(),
+      ) as _i5.Future<_i2.TeamMember?>);
+
+  @override
+  _i5.Future<void> saveMemberSnapshot(_i2.TeamMember? member) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #saveMemberSnapshot,
+          [member],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<_i2.TeamMember?> revalidateSession() => (super.noSuchMethod(
+        Invocation.method(
+          #revalidateSession,
+          [],
+        ),
+        returnValue: _i5.Future<_i2.TeamMember?>.value(),
+      ) as _i5.Future<_i2.TeamMember?>);
+
+  @override
   _i5.Future<void> clearUserSelection() => (super.noSuchMethod(
         Invocation.method(
           #clearUserSelection,

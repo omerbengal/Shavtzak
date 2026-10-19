@@ -56,6 +56,13 @@ class SessionLost extends UserSelectionEvent {
   const SessionLost();
 }
 
+/// Confirm, in the background, a session the app opened from the member
+/// snapshot on this device (main.dart) — the backend may since have refused
+/// it, or the member may have changed.
+class RevalidateRestoredSession extends UserSelectionEvent {
+  const RevalidateRestoredSession();
+}
+
 /// Refresh user data
 class RefreshUserData extends UserSelectionEvent {
   const RefreshUserData();

@@ -11,6 +11,11 @@ class UserCacheService {
   String get _sessionTokenKey =>
       '${EnvironmentService.instance.cachePrefix}selected_user_session_token';
 
+  // The signed-in member as last seen, so a returning user's first screen
+  // paints without waiting on the backend (see UserSelectionRepository).
+  String get _memberSnapshotKey =>
+      '${EnvironmentService.instance.cachePrefix}selected_member_snapshot';
+
   String get _pendingAssignmentChangesKey =>
       '${EnvironmentService.instance.cachePrefix}assignments_staged_changes';
 
@@ -41,8 +46,31 @@ class UserCacheService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_selectedUserKey);
       await prefs.remove(_sessionTokenKey);
+      await prefs.remove(_memberSnapshotKey);
     } catch (e) {
       throw UserCacheException('Failed to clear user selection: $e');
+    }
+  }
+
+  /// Save the signed-in member's JSON (already encoded by the caller).
+  Future<void> saveMemberSnapshot(String memberJson) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_memberSnapshotKey, memberJson);
+    } catch (_) {
+      // Only a startup shortcut: losing it costs one slower load.
+    }
+  }
+
+  /// The signed-in member's JSON as last saved, or null (never throws).
+  Future<String?> getMemberSnapshot() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_memberSnapshotKey);
+      if (cached == null || cached.isEmpty) return null;
+      return cached;
+    } catch (_) {
+      return null;
     }
   }
 
