@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/task_progress.dart';
 import 'package:shavtzak/core/utils/task_schedule.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
+import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/presentation/screens/task/task_style.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
@@ -500,5 +501,140 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('my-stage-dinner')), findsOneWidget);
     expect(find.byKey(const Key('my-task-tick-dinner-guests')), findsOneWidget);
+  });
+
+  // ---- the assignee update and subtasks opening in place ----
+
+  TaskItem dinnerWithSubtasks({List<Subtask>? subtasks}) => buildTask(
+        id: 'dinner-hall',
+        title: 'סידור שולחנות באולם',
+        stage: stDinner,
+        assemblyTime: '19:10',
+        event: sampleEvent,
+        assigneeIds: const ['m1'],
+        assignees: [sDana],
+        subtasks: subtasks ??
+            const [
+              Subtask(id: 'x', title: 'מפות לבנות'),
+              Subtask(id: 'y', title: 'כרטיסי שמות'),
+            ],
+      );
+
+  testWidgets('an update shows under its task, on full and compact rows',
+      (tester) async {
+    final full = tWsLater.copyWith(
+      assigneeUpdate: 'מחכים לערכות מהמחסן',
+      assigneeUpdateByName: 'יואב',
+      assigneeUpdateAt: DateTime(2026, 10, 20, 14, 22),
+    );
+    final compact = tDinner.copyWith(
+      assigneeUpdate: 'האורחים מגיעים מוקדם',
+      assigneeUpdateByName: 'דנה',
+      assigneeUpdateAt: DateTime(2026, 10, 19, 9, 5),
+    );
+    await pumpTimeline(
+      tester,
+      board: sampleBoard(tasks: [
+        for (final task in sampleTasks)
+          if (task.id == full.id)
+            full
+          else if (task.id == compact.id)
+            compact
+          else
+            task,
+      ]),
+    );
+
+    expect(
+      inside(
+          'my-task-ws-later', find.byKey(const Key('my-task-update-ws-later'))),
+      findsOneWidget,
+    );
+    expect(
+      find.text('מחכים לערכות מהמחסן · יואב, ${ltr('14:22')}'),
+      findsOneWidget,
+    );
+    expect(
+      inside('my-task-dinner-guests',
+          find.byKey(const Key('my-task-update-dinner-guests'))),
+      findsOneWidget,
+    );
+    expect(
+      find.text('האורחים מגיעים מוקדם · דנה, ${ltr('19/10 09:05')}'),
+      findsOneWidget,
+    );
+    // Under the title, and it wraps.
+    final update = find.byKey(const Key('my-task-update-ws-later'));
+    expect(top(tester, update),
+        greaterThan(top(tester, find.text('חלוקת ערכות למשתתפים'))));
+    expect(tester.widget<Text>(update).maxLines, isNull);
+    expect(find.byKey(const Key('my-task-update-ws-soon')), findsNothing);
+  });
+
+  testWidgets('a compact task with subtasks opens them in place first',
+      (tester) async {
+    await pumpTimeline(
+      tester,
+      board: sampleBoard(tasks: [...sampleTasks, dinnerWithSubtasks()]),
+    );
+    expect(find.byKey(const Key('my-task-subtasks-dinner-hall')), findsNothing);
+
+    await tester.tap(find.text('סידור שולחנות באולם'));
+    await tester.pump();
+
+    expect(openedTasks, isEmpty);
+    expect(
+      inside('my-task-dinner-hall',
+          find.byKey(const Key('my-task-subtasks-dinner-hall'))),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('my-subtask-dinner-hall-y')));
+    expect(subtaskTicks, ['dinner-hall:y:true']);
+    expect(openedTasks, isEmpty);
+
+    // The tick comes back through the stream: the row stays open.
+    await tester.pumpWidget(timeline(
+      board: sampleBoard(tasks: [
+        ...sampleTasks,
+        dinnerWithSubtasks(subtasks: const [
+          Subtask(id: 'x', title: 'מפות לבנות'),
+          Subtask(id: 'y', title: 'כרטיסי שמות', isDone: true),
+        ]),
+      ]),
+      now: sampleNow,
+    ));
+    expect(
+        find.byKey(const Key('my-task-subtasks-dinner-hall')), findsOneWidget);
+    expect(
+      tester
+          .widget<Checkbox>(find.byKey(const Key('my-subtask-dinner-hall-y')))
+          .value,
+      isTrue,
+    );
+
+    // Open, a tap on the row opens the task.
+    await tester.tap(find.text('סידור שולחנות באולם'));
+    expect(openedTasks, ['dinner-hall']);
+  });
+
+  testWidgets('a full row already lists its subtasks, so a tap opens the task',
+      (tester) async {
+    await pumpTimeline(tester);
+
+    expect(
+      inside(
+          'my-task-ws-soon', find.byKey(const Key('my-task-subtasks-ws-soon'))),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('הכנת חדר סדנה 2'));
+    expect(openedTasks, ['ws-soon']);
+  });
+
+  testWidgets('a compact task without subtasks opens at the first tap',
+      (tester) async {
+    await pumpTimeline(tester);
+
+    await tester.tap(find.text('קבלת אורחים בכניסה'));
+    expect(openedTasks, ['dinner-guests']);
   });
 }

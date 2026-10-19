@@ -73,6 +73,12 @@ abstract final class TaskStyle {
   static const double filterFontSize = 13;
   static const double rowTitleSize = 15;
   static const double rowMetaSize = 12.5;
+
+  /// A subtask's title in a row's list of subtasks.
+  static const double subtaskSize = 14;
+
+  /// The gap above an update line under a task.
+  static const double updateLineGap = 4;
   static const double stripHeight = 6;
   static const double timeColumnWidth = 52;
 

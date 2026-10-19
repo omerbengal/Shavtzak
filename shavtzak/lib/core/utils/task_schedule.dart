@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../domain/entities/event.dart';
 import '../../domain/entities/stage.dart';
+import '../../domain/entities/task_item.dart';
 import 'task_utils.dart';
 
 /// Time on the stage axis of a דו יומי event: when each stage runs, which one
@@ -546,4 +547,25 @@ String stageSummaryLine(Stage stage) {
     if (time != null) time,
     if (stage.hotelLocation.isNotEmpty) stage.hotelLocation,
   ].join(' · ');
+}
+
+final DateFormat _updateTime = DateFormat('HH:mm');
+final DateFormat _updateDayTime = DateFormat('dd/MM HH:mm');
+
+/// A task's assignee update with its author and time ("מחכים למקרן · נועה
+/// לוי, 14:22"): the time alone on [now]'s day, with the date on any other
+/// day. Null when the task has no update.
+String? assigneeUpdateLine(TaskItem task, DateTime now) {
+  final note = task.assigneeUpdate;
+  if (note == null || note.isEmpty) return null;
+  final at = task.assigneeUpdateAt;
+  final isToday = at != null &&
+      at.year == now.year &&
+      at.month == now.month &&
+      at.day == now.day;
+  final byline = [
+    if (task.assigneeUpdateByName != null) task.assigneeUpdateByName!,
+    if (at != null) ltr((isToday ? _updateTime : _updateDayTime).format(at)),
+  ].join(', ');
+  return byline.isEmpty ? note : '$note · $byline';
 }

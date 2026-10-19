@@ -9,6 +9,7 @@ import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
+import 'subtask_ticks.dart';
 
 final DateFormat _dayKeyFormat = DateFormat('yyyy-MM-dd');
 
@@ -123,6 +124,15 @@ class _MemberTimelineState extends State<MemberTimeline> {
       ],
       widget.now,
     ).isNotEmpty;
+  }
+
+  /// Compact rows whose subtasks were opened in place. Kept across data
+  /// updates, so ticking a subtask never folds its row away.
+  final Set<String> _expanded = <String>{};
+
+  void _expand(TaskItem task) {
+    Logger.action('expand:myTaskSubtasks');
+    setState(() => _expanded.add(task.id));
   }
 
   void _toggleEarlier() {
@@ -297,6 +307,8 @@ class _MemberTimelineState extends State<MemberTimeline> {
                 now: widget.now,
                 isFull: isOpening,
                 canTick: widget.canTick,
+                isExpanded: _expanded.contains(task.id),
+                onExpand: () => _expand(task),
                 onOpen: () => widget.onOpenTask(task),
                 onSetComplete: (value) => widget.onSetComplete(task, value),
                 onToggleSubtask: (subtask, value) =>
@@ -577,6 +589,8 @@ class _TaskLine extends StatelessWidget {
     required this.now,
     required this.isFull,
     required this.canTick,
+    required this.isExpanded,
+    required this.onExpand,
     required this.onOpen,
     required this.onSetComplete,
     required this.onToggleSubtask,
@@ -590,6 +604,12 @@ class _TaskLine extends StatelessWidget {
   /// compact ones elsewhere.
   final bool isFull;
   final bool canTick;
+
+  /// Whether a compact row lists its subtasks. A full row always does.
+  final bool isExpanded;
+
+  /// Opens a compact row's subtasks in place.
+  final VoidCallback onExpand;
   final VoidCallback onOpen;
   final ValueChanged<bool> onSetComplete;
   final void Function(Subtask subtask, bool isDone) onToggleSubtask;
@@ -606,7 +626,9 @@ class _TaskLine extends StatelessWidget {
       key: Key('my-task-${task.id}'),
       color: TaskStyle.stageCard,
       child: InkWell(
-        onTap: onOpen,
+        // A task with subtasks first lists them in place; once they show, a
+        // tap opens the task.
+        onTap: task.hasSubtasks && !isFull && !isExpanded ? onExpand : onOpen,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -642,6 +664,7 @@ class _TaskLine extends StatelessWidget {
       );
 
   Widget _buildFull(List<String> others) {
+    final update = _updateText();
     return Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(0, 4, 10, 8),
       child: Column(
@@ -682,39 +705,49 @@ class _TaskLine extends StatelessWidget {
               ),
               child: _withOthers(others),
             ),
-          for (final subtask in task.subtasks)
-            Row(
-              children: [
-                Checkbox(
-                  key: Key('my-subtask-${task.id}-${subtask.id}'),
-                  value: subtask.isDone,
-                  visualDensity: VisualDensity.compact,
-                  onChanged: canTick
-                      ? (value) => onToggleSubtask(subtask, value ?? false)
-                      : null,
-                ),
-                Expanded(
-                  child: Text(
-                    subtask.title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      decoration: subtask.isDone
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
-                      color: subtask.isDone ? TaskStyle.faintText : null,
-                    ),
-                  ),
-                ),
-              ],
+          if (update != null)
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: task.hasSubtasks ? 8 : 40,
+              ),
+              child: update,
             ),
+          if (task.hasSubtasks) _subtasks(),
         ],
       ),
     );
   }
 
+  Widget _subtasks() => SubtaskTicks(
+        task: task,
+        canTick: canTick,
+        onToggle: onToggleSubtask,
+        listKeyPrefix: 'my-task',
+        tickKeyPrefix: 'my-subtask',
+      );
+
+  /// The assignee update under the task, as on [TaskRow]; wraps in full.
+  Widget? _updateText() {
+    final line = assigneeUpdateLine(task, now);
+    if (line == null) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: TaskStyle.updateLineGap),
+      child: Text(
+        line,
+        key: Key('my-task-update-${task.id}'),
+        style: const TextStyle(
+          fontSize: TaskStyle.rowMetaSize,
+          color: TaskStyle.neutralText,
+        ),
+      ),
+    );
+  }
+
   /// One line per task, with its tick box (or its subtasks done over total),
-  /// so a task can be ticked from any stage, as in the mockup.
+  /// so a task can be ticked from any stage, as in the mockup. A task with
+  /// subtasks lists them under it once opened in place.
   Widget _buildCompact(List<String> others) {
+    final update = _updateText();
     return Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(0, 2, 10, 2),
       child: Row(
@@ -752,6 +785,8 @@ class _TaskLine extends StatelessWidget {
                 children: [
                   Text(task.title, style: _titleStyle(14)),
                   if (others.isNotEmpty) _withOthers(others),
+                  if (update != null) update,
+                  if (isExpanded && task.hasSubtasks) _subtasks(),
                 ],
               ),
             ),

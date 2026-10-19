@@ -1,14 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../../core/utils/task_schedule.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
 import 'assignee_chips.dart';
-
-final DateFormat _timeFormat = DateFormat('HH:mm');
-final DateFormat _dayTimeFormat = DateFormat('dd/MM HH:mm');
 
 /// A stage's tasks as a table, for the wide layout's panel: what a phone
 /// [TaskRow] carries, laid out as columns.
@@ -240,7 +236,7 @@ class _TableRowState extends State<_TableRow> {
 
   /// The title with its late mark, then the description and the update line.
   Widget _buildTask(bool isLate) {
-    final update = _updateLine();
+    final update = assigneeUpdateLine(task, widget.now);
     const meta = TextStyle(
       fontSize: TaskStyle.rowMetaSize,
       color: TaskStyle.neutralText,
@@ -343,23 +339,5 @@ class _TableRowState extends State<_TableRow> {
         ],
       ),
     );
-  }
-
-  /// The note, then its author and time, as on the phone row: the time alone
-  /// on today, with the date on any other day. Null when there is no update.
-  String? _updateLine() {
-    final note = task.assigneeUpdate;
-    if (note == null || note.isEmpty) return null;
-    final at = task.assigneeUpdateAt;
-    final now = widget.now;
-    final isToday = at != null &&
-        at.year == now.year &&
-        at.month == now.month &&
-        at.day == now.day;
-    final byline = [
-      if (task.assigneeUpdateByName != null) task.assigneeUpdateByName!,
-      if (at != null) ltr((isToday ? _timeFormat : _dayTimeFormat).format(at)),
-    ].join(', ');
-    return byline.isEmpty ? note : '$note · $byline';
   }
 }
