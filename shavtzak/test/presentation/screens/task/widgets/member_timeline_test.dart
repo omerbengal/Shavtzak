@@ -190,19 +190,117 @@ void main() {
     );
   });
 
-  testWidgets('a task turning late while I read does not push the list down',
+  EventTaskBoard lunchTicked() => sampleBoard(tasks: [
+        for (final task in sampleTasks)
+          task.id == 'lunch-late' ? task.copyWith(isComplete: true) : task,
+      ]);
+
+  testWidgets('the green banner folds away after a moment', (tester) async {
+    await pumpTimeline(tester);
+    await tester.pumpWidget(timeline(board: lunchTicked(), now: sampleNow));
+    expect(
+      inside('my-late-banner', find.text('אין לך יותר משימות באיחור')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 1900));
+    expect(find.byKey(const Key('my-late-banner')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('my-late-banner')), findsNothing);
+  });
+
+  testWidgets('a task late again while it is green keeps the banner',
       (tester) async {
+    await pumpTimeline(tester);
+    await tester.pumpWidget(timeline(board: lunchTicked(), now: sampleNow));
+    await tester.pump(const Duration(seconds: 1));
+
+    await tester.pumpWidget(timeline(board: sampleBoard(), now: sampleNow));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(
+      inside('my-late-banner', find.text('משימה אחת באיחור')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the green banner out of sight goes without moving the list',
+      (tester) async {
+    await pumpTimeline(tester);
+    tester.view.physicalSize = const Size(400, 500);
+    await tester.pump();
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -150));
+    await tester.pump();
+    await tester.pumpWidget(timeline(board: lunchTicked(), now: sampleNow));
+    final before = top(tester, find.byKey(const Key('my-task-ws-later')));
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(top(tester, find.byKey(const Key('my-task-ws-later'))), before);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 1000));
+    await tester.pump();
+    expect(find.byKey(const Key('my-late-banner')), findsNothing);
+  });
+
+  testWidgets('unticking a past task brings the late banner in, live',
+      (tester) async {
+    final ticked = sampleBoard(tasks: [
+      for (final task in sampleTasks)
+        task.id == 'lunch-late' ? task.copyWith(isComplete: true) : task,
+    ]);
+    await pumpTimeline(tester, board: ticked);
+    expect(find.byKey(const Key('my-late-banner')), findsNothing);
+
+    await tester.pumpWidget(timeline(board: sampleBoard(), now: sampleNow));
+
+    expect(
+      inside('my-late-banner', find.text('משימה אחת באיחור')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a task turning late while I read shows the banner', (tester) async {
     await pumpTimeline(tester, now: DateTime(2026, 10, 20, 12, 30));
     expect(find.byKey(const Key('my-late-banner')), findsNothing);
-    final before = top(tester, find.byKey(const Key('my-stage-lunch')));
 
     await tester.pumpWidget(timeline(
       board: sampleBoard(),
       now: DateTime(2026, 10, 20, 13, 30),
     ));
 
-    expect(find.byKey(const Key('my-late-banner')), findsNothing);
+    expect(
+      inside('my-late-banner', find.text('משימה אחת באיחור')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the banner coming in above does not move the list I scrolled to',
+      (tester) async {
+    await pumpTimeline(tester, now: DateTime(2026, 10, 20, 12, 30));
+    tester.view.physicalSize = const Size(400, 500);
+    await tester.pump();
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -150));
+    await tester.pump();
+    final before = top(tester, find.byKey(const Key('my-stage-lunch')));
+
+    await tester.pumpWidget(timeline(
+      board: sampleBoard(),
+      now: DateTime(2026, 10, 20, 13, 30),
+    ));
+    await tester.pump();
+
     expect(top(tester, find.byKey(const Key('my-stage-lunch'))), before);
+    // Scrolling back up shows it.
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 1000));
+    await tester.pump();
+    expect(
+      inside('my-late-banner', find.text('משימה אחת באיחור')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('coming back to the page reopens it on the current stage, banner included',
@@ -227,7 +325,7 @@ void main() {
     expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
     // At 20:00 the lunch task, both workshop tasks and the 19:00 dinner task
     // are late.
-    expect(inside('my-late-banner', find.text('4 משימות שלך באיחור')), findsOneWidget);
+    expect(inside('my-late-banner', find.text('4 משימות באיחור')), findsOneWidget);
   });
 
   testWidgets('the fold line counts my open tasks hidden in it', (tester) async {
@@ -333,27 +431,18 @@ void main() {
     expect(inside('my-day-2026-10-21', find.text('רביעי 21/10')), findsOneWidget);
   });
 
-  testWidgets('one late task of mine is named in a banner that opens it',
+  testWidgets('one late task of mine is counted in a banner that opens it',
       (tester) async {
     await pumpTimeline(tester);
 
     expect(
-      inside('my-late-banner', find.textContaining('בדיקת מנות מיוחדות')),
+      inside('my-late-banner', find.text('משימה אחת באיחור')),
       findsOneWidget,
     );
     expect(
-      inside(
-        'my-late-banner',
-        find.textContaining('ארוחת צהריים, ${ltr('13:00')}'),
-      ),
-      findsOneWidget,
-    );
-    final text = tester.widget<Text>(
       inside('my-late-banner', find.textContaining('בדיקת מנות מיוחדות')),
+      findsNothing,
     );
-    // A long name wraps rather than ending in "…".
-    expect(text.maxLines, isNull);
-    expect(text.overflow, isNot(TextOverflow.ellipsis));
 
     await tester.tap(find.byKey(const Key('my-late-banner')));
     expect(openedTasks, ['lunch-late']);
@@ -376,7 +465,7 @@ void main() {
     );
 
     expect(
-      inside('my-late-banner', find.text('2 משימות שלך באיחור')),
+      inside('my-late-banner', find.text('2 משימות באיחור')),
       findsOneWidget,
     );
     await tester.tap(find.byKey(const Key('my-late-banner')));

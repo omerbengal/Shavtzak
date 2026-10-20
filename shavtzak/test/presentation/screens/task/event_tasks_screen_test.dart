@@ -1457,6 +1457,22 @@ void main() {
       expect(find.byKey(const Key('stage-add')), findsNothing);
     });
 
+    testWidgets('a long event name shrinks to one line instead of "…"',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      final name = find.descendant(
+        of: find.byKey(const Key('tasks-title')),
+        matching: find.text('דו יומי צפון'),
+      );
+      final text = tester.widget<Text>(name);
+      expect(text.maxLines, 1);
+      expect(text.overflow, isNot(TextOverflow.ellipsis));
+      expect(
+        find.ancestor(of: name, matching: find.byType(FittedBox)),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the title is the event\'s name and days', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
       final title = find.byKey(const Key('tasks-title'));
