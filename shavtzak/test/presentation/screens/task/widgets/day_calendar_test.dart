@@ -113,6 +113,30 @@ void main() {
         greaterThanOrEqualTo(TaskStyle.minBlockHeight));
   });
 
+  testWidgets(
+      'a start-only stage stops under its text and fades out, '
+      'however tall its hour stretched', (tester) async {
+    // The long title beside it stretches the 19:00 hour far beyond what the
+    // start-only stage's text needs.
+    final tall = buildStage(
+        id: 'tall',
+        title: 'כותרת ארוכה מאוד של שלב שלא נגמרת אף פעם ' * 6,
+        date: sampleTue,
+        startTime: '19:30',
+        endTime: '19:45');
+    final open = buildStage(
+        id: 'open', title: 'חלוקת מפתחות', date: sampleTue, startTime: '19:30');
+    await pumpCalendar(tester, stages: [tall, open]);
+    expect(tester.takeException(), isNull);
+    final openRect = tester.getRect(block('open'));
+    final title =
+        tester.getRect(find.descendant(of: block('open'), matching: find.text('חלוקת מפתחות')));
+    expect(openRect.bottom, greaterThanOrEqualTo(title.bottom));
+    expect(openRect.height, lessThan(tester.getSize(block('tall')).height / 2));
+    expect(find.byKey(const Key('stage-fade-open')), findsOneWidget);
+    expect(find.byKey(const Key('stage-fade-tall')), findsNothing);
+  });
+
   testWidgets('a stage without a time sits in the all-day row, above the hours',
       (tester) async {
     await pumpCalendar(tester);

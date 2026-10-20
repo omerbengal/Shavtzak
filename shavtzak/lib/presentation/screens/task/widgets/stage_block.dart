@@ -24,6 +24,7 @@ class StageBlock extends StatelessWidget {
     required this.isOutlined,
     required this.isFaded,
     required this.height,
+    this.fadesOut = false,
     required this.onOpen,
     required this.onOpenMissing,
   });
@@ -40,6 +41,10 @@ class StageBlock extends StatelessWidget {
   /// Drawn see-through, so the outlined stages stand out.
   final bool isFaded;
   final double height;
+
+  /// A stage with a start only: its last [TaskStyle.openEndFadeHeight]
+  /// fade away, so the block reads as having no end.
+  final bool fadesOut;
   final VoidCallback onOpen;
   final VoidCallback onOpenMissing;
 
@@ -184,6 +189,21 @@ class StageBlock extends StatelessWidget {
         ),
       ),
     );
+    if (fadesOut && height > 0) {
+      final solid =
+          (1 - TaskStyle.openEndFadeHeight / height).clamp(0.0, 1.0);
+      block = ShaderMask(
+        key: Key('stage-fade-${stage.id}'),
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: const [Colors.black, Colors.black, Colors.transparent],
+          stops: [0, solid, 1],
+        ).createShader(bounds),
+        child: block,
+      );
+    }
     if (isFaded) {
       block = Opacity(opacity: TaskStyle.fadedOpacity, child: block);
     }

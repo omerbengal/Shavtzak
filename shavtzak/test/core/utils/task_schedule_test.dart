@@ -269,6 +269,25 @@ void main() {
       final block = layoutDay([odd], minBlockMinutes: 33).blocks.single;
       expect((block.startMinute, block.endMinute), (900, 933));
     });
+
+    test('a stage shorter than the shortest block still ends at its end', () {
+      final short = buildStage(
+        id: 'short',
+        date: sampleTue,
+        startTime: '19:30',
+        endTime: '20:00',
+      );
+      final block = layoutDay([short], minBlockMinutes: 33).blocks.single;
+      expect((block.startMinute, block.endMinute), (1170, 1200));
+    });
+
+    test('a block knows whether its stage has an end', () {
+      final layout = layoutDay([stSetup, stDinner], minBlockMinutes: 33);
+      expect(
+        [for (final b in layout.blocks) (b.stage.id, b.hasEnd)],
+        [('setup', true), ('dinner', false)],
+      );
+    });
   });
 
   group('buildTimeAxis', () {
