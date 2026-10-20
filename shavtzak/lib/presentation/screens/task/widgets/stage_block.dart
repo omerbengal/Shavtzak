@@ -20,7 +20,6 @@ class StageBlock extends StatelessWidget {
     super.key,
     required this.stage,
     required this.progress,
-    required this.isCurrent,
     required this.isOutlined,
     required this.isFaded,
     required this.height,
@@ -31,9 +30,6 @@ class StageBlock extends StatelessWidget {
 
   final Stage stage;
   final TaskProgress progress;
-
-  /// Running now: tinted blue under the green.
-  final bool isCurrent;
 
   /// Drawn with a thick outline, as the stage the sheet shows.
   final bool isOutlined;
@@ -114,7 +110,7 @@ class StageBlock extends StatelessWidget {
     Widget block = SizedBox(
       height: height,
       child: Material(
-        color: isCurrent ? TaskStyle.currentLight : Colors.white,
+        color: Colors.white,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: radius,

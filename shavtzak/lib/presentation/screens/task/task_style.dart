@@ -70,6 +70,11 @@ abstract final class TaskStyle {
   static const Duration sheetSlideDuration = Duration(milliseconds: 350);
   static const double sheetCloseBelow = 0.12;
 
+  /// How long the late banner stays green once all is ticked, and how long
+  /// it then takes to fold away.
+  static const Duration lateClearHold = Duration(seconds: 2);
+  static const Duration lateFoldDuration = Duration(milliseconds: 250);
+
   // Layout.
   static const double wideBreakpoint = 1000;
   static const double readableWidth = 640;

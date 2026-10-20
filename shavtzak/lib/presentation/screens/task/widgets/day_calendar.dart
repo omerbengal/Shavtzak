@@ -28,7 +28,6 @@ class DayCalendar extends StatelessWidget {
     required this.days,
     required this.stagesByDay,
     required this.progressByStage,
-    required this.currentStageIds,
     required this.now,
     required this.hourHeight,
     this.outlinedStageIds = const {},
@@ -45,8 +44,6 @@ class DayCalendar extends StatelessWidget {
   final Map<DateTime, List<Stage>> stagesByDay;
   final Map<String, TaskProgress> progressByStage;
 
-  /// The stages running now, tinted blue.
-  final Set<String> currentStageIds;
   final DateTime now;
   final double hourHeight;
 
@@ -69,7 +66,6 @@ class DayCalendar extends StatelessWidget {
       key: Key('stage-block-${stage.id}'),
       stage: stage,
       progress: progressByStage[stage.id] ?? const TaskProgress(),
-      isCurrent: currentStageIds.contains(stage.id),
       isOutlined: outlined,
       isFaded: fadeOthers && !outlined,
       height: height,

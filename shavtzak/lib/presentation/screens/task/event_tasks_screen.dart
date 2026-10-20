@@ -389,10 +389,14 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      event?.name ?? 'משימות דו יומי',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    // A long name shrinks to fit one line, never cut.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        event?.name ?? 'משימות דו יומי',
+                        maxLines: 1,
+                      ),
                     ),
                     if (event != null)
                       Text(
@@ -728,9 +732,6 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       progressByStage: {
         for (final stage in board.stages)
           stage.id: taskProgress(board.tasksOf(stage.id), _now),
-      },
-      currentStageIds: {
-        for (final stage in currentStages(board.stages, _now)) stage.id,
       },
       now: _now,
       hourHeight: TaskStyle.hourHeight,

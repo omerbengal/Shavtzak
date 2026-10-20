@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
@@ -73,10 +75,16 @@ class _MemberTimelineState extends State<MemberTimeline> {
   Set<String> _folded = const {};
   bool _earlierOpen = false;
 
-  /// Whether the late banner has its place on top. Decided with the anchor,
-  /// so a banner appearing, or going once its tasks are ticked, never moves
-  /// the list under the reader; what it says stays live.
+  /// Whether the late banner has its place on top. It comes in as soon as a
+  /// task of mine is late; once all is ticked it turns green for a moment,
+  /// then folds away (or, scrolled out of sight, goes without moving the list).
   bool _hasBanner = false;
+  Timer? _clearTimer;
+  bool _folding = false;
+
+  /// The banner, measured when it comes in above a scrolled list.
+  final GlobalKey _bannerKey = GlobalKey();
+  final ScrollController _scroll = ScrollController();
 
   /// Set when the page comes back to the foreground: nobody is reading at
   /// that moment, so the timeline may open again on the stage of now.
@@ -99,6 +107,8 @@ class _MemberTimelineState extends State<MemberTimeline> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _clearTimer?.cancel();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -118,6 +128,9 @@ class _MemberTimelineState extends State<MemberTimeline> {
     _folded = anchor == null
         ? const {}
         : foldedStageIds(widget.board.stages, anchor);
+    _clearTimer?.cancel();
+    _clearTimer = null;
+    _folding = false;
     _hasBanner = lateTasks(
       [
         for (final task in widget.board.tasks)
@@ -138,6 +151,41 @@ class _MemberTimelineState extends State<MemberTimeline> {
   void _setOpen(TaskItem task, bool open) {
     Logger.action(open ? 'expand:myTaskSubtasks' : 'collapse:myTaskSubtasks');
     setState(() => _openByHand[task.id] = open);
+  }
+
+  /// A banner coming in above a list the reader scrolled down would push
+  /// it; scrolling on by its height keeps what they look at where it was.
+  void _keepListInPlace() {
+    if (!_scroll.hasClients || _scroll.offset <= 0) return;
+    final from = _scroll.offset;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final banner = _bannerKey.currentContext?.findRenderObject();
+      if (!mounted || !_scroll.hasClients || banner is! RenderBox) return;
+      _scroll.jumpTo(from + banner.size.height);
+    });
+  }
+
+  /// The green banner's moment is over. Out of sight, it goes and the list
+  /// scrolls back by its height in the same frame; in sight, it folds away.
+  void _dropBanner() {
+    if (!mounted) return;
+    final banner = _bannerKey.currentContext?.findRenderObject();
+    final height = banner is RenderBox ? banner.size.height : 0.0;
+    if (_scroll.hasClients && _scroll.offset >= height) {
+      _scroll.jumpTo(_scroll.offset - height);
+      _bannerGone();
+    } else {
+      setState(() => _folding = true);
+    }
+  }
+
+  void _bannerGone() {
+    if (!mounted) return;
+    setState(() {
+      _hasBanner = false;
+      _folding = false;
+      _clearTimer = null;
+    });
   }
 
   void _toggleEarlier() {
@@ -164,6 +212,25 @@ class _MemberTimelineState extends State<MemberTimeline> {
       showEveryStage: true,
     );
     final late = lateTasks(mine, now);
+    if (!_hasBanner && late.isNotEmpty) {
+      _hasBanner = true;
+      _keepListInPlace();
+    }
+    if (late.isNotEmpty) {
+      _clearTimer?.cancel();
+      _clearTimer = null;
+      _folding = false;
+    } else if (_hasBanner) {
+      _clearTimer ??= Timer(TaskStyle.lateClearHold, _dropBanner);
+    }
+    final Widget? banner = _hasBanner
+        ? _LateBanner(
+            key: _bannerKey,
+            late: late,
+            onOpenTask: widget.onOpenTask,
+            onOpenMyLate: widget.onOpenMyLate,
+          )
+        : null;
     final folded = {
       for (final id in _folded)
         if (board.stageById(id) != null) id,
@@ -184,14 +251,26 @@ class _MemberTimelineState extends State<MemberTimeline> {
     }
 
     return CustomScrollView(
+      controller: _scroll,
       slivers: [
-        if (_hasBanner)
+        if (banner != null)
           SliverToBoxAdapter(
-            child: _LateBanner(
-              late: late,
-              onOpenTask: widget.onOpenTask,
-              onOpenMyLate: widget.onOpenMyLate,
-            ),
+            child: !_folding
+                ? banner
+                : TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 1, end: 0),
+                    duration: TaskStyle.lateFoldDuration,
+                    curve: Curves.easeInOut,
+                    onEnd: _bannerGone,
+                    child: banner,
+                    builder: (context, factor, child) => ClipRect(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        heightFactor: factor,
+                        child: Opacity(opacity: factor, child: child),
+                      ),
+                    ),
+                  ),
           ),
         if (mine.isEmpty)
           SliverToBoxAdapter(
@@ -831,11 +910,12 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-/// The viewer's late tasks, until they are ticked. Its text wraps, and the
-/// banner keeps at least the height of the text it opened with, so ticking
-/// a task never shortens it and moves the list.
+/// The viewer's late tasks, counted, until they are ticked. Its text wraps,
+/// centred vertically, and the banner keeps at least the height of the text
+/// it opened with, so ticking a task never shortens it and moves the list.
 class _LateBanner extends StatefulWidget {
   const _LateBanner({
+    super.key,
     required this.late,
     required this.onOpenTask,
     required this.onOpenMyLate,
@@ -850,6 +930,8 @@ class _LateBanner extends StatefulWidget {
 }
 
 class _LateBannerState extends State<_LateBanner> {
+  static const _clearText = 'אין לך יותר משימות באיחור';
+
   /// The text the banner opened with: its height is kept.
   String? _openingText;
 
@@ -864,17 +946,12 @@ class _LateBannerState extends State<_LateBanner> {
     final String text;
     final VoidCallback? onTap;
     if (isClear) {
-      text = 'אין לך יותר משימות באיחור';
+      text = _clearText;
       onTap = null;
-    } else if (late.length == 1) {
-      final task = late.single;
-      final time = task.hasAssemblyTime ? ', ${ltr(task.assemblyTime!)}' : '';
-      text = 'משימה שלך באיחור · ${task.title} · '
-          '${task.stage?.title ?? ''}$time';
-      onTap = () => onOpenTask(task);
     } else {
-      text = '${late.length} משימות שלך באיחור';
-      onTap = onOpenMyLate;
+      text = hebrewCount(late.length,
+          one: 'משימה אחת באיחור', many: 'משימות באיחור');
+      onTap = late.length == 1 ? () => onOpenTask(late.single) : onOpenMyLate;
     }
     final opening = _openingText ??= text;
     final strong = isClear ? TaskStyle.done : TaskStyle.late;
@@ -922,15 +999,18 @@ class _LateBannerState extends State<_LateBanner> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Stack(
+                    alignment: AlignmentDirectional.centerStart,
                     children: [
-                      // Holds the opening height without showing.
-                      if (opening != text)
+                      // Holds the height of the opening text and of the
+                      // clear text without showing, so turning clear never
+                      // grows the banner either.
+                      for (final held in {opening, _clearText}..remove(text))
                         Visibility(
                           visible: false,
                           maintainSize: true,
                           maintainAnimation: true,
                           maintainState: true,
-                          child: Text(opening, style: textStyle),
+                          child: Text(held, style: textStyle),
                         ),
                       Text(text, style: textStyle),
                     ],

@@ -29,7 +29,6 @@ void main() {
     WidgetTester tester, {
     List<DateTime>? days,
     List<Stage>? stages,
-    Set<String> currentStageIds = const {'ws'},
     Set<String> outlinedStageIds = const {},
     bool fadeOthers = false,
     String? focusStageId,
@@ -54,7 +53,6 @@ void main() {
                 for (final stage in shown)
                   stage.id: taskProgress(board.tasksOf(stage.id), sampleNow),
               },
-              currentStageIds: currentStageIds,
               now: sampleNow,
               hourHeight: hourHeight,
               outlinedStageIds: outlinedStageIds,
@@ -228,10 +226,10 @@ void main() {
     expect(find.byKey(const Key('strip-rest')), findsNothing);
   });
 
-  testWidgets('the current stage is blue, the others white, a late task gives a red edge',
+  testWidgets('every stage is white, the red line alone marks now; a late task gives a red edge',
       (tester) async {
     await pumpCalendar(tester);
-    expect(blockColor(tester, 'ws'), TaskStyle.currentLight);
+    expect(blockColor(tester, 'ws'), Colors.white);
     expect(blockColor(tester, 'dinner'), Colors.white);
     expect(find.byKey(const Key('stage-late-ws')), findsOneWidget);
     expect(find.byKey(const Key('stage-late-dinner')), findsNothing);
