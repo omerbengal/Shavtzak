@@ -137,6 +137,7 @@ class CalendarBlock extends Equatable {
     required this.endMinute,
     required this.column,
     required this.columnCount,
+    this.hasEnd = true,
   });
 
   final Stage stage;
@@ -144,9 +145,13 @@ class CalendarBlock extends Equatable {
   /// Minutes since midnight.
   final int startMinute;
 
-  /// Where the block is drawn to: its end, at least [startMinute] plus the
-  /// smallest readable block, never past midnight.
+  /// Where the block runs to: its end, or [startMinute] plus the smallest
+  /// readable block when it has none, never past midnight.
   final int endMinute;
+
+  /// False for a stage with a start only: it is drawn just as tall as its
+  /// text, fading out, so no end time is implied.
+  final bool hasEnd;
 
   /// Its column among the stages it overlaps; 0 is the start side, the right
   /// under RTL.
@@ -157,7 +162,8 @@ class CalendarBlock extends Equatable {
   final int columnCount;
 
   @override
-  List<Object?> get props => [stage, startMinute, endMinute, column, columnCount];
+  List<Object?> get props =>
+      [stage, startMinute, endMinute, column, columnCount, hasEnd];
 }
 
 /// One day of stages, ready to draw.
@@ -180,9 +186,12 @@ class DayLayout extends Equatable {
   List<Object?> get props => [allDay, blocks, bands];
 }
 
+/// A stage with an end is drawn to it exactly: however short, the time axis
+/// stretches to give it room. One with a start only is drawn
+/// [minBlockMinutes] long.
 int _drawnEnd(Stage stage, int start, int minBlockMinutes) {
-  final end = _realEnd(stage, start) ?? start;
-  return math.min(math.max(end, start + minBlockMinutes), _minutesPerDay);
+  final end = _realEnd(stage, start) ?? start + minBlockMinutes;
+  return math.min(end, _minutesPerDay);
 }
 
 /// Lays out one day's stages. Each timed stage takes the lowest column free
@@ -196,7 +205,7 @@ DayLayout layoutDay(
   int? maxColumns,
 }) {
   final allDay = <Stage>[];
-  final timed = <({Stage stage, int start, int end})>[];
+  final timed = <({Stage stage, int start, int end, bool hasEnd})>[];
   for (final stage in sortStages(dayStages)) {
     final start = minutesOfDay(stage.startTime);
     if (start == null) {
@@ -207,6 +216,7 @@ DayLayout layoutDay(
       stage: stage,
       start: start,
       end: _drawnEnd(stage, start, minBlockMinutes),
+      hasEnd: _realEnd(stage, start) != null,
     ));
   }
   // By start, the longer one first, so it keeps the first column.
@@ -218,7 +228,8 @@ DayLayout layoutDay(
     return a.stage.title.compareTo(b.stage.title);
   });
 
-  final placed = <({Stage stage, int start, int end, int column})>[];
+  final placed =
+      <({Stage stage, int start, int end, bool hasEnd, int column})>[];
   final bands = <CalendarBlock>[];
   final columnEnds = <int>[];
   for (final block in timed) {
@@ -235,6 +246,7 @@ DayLayout layoutDay(
         endMinute: block.end,
         column: 0,
         columnCount: 1,
+        hasEnd: block.hasEnd,
       ));
       continue;
     }
@@ -243,6 +255,7 @@ DayLayout layoutDay(
       stage: block.stage,
       start: block.start,
       end: block.end,
+      hasEnd: block.hasEnd,
       column: column,
     ));
   }
@@ -270,6 +283,7 @@ DayLayout layoutDay(
           endMinute: placed[i].end,
           column: placed[i].column,
           columnCount: columnsOf[groupOf[i]]!,
+          hasEnd: placed[i].hasEnd,
         ),
     ],
     bands: bands,

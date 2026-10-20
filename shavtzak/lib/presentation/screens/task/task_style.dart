@@ -41,6 +41,10 @@ abstract final class TaskStyle {
   static const double hourLabelBoxHeight = 14;
   static const double minBlockHeight = 30;
 
+  /// The empty strip under a start-only stage's text, where its block fades
+  /// out instead of ending at a time it does not have.
+  static const double openEndFadeHeight = 18;
+
   /// The height a squashed stretch of empty hours shrinks to.
   static const double squashedGapHeight = 24;
 
@@ -92,8 +96,8 @@ abstract final class TaskStyle {
   /// The arrow that opens and folds a task's subtasks.
   static const double foldArrowSize = 22;
 
-  /// The shortest block, in minutes, that still draws [minBlockHeight] tall
-  /// at [hourHeight].
+  /// How long a start-only stage is taken to run when laying out the day:
+  /// the minutes that draw [minBlockHeight] at [hourHeight].
   static int minBlockMinutes(double hourHeight) =>
       (minBlockHeight / hourHeight * 60).ceil();
 

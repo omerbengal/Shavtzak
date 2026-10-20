@@ -63,7 +63,7 @@ class DayCalendar extends StatelessWidget {
 
   List<Stage> _stagesOf(DateTime day) => stagesByDay[_dayOf(day)] ?? const [];
 
-  Widget _block(Stage stage, double height) {
+  Widget _block(Stage stage, double height, {bool fadesOut = false}) {
     final outlined = outlinedStageIds.contains(stage.id);
     final block = StageBlock(
       key: Key('stage-block-${stage.id}'),
@@ -73,6 +73,7 @@ class DayCalendar extends StatelessWidget {
       isOutlined: outlined,
       isFaded: fadeOthers && !outlined,
       height: height,
+      fadesOut: fadesOut,
       onOpen: () => _open(stage, missingOnly: false),
       onOpenMissing: () => _open(stage, missingOnly: true),
     );
@@ -214,7 +215,8 @@ class DayCalendar extends StatelessWidget {
     final needs = <CalendarBlock, double>{};
     for (final layout in layouts.values) {
       for (final block in layout.blocks) {
-        needs[block] = _need(context, block.stage, widthOf(block));
+        needs[block] = _need(context, block.stage, widthOf(block)) +
+            (block.hasEnd ? 0 : TaskStyle.openEndFadeHeight);
       }
       for (final band in layout.bands) {
         needs[band] = _need(context, band.stage, dayWidth - TaskStyle.blockGap);
@@ -345,8 +347,12 @@ class DayCalendar extends StatelessWidget {
                   start: block.column * dayWidth / block.columnCount,
                   width: dayWidth / block.columnCount,
                   top: axis.after(block.startMinute),
-                  height: axis.before(block.endMinute) -
-                      axis.after(block.startMinute),
+                  height: _heightOf(
+                    block,
+                    span: axis.before(block.endMinute) -
+                        axis.after(block.startMinute),
+                    need: needs[block] ?? TaskStyle.minBlockHeight,
+                  ),
                 ),
               // On top of the blocks they cut across.
               for (final band in layouts[day]!.bands)
@@ -377,6 +383,11 @@ class DayCalendar extends StatelessWidget {
     );
   }
 
+  /// A stage with an end fills its time; one without stops under its text.
+  static double _heightOf(CalendarBlock block,
+          {required double span, required double need}) =>
+      block.hasEnd ? span : math.min(span, need);
+
   Widget _placed(
     CalendarBlock block, {
     required double start,
@@ -391,7 +402,7 @@ class DayCalendar extends StatelessWidget {
       height: height,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: TaskStyle.blockGap / 2),
-        child: _block(block.stage, height),
+        child: _block(block.stage, height, fadesOut: !block.hasEnd),
       ),
     );
   }
