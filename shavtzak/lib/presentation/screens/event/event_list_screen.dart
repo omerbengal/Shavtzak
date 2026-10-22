@@ -26,6 +26,7 @@ import '../../../core/debug/logger.dart';
 import '../../widgets/map_location_picker.dart';
 import 'widgets/category_filter_modal.dart';
 import 'widgets/category_management_dialog.dart';
+import 'widgets/event_constraint_collisions_dialog.dart';
 import 'widgets/event_form_modal.dart';
 import 'widgets/event_drive_files_section.dart';
 import 'widgets/role_management_dialog.dart';
@@ -688,6 +689,19 @@ class _EventListScreenState extends State<EventListScreen> {
                         color: Colors.orange.shade800,
                       ),
                     ),
+                  IconButton(
+                    tooltip: 'מגבלות של אנשי צוות קבועים שמתנגשות עם האירוע',
+                    onPressed: () {
+                      Logger.action('open:eventConstraintCollisions',
+                          {'eventId': event.id});
+                      showDialog(
+                        context: context,
+                        builder: (_) =>
+                            EventConstraintCollisionsDialog(event: event),
+                      );
+                    },
+                    icon: const Icon(Icons.person_off_outlined),
+                  ),
                   IconButton(
                     tooltip: 'קבצים בגוגל דרייב',
                     onPressed: () => _showDriveFilesDialog(context, event),
