@@ -10,6 +10,8 @@ import '../bloc/role/role_bloc.dart';
 import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
 import '../../core/debug/logger.dart';
+import '../../core/utils/search_utils.dart';
+import 'name_search_field.dart';
 
 /// Dialog showing all team members assigned to an event, grouped by role
 /// Uses the same UI layout as EventAssignmentsDialog
@@ -38,6 +40,7 @@ class EventTeamMembersDialog extends StatefulWidget {
 class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   late final AssignmentBloc _assignmentBloc;
   late final bool _ownsBloc;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -177,7 +180,8 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
 
         // Group assignments by role key
         final assignmentsByRole = <String, List<Assignment>>{};
-        for (final assignment in assignments) {
+        for (final assignment in assignments.where((a) =>
+            nameMatchesSearch(a.teamMember?.name ?? '', _searchQuery))) {
           assignmentsByRole.putIfAbsent(assignment.roleType, () => []);
           assignmentsByRole[assignment.roleType]!.add(assignment);
         }
@@ -199,11 +203,23 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
           roleSections.add(_buildRoleSection(role, roleAssignments));
         }
 
-        if (roleSections.isEmpty) {
+        if (roleSections.isEmpty && _searchQuery.trim().isEmpty) {
           return _buildEmptyState();
         }
 
-        return ListView(children: roleSections);
+        return Column(
+          children: [
+            NameSearchField(
+              onChanged: (value) => setState(() => _searchQuery = value),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: roleSections.isEmpty
+                  ? const NameSearchNoResults()
+                  : ListView(children: roleSections),
+            ),
+          ],
+        );
       },
     );
   }

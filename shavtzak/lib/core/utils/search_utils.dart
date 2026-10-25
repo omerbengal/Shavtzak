@@ -20,3 +20,11 @@ String normalizeForSearch(String text) {
       .map((rune) => String.fromCharCode(rune))
       .join();
 }
+
+/// Whether [name] contains [query], compared with [normalizeForSearch] and
+/// case-insensitively. An empty query matches every name.
+bool nameMatchesSearch(String name, String query) {
+  final normalizedQuery = normalizeForSearch(query.trim()).toLowerCase();
+  if (normalizedQuery.isEmpty) return true;
+  return normalizeForSearch(name).toLowerCase().contains(normalizedQuery);
+}

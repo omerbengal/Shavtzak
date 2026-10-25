@@ -5,6 +5,7 @@ import 'package:collection/collection.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/same_day_assignments.dart';
+import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/slot_annotations.dart';
 import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../domain/entities/assignment.dart';
@@ -22,6 +23,7 @@ import '../../../bloc/assignment/assignment_bloc.dart';
 import '../../../bloc/assignment/assignment_event.dart';
 import '../../../widgets/assignment_label_chip.dart';
 import '../../../widgets/map_location_picker.dart';
+import '../../../widgets/name_search_field.dart';
 import '../../event/widgets/event_assignments_dialog.dart';
 
 /// Combined data for a single event's summary
@@ -1027,6 +1029,8 @@ class EventSummaryTile extends StatelessWidget {
       return !hasThisRole;
     }).toList();
 
+    var searchQuery = '';
+
     return showDialog<TeamMember?>(
       context: context,
       builder: (dialogContext) {
@@ -1036,7 +1040,11 @@ class EventSummaryTile extends StatelessWidget {
 
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: AlertDialog(
+          child: StatefulBuilder(builder: (context, setDialogState) {
+            final shownMembers = filteredSameEventMembers
+                .where((m) => nameMatchesSearch(m.name, searchQuery))
+                .toList();
+            return AlertDialog(
             title: Row(
               children: [
                 const Icon(Icons.people, color: Colors.orange),
@@ -1071,11 +1079,23 @@ class EventSummaryTile extends StatelessWidget {
                         ],
                       ),
                     )
-                  : ListView.builder(
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                    NameSearchField(
+                      onChanged: (value) =>
+                          setDialogState(() => searchQuery = value),
+                    ),
+                    const SizedBox(height: 8),
+                    if (shownMembers.isEmpty)
+                      const NameSearchNoResults()
+                    else
+                    Flexible(
+                    child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: filteredSameEventMembers.length,
+                      itemCount: shownMembers.length,
                       itemBuilder: (context, index) {
-                        final member = filteredSameEventMembers[index];
+                        final member = shownMembers[index];
 
                         final memberRoles = allAssignments
                             .where((assignment) =>
@@ -1112,6 +1132,9 @@ class EventSummaryTile extends StatelessWidget {
                         );
                       },
                     ),
+                    ),
+                      ],
+                    ),
             ),
             actions: [
               TextButton(
@@ -1122,7 +1145,8 @@ class EventSummaryTile extends StatelessWidget {
                 child: const Text('סגור'),
               ),
             ],
-          ),
+          );
+          }),
         );
       },
     );
@@ -1134,6 +1158,8 @@ class EventSummaryTile extends StatelessWidget {
     List<TeamMember> constrainedMembers,
     Map<String, List<String>> sameDayEventInfo,
   ) async {
+    var searchQuery = '';
+
     return showDialog<TeamMember?>(
       context: context,
       builder: (dialogContext) {
@@ -1143,7 +1169,11 @@ class EventSummaryTile extends StatelessWidget {
 
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: AlertDialog(
+          child: StatefulBuilder(builder: (context, setDialogState) {
+            final shownMembers = constrainedMembers
+                .where((m) => nameMatchesSearch(m.name, searchQuery))
+                .toList();
+            return AlertDialog(
             title: Row(
               children: [
                 const Icon(Icons.block, color: Colors.red),
@@ -1176,11 +1206,23 @@ class EventSummaryTile extends StatelessWidget {
                   )
                 : SizedBox(
                     width: dialogWidth,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                    NameSearchField(
+                      onChanged: (value) =>
+                          setDialogState(() => searchQuery = value),
+                    ),
+                    const SizedBox(height: 8),
+                    if (shownMembers.isEmpty)
+                      const NameSearchNoResults()
+                    else
+                    Flexible(
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: constrainedMembers.length,
+                      itemCount: shownMembers.length,
                       itemBuilder: (context, index) {
-                        final member = constrainedMembers[index];
+                        final member = shownMembers[index];
                         final sameDayEvents = sameDayEventInfo[member.id] ?? [];
                         final isSameDayAssigned = sameDayEvents.isNotEmpty;
                         final reason = isSameDayAssigned
@@ -1221,6 +1263,9 @@ class EventSummaryTile extends StatelessWidget {
                         );
                       },
                     ),
+                    ),
+                      ],
+                    ),
                   ),
             actions: [
               TextButton(
@@ -1231,7 +1276,8 @@ class EventSummaryTile extends StatelessWidget {
                 child: const Text('סגור'),
               ),
             ],
-          ),
+          );
+          }),
         );
       },
     );
