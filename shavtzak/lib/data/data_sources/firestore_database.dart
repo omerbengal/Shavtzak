@@ -1063,105 +1063,98 @@ class FirestoreDatabase implements DatabaseInterface {
   Stream<List<Assignment>> watchAssignmentsInTimeWindow(
     DateTime windowStart,
     DateTime windowEnd,
-  ) async* {
-    try {
-      // Step 1: Get initial event IDs in the time window
-      final events = await getEventsByDateRange(windowStart, windowEnd);
-      if (events.isEmpty) {
-        yield [];
-        return;
-      }
+  ) {
+    // Follows the window's events LIVE rather than reading their ids once:
+    // with a frozen id set, an event created (or moved into the window) after
+    // subscribing never had its assignments streamed, so a saved event kept
+    // showing empty slots and a re-entry was rejected as a duplicate.
+    //
+    // Assignments are listened to in `whereIn` chunks of at most 30 event ids.
+    // A new id gets a new chunk; existing chunks are left alone (no re-listen,
+    // no flash of missing rows); a chunk whose events have all left the
+    // window is cancelled, and rows of events no longer in it are filtered out.
+    late final StreamController<List<Assignment>> controller;
+    StreamSubscription<List<Event>>? eventsSubscription;
+    final chunkSubscriptions = <List<String>, StreamSubscription>{};
+    final latestByChunk = <List<String>, List<Assignment>>{};
+    var windowEventIds = <String>{};
 
-      final eventIds = events.map((e) => e.id).toList();
-
-      // Step 2: Create streams for each chunk of event IDs
-      final allStreams = <Stream<List<Assignment>>>[];
-      for (int i = 0; i < eventIds.length; i += 30) {
-        final chunk = eventIds.skip(i).take(30).toList();
-
-        final stream = _firestore
-            .collection(_assignmentsCollection)
-            .where('eventId', whereIn: chunk)
-            .snapshots()
-            .asyncMap((snapshot) async {
-          final assignments = snapshot.docs
-              .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
-              .toList();
-          final populated = await _populateAssignmentRelations(assignments);
-          return populated;
-        });
-
-        allStreams.add(stream);
-      }
-
-      // Step 3: Merge all streams and emit combined results
-      // Using StreamGroup.merge instead of CombineLatestStream because:
-      // - CombineLatestStream waits for ALL streams to emit before emitting
-      // - With merge, we get updates as soon as any chunk has data
-      // - We emit initial empty list first, then merge all stream emissions
-      if (allStreams.isEmpty) {
-        yield [];
-        return;
-      }
-
-      // Create a controller that will emit combined results
-      final controller = StreamController<List<Assignment>>();
-
-      // Track latest values from each stream
-      final latestValues = <List<Assignment>>[];
-      final receivedCount = <int>{};
-
-      // Track subscriptions so we can cancel them
-      final subscriptions = <StreamSubscription>[];
-
-      // Subscribe to each stream
-      for (int i = 0; i < allStreams.length; i++) {
-        final stream = allStreams[i];
-        final index = i; // Capture for closure
-        final subscription = stream.listen(
-          (data) {
-            // Don't add to closed controller
-            if (controller.isClosed) return;
-
-            // Replace old value at this index instead of appending
-            while (latestValues.length <= index) {
-              latestValues.add([]);
-            }
-            latestValues[index] = data;
-            receivedCount.add(index);
-
-            // CRITICAL FIX: Always emit combined result when ANY stream updates
-            // (not just when all streams have emitted for the first time)
-            // Build combined from all streams that have emitted so far
-            final combined = <Assignment>[];
-            for (int j = 0; j < allStreams.length; j++) {
-              if (j < latestValues.length) {
-                combined.addAll(latestValues[j]);
-              }
-            }
-            controller.add(combined);
-          },
-          onError: (error) {
-            if (!controller.isClosed) {
-              controller.addError(error);
-            }
-          },
+    void addError(Object error) {
+      if (!controller.isClosed) {
+        controller.addError(
+          DatabaseException('Failed to watch assignments in time window: $error'),
         );
-        subscriptions.add(subscription);
+      }
+    }
+
+    // Emits every chunk that has delivered so far -- not waiting for all of
+    // them, so the first paint comes from the first chunk.
+    void emitCombined() {
+      if (controller.isClosed) return;
+      controller.add([
+        for (final rows in latestByChunk.values)
+          ...rows.where((a) => windowEventIds.contains(a.eventId)),
+      ]);
+    }
+
+    void listenToChunk(List<String> chunk) {
+      chunkSubscriptions[chunk] = _firestore
+          .collection(_assignmentsCollection)
+          .where('eventId', whereIn: chunk)
+          .snapshots()
+          .asyncMap((snapshot) async {
+        final assignments = snapshot.docs
+            .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
+            .toList();
+        return _populateAssignmentRelations(assignments);
+      }).listen(
+        (rows) {
+          if (!chunkSubscriptions.containsKey(chunk)) return;
+          latestByChunk[chunk] = rows;
+          emitCombined();
+        },
+        onError: addError,
+      );
+    }
+
+    void onWindowEvents(List<Event> events) {
+      windowEventIds = events.map((e) => e.id).toSet();
+
+      for (final chunk in chunkSubscriptions.keys.toList()) {
+        if (!chunk.any(windowEventIds.contains)) {
+          chunkSubscriptions.remove(chunk)!.cancel();
+          latestByChunk.remove(chunk);
+        }
       }
 
-      // Cancel subscriptions when stream is canceled
-      controller.onCancel = () async {
-        for (final subscription in subscriptions) {
+      final listened = {for (final chunk in chunkSubscriptions.keys) ...chunk};
+      final newIds =
+          windowEventIds.where((id) => !listened.contains(id)).toList();
+      for (int i = 0; i < newIds.length; i += 30) {
+        listenToChunk(newIds.skip(i).take(30).toList());
+      }
+
+      // A new chunk emits once it delivers; otherwise emit now, so an empty
+      // window still paints and a shrunk one drops the rows that left it.
+      if (newIds.isEmpty) emitCombined();
+    }
+
+    controller = StreamController<List<Assignment>>(
+      onListen: () {
+        eventsSubscription = watchEventsByDateRange(windowStart, windowEnd)
+            .listen(onWindowEvents, onError: addError);
+      },
+      onCancel: () async {
+        await eventsSubscription?.cancel();
+        for (final subscription in chunkSubscriptions.values) {
           await subscription.cancel();
         }
-      };
+        chunkSubscriptions.clear();
+        latestByChunk.clear();
+      },
+    );
 
-      // Emit the merged stream
-      yield* controller.stream;
-    } catch (e) {
-      throw DatabaseException('Failed to watch assignments in time window: $e');
-    }
+    return controller.stream;
   }
 
   @override
