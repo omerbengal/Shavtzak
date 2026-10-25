@@ -200,4 +200,25 @@ void main() {
       verifyNever(assignmentRepo.getAssignmentsByEvent(any));
     },
   );
+
+  testWidgets('the search box narrows the list by name', (tester) async {
+    await pumpDialog(tester);
+    await tester.pump();
+
+    await emitAssignments(tester, [
+      assignmentFor('a1', memberFor('tm1', 'דני')),
+      assignmentFor('a2', memberFor('tm2', 'רותי')),
+    ]);
+    expect(find.text('דני'), findsOneWidget);
+    expect(find.text('רותי'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'רות');
+    await tester.pump();
+    expect(find.text('דני'), findsNothing);
+    expect(find.text('רותי'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'משה');
+    await tester.pump();
+    expect(find.text('לא נמצאו אנשים בשם הזה'), findsOneWidget);
+  });
 }

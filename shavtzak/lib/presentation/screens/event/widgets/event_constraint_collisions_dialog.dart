@@ -3,11 +3,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/constraint_status.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/event_constraint_collisions.dart';
+import '../../../../core/utils/search_utils.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../bloc/team/team_bloc.dart';
 import '../../../bloc/team/team_event.dart' as team;
 import '../../../bloc/team/team_state.dart';
+import '../../../widgets/name_search_field.dart';
 
 /// Read-only list of the permanent members' constraints (approved, pending
 /// and rejected) that collide with one event.
@@ -24,6 +26,7 @@ class EventConstraintCollisionsDialog extends StatefulWidget {
 class _EventConstraintCollisionsDialogState
     extends State<EventConstraintCollisionsDialog> {
   List<TeamMember>? _lastLoadedMembers;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -72,10 +75,24 @@ class _EventConstraintCollisionsDialogState
                 );
               }
 
-              return ListView.builder(
-                itemCount: collisions.length,
-                itemBuilder: (context, index) =>
-                    _buildCollisionCard(collisions[index]),
+              final shownCollisions = collisions
+                  .where((c) => nameMatchesSearch(c.member.name, _searchQuery))
+                  .toList();
+              return Column(
+                children: [
+                  NameSearchField(
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                  ),
+                  Expanded(
+                    child: shownCollisions.isEmpty
+                        ? const NameSearchNoResults()
+                        : ListView.builder(
+                            itemCount: shownCollisions.length,
+                            itemBuilder: (context, index) =>
+                                _buildCollisionCard(shownCollisions[index]),
+                          ),
+                  ),
+                ],
               );
             },
           ),

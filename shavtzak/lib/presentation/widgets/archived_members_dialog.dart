@@ -4,14 +4,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/debug/logger.dart';
 import '../../core/utils/crud_action_result.dart';
+import '../../core/utils/search_utils.dart';
 import '../../domain/entities/team_member.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_event.dart';
 import '../bloc/team/team_state.dart';
+import 'name_search_field.dart';
 
 /// Dialog showing list of archived team members with restore option
-class ArchivedMembersDialog extends StatelessWidget {
+class ArchivedMembersDialog extends StatefulWidget {
   const ArchivedMembersDialog({super.key});
+
+  /// Show the archived members dialog
+  static Future<void> show(BuildContext context) {
+    return showDialog(
+      context: context,
+      builder: (context) => const ArchivedMembersDialog(),
+    );
+  }
+
+  @override
+  State<ArchivedMembersDialog> createState() => _ArchivedMembersDialogState();
+}
+
+class _ArchivedMembersDialogState extends State<ArchivedMembersDialog> {
+  String _searchQuery = '';
 
   @override
   Widget build(BuildContext context) {
@@ -37,14 +54,7 @@ class ArchivedMembersDialog extends StatelessWidget {
               height: 400,
               child: archivedMembers.isEmpty
                   ? _buildEmptyState()
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: archivedMembers.length,
-                      itemBuilder: (context, index) {
-                        final member = archivedMembers[index];
-                        return _buildArchivedMemberTile(context, member);
-                      },
-                    ),
+                  : _buildSearchableList(context, archivedMembers),
             ),
             actions: [
               TextButton(
@@ -58,6 +68,30 @@ class ArchivedMembersDialog extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildSearchableList(
+      BuildContext context, List<TeamMember> archivedMembers) {
+    final shownMembers = archivedMembers
+        .where((m) => nameMatchesSearch(m.name, _searchQuery))
+        .toList();
+    return Column(
+      children: [
+        NameSearchField(
+          onChanged: (value) => setState(() => _searchQuery = value),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: shownMembers.isEmpty
+              ? const NameSearchNoResults()
+              : ListView.builder(
+                  itemCount: shownMembers.length,
+                  itemBuilder: (context, index) =>
+                      _buildArchivedMemberTile(context, shownMembers[index]),
+                ),
+        ),
+      ],
     );
   }
 
@@ -223,11 +257,4 @@ class ArchivedMembersDialog extends StatelessWidget {
     );
   }
 
-  /// Show the archived members dialog
-  static Future<void> show(BuildContext context) {
-    return showDialog(
-      context: context,
-      builder: (context) => const ArchivedMembersDialog(),
-    );
-  }
 }

@@ -36,6 +36,7 @@ import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/assignment_label_chip.dart';
+import '../../widgets/name_search_field.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -3001,11 +3002,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return !hasThisRole;
     }).toList();
 
+    var searchQuery = '';
+
     final selectedMember = await showDialog<TeamMember>(
       context: context,
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
-        child: AlertDialog(
+        child: StatefulBuilder(builder: (context, setDialogState) {
+          final shownMembers = filteredSameEventMembers
+              .where((m) => nameMatchesSearch(m.name, searchQuery))
+              .toList();
+          return AlertDialog(
           title: Row(
             children: [
               const Icon(Icons.warning, color: Colors.orange),
@@ -3051,7 +3058,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     'האנשים הבאים כבר משובצים לאירוע זה:',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  NameSearchField(
+                    onChanged: (value) =>
+                        setDialogState(() => searchQuery = value),
+                  ),
+                  const SizedBox(height: 8),
+                  if (shownMembers.isEmpty)
+                    const NameSearchNoResults()
+                  else
                   // Make the list scrollable with constrained height
                   ConstrainedBox(
                     constraints: BoxConstraints(
@@ -3060,9 +3075,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     ),
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: filteredSameEventMembers.length,
+                      itemCount: shownMembers.length,
                       itemBuilder: (context, index) {
-                        final member = filteredSameEventMembers[index];
+                        final member = shownMembers[index];
                         // Find what OTHER roles this person has in this event (excluding current role)
                         final memberRoles = _allSlots
                             .where((s) =>
@@ -3110,7 +3125,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               child: const Text('סגור'),
             ),
           ],
-        ),
+        );
+        }),
       ),
     );
 
@@ -3177,11 +3193,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
     if (!mounted) return;
 
+    var searchQuery = '';
+
     final selectedMember = await showDialog<TeamMember>(
       context: context,
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
-        child: AlertDialog(
+        child: StatefulBuilder(builder: (context, setDialogState) {
+          final shownMembers = constrainedMembers
+              .where((m) => nameMatchesSearch(m.name, searchQuery))
+              .toList();
+          return AlertDialog(
           title: Row(
             children: [
               const Icon(Icons.block, color: Colors.red),
@@ -3224,16 +3246,24 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     'האנשים הבאים לא זמינים או משובצים לאירועים אחרים באותם תאריכים:',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  NameSearchField(
+                    onChanged: (value) =>
+                        setDialogState(() => searchQuery = value),
+                  ),
+                  const SizedBox(height: 8),
+                  if (shownMembers.isEmpty)
+                    const NameSearchNoResults()
+                  else
                   ConstrainedBox(
                     constraints: BoxConstraints(
                       maxHeight: MediaQuery.of(context).size.height * 0.5,
                     ),
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: constrainedMembers.length,
+                      itemCount: shownMembers.length,
                       itemBuilder: (context, index) {
-                        final member = constrainedMembers[index];
+                        final member = shownMembers[index];
                         final sameDayEvents =
                             slot.sameDayEventInfo[member.id] ?? [];
                         final isSameDayAssigned = sameDayEvents.isNotEmpty;
@@ -3298,7 +3328,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               child: const Text('סגור'),
             ),
           ],
-        ),
+        );
+        }),
       ),
     );
 
