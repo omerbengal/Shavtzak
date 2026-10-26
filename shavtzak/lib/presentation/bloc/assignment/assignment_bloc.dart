@@ -466,7 +466,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           await _repository.getAssignmentById(event.assignment.id);
 
       if (!event.bypassAvailability) {
-        final conflicts = await _repository.checkConflicts(event.assignment);
+        // An update that keeps the stored member and event is never re-refused
+        // on availability (same rule as updateAssignment and the backend).
+        final unchanged = previousAssignment != null &&
+            previousAssignment.teamMemberId == event.assignment.teamMemberId &&
+            previousAssignment.eventId == event.assignment.eventId;
+        final conflicts = await _repository.checkConflicts(
+          event.assignment,
+          skipAvailability: unchanged,
+        );
 
         if (conflicts.isNotEmpty) {
           _emitOrLog(
