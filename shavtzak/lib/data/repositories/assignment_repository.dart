@@ -109,8 +109,20 @@ class AssignmentRepository {
   }
 
   /// Update an existing assignment
+  ///
+  /// An update that keeps the stored member and event is not a new decision
+  /// about who may be placed where, so it is never re-refused on availability
+  /// (the rule may have grown stricter since the row was made, and editing
+  /// only its notes or label must not be blocked by that). The backend's
+  /// `assignment.update` applies the same rule. Qualification and the other
+  /// checks still run.
   Future<void> updateAssignment(Assignment assignment) async {
-    final conflicts = await checkConflicts(assignment);
+    final stored = await _database.getAssignmentById(assignment.id);
+    final unchanged = stored != null &&
+        stored.teamMemberId == assignment.teamMemberId &&
+        stored.eventId == assignment.eventId;
+    final conflicts =
+        await checkConflicts(assignment, skipAvailability: unchanged);
 
     if (conflicts.isNotEmpty) {
       throw AssignmentConflictException(
@@ -186,7 +198,13 @@ class AssignmentRepository {
 
   /// Check for conflicts in an assignment
   /// Returns list of conflict messages
-  Future<List<String>> checkConflicts(Assignment assignment) async {
+  ///
+  /// With [skipAvailability] only the availability message is skipped; "not
+  /// found", qualification, active and duplicate checks still run.
+  Future<List<String>> checkConflicts(
+    Assignment assignment, {
+    bool skipAvailability = false,
+  }) async {
     final conflicts = <String>[];
 
     // Get full assignment data with relations
@@ -205,7 +223,8 @@ class AssignmentRepository {
 
     // Check availability conflict for entire event duration (with time-based detection)
     // Skip for members with allowMultipleAssignments
-    if (!member.allowMultipleAssignments &&
+    if (!skipAvailability &&
+        !member.allowMultipleAssignments &&
         !member.isAvailableForEventWithTime(event)) {
       final dateRange = _isSameDay(event.startDate, event.endDate)
           ? _formatDate(event.startDate)

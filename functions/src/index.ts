@@ -3405,6 +3405,29 @@ function memberAvailableForEvent(
   return true;
 }
 
+// Whether assignment.update must run the availability check. An update that
+// keeps the stored member and event is not a new decision about who may be
+// placed where, so it is never re-refused: the conflict rule may have grown
+// stricter since the assignment was made, and editing only its notes or label
+// must not be blocked by that. Pure so it can be tested directly -- see
+// assignment_availability_gate.test.ts.
+export function shouldCheckAvailability(args: {
+  bypassRequested: boolean;
+  stored: {teamMemberId?: unknown; eventId?: unknown} | null;
+  next: {teamMemberId: string; eventId: string};
+}): boolean {
+  if (args.bypassRequested) return false;
+  const {stored, next} = args;
+  if (
+    stored != null &&
+    stored.teamMemberId === next.teamMemberId &&
+    stored.eventId === next.eventId
+  ) {
+    return false;
+  }
+  return true;
+}
+
 async function validateAssignmentPayload(
   firestore: Firestore,
   collections: Collections,
@@ -4484,8 +4507,20 @@ async function executeMutation(
       const assignment = payload['assignment'] as Record<string, unknown>;
       const assignmentId = requireString(assignment['id'], 'assignment.id');
       const assignmentRef = db.collection(collections.assignments).doc(assignmentId);
+      // Read the stored assignment first: an update that keeps its member and
+      // event is never re-refused on availability. A missing doc is still
+      // refused (404) inside the transaction below.
+      const storedSnap = await assignmentRef.get();
+      const checkAvailability = shouldCheckAvailability({
+        bypassRequested: payload['bypassAvailability'] === true,
+        stored: storedSnap.exists ? (storedSnap.data() ?? null) : null,
+        next: {
+          teamMemberId: requireString(assignment['teamMemberId'], 'assignment.teamMemberId'),
+          eventId: requireString(assignment['eventId'], 'assignment.eventId'),
+        },
+      });
       await validateAssignmentPayload(db, collections, assignment, assignmentId, {
-        bypassAvailability: payload['bypassAvailability'] === true,
+        bypassAvailability: !checkAvailability,
       });
       const nextAssignment = assignmentDocFromJson(assignment);
       let existing: Record<string, unknown> = {};
@@ -4782,7 +4817,9 @@ async function executeMutation(
       for (const rawAssignment of assignments) {
         const assignment = rawAssignment as Record<string, unknown>;
         const assignmentId = requireString(assignment['id'], 'assignment.id');
-        await validateAssignmentPayload(db, collections, assignment);
+        await validateAssignmentPayload(db, collections, assignment, undefined, {
+          bypassAvailability: payload['bypassAvailability'] === true,
+        });
         const data = assignmentDocFromJson(assignment);
         preparedAssignments.push({
           assignmentId,
