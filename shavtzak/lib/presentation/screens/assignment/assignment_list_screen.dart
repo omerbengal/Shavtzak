@@ -2819,8 +2819,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       ...slot.availableMembers,
     ];
 
-    // Determine if dropdown should be enabled
-    // Enable if: there are available members, OR there's a current assignment, OR there are already assigned members
+    // Whether anyone can be picked straight from the list. This only colours
+    // the field (grey = no one available); it must NOT disable it. The menu's
+    // two fixed actions, "שובצו כבר" and "בעלי מגבלות / לא זמינים", are always
+    // valid and are the way to assign a blocked member anyway ("שבץ בכל זאת")
+    // — exactly when every capable member is blocked. Their dialogs say so
+    // when there is nobody to list.
     final bool hasOptions = slot.availableMembers.isNotEmpty ||
         currentMember != null ||
         slot.alreadyAssignedMembers.isNotEmpty;
@@ -2834,7 +2838,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           selected: currentMember,
           members: members,
           dense: dense,
-          enabled: hasOptions,
+          enabled: true,
           backgroundColor: hasOptions
               ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
               : Colors.grey.shade200,
