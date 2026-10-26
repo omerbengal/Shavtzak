@@ -17,7 +17,14 @@ class AssignmentSlot extends Equatable {
   final bool hasDoubleAssignment; // Person assigned to multiple roles in same event
   final List<String> otherRoles; // Other roles this person has in the same event
   final List<TeamMember> sameDayAssignedMembers; // Members assigned to OTHER events on same day(s)
-  final Map<String, List<String>> sameDayEventInfo; // memberId -> other event names
+
+  /// memberId -> names of the OTHER events sharing a day that the member is
+  /// assigned to, for every member who can do this role and is not in the
+  /// multiple-assignments pool — available or not. Wider than
+  /// [sameDayAssignedMembers] (available members only, which decides who is
+  /// offered), so the "בעלי מגבלות / לא זמינים" list can show a blocked
+  /// member's same-day booking next to their constraint.
+  final Map<String, List<String>> sameDayEventInfo;
 
   /// Other events sharing a calendar day that the slot's ASSIGNED member is
   /// also assigned to. Empty when the slot is unfilled or the member is not

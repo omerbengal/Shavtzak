@@ -813,16 +813,18 @@ class EventSummaryTile extends StatelessWidget {
         final member = membersById[assignment.teamMemberId];
         if (member == null) continue;
 
-        // Same logic as /admin/assignments:
-        // include only members who can do the role, do not allow multiple assignments,
-        // and are available for this event.
+        // Same logic as /admin/assignments: only members who can do the role
+        // and do not allow multiple assignments. The names go to every such
+        // member, available or not, so the constrained list can show a
+        // blocked member's same-day booking next to their constraint. Only
+        // an available member becomes a same-day candidate, and that map
+        // alone decides the categories below.
         if (member.canPerformRole(roleKey) &&
             !member.allowMultipleAssignments) {
-          final isAvailable = member.isAvailableForEventWithTime(event);
-          if (isAvailable) {
+          sameDayEventInfoMap.putIfAbsent(member.id, () => []);
+          sameDayEventInfoMap[member.id]!.add(otherEvent.name);
+          if (member.isAvailableForEventWithTime(event)) {
             sameDayAssignedMembersMap[member.id] = member;
-            sameDayEventInfoMap.putIfAbsent(member.id, () => []);
-            sameDayEventInfoMap[member.id]!.add(otherEvent.name);
           }
         }
       }
@@ -1488,6 +1490,9 @@ class _CategorizedMembers {
   final List<TeamMember> available;
   final List<TeamMember> alreadyAssigned;
   final List<TeamMember> sameDayAssigned;
+
+  /// memberId -> other same-day event names, for every capable non-pool
+  /// member, available or not (wider than [sameDayAssigned]).
   final Map<String, List<String>> sameDayEventInfo;
 
   _CategorizedMembers({

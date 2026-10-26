@@ -367,6 +367,8 @@ class TeamMember extends Equatable {
 
   /// Check if team member is available on a given date
   /// Logic depends on member type and constraint type
+  /// Date-only: never use it to decide an event conflict; use
+  /// [isAvailableForEventWithTime].
   bool isAvailableOn(DateTime date) {
     if (!isActive || isArchived) return false;
 
@@ -392,6 +394,8 @@ class TeamMember extends Equatable {
   }
 
   /// Check if team member is qualified and available for a role on a date
+  /// Date-only: never use it to decide an event conflict; use
+  /// [isAvailableForEventWithTime].
   bool isQualifiedAndAvailableFor(String roleKey, DateTime date) {
     return canPerformRole(roleKey) && isAvailableOn(date);
   }

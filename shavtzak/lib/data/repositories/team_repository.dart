@@ -89,12 +89,16 @@ class TeamRepository {
   }
 
   /// Get team members available on a specific date
+  /// Date-only: never use it to decide an event conflict; use
+  /// [TeamMember.isAvailableForEventWithTime].
   Future<List<TeamMember>> getAvailableTeamMembers(DateTime date) async {
     final all = await getActiveTeamMembers();
     return all.where((member) => member.isAvailableOn(date)).toList();
   }
 
   /// Get team members qualified and available for a role on a date
+  /// Date-only: never use it to decide an event conflict; use
+  /// [TeamMember.isAvailableForEventWithTime].
   Future<List<TeamMember>> getQualifiedAvailableMembers(
     String roleKey,
     DateTime date,

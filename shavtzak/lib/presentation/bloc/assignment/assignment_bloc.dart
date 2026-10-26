@@ -3606,12 +3606,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Only add if member has the capability for current role and doesn't allow multiple assignments
               if (member.canPerformRole(role.key) &&
                   !member.allowMultipleAssignments) {
-                // Check availability (same logic as normal available members)
-                final isAvailable = member.isAvailableForEventWithTime(event);
-                if (isAvailable) {
+                // The names go to every such member, available or not, so the
+                // constrained list can show a blocked member's same-day
+                // booking next to their constraint. Only an available member
+                // becomes a same-day candidate, and that map alone decides
+                // the partitioning below.
+                sameDayEventInfoMap.putIfAbsent(memberId, () => []);
+                sameDayEventInfoMap[memberId]!.add(otherEvent.name);
+                if (member.isAvailableForEventWithTime(event)) {
                   sameDayAssignedMembersMap[memberId] = member;
-                  sameDayEventInfoMap.putIfAbsent(memberId, () => []);
-                  sameDayEventInfoMap[memberId]!.add(otherEvent.name);
                 }
               }
             }
@@ -4067,13 +4070,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 // Only add if member has the capability for current role and doesn't allow multiple assignments
                 if (member.canPerformRole(role.key) &&
                     !member.allowMultipleAssignments) {
-                  // Check availability (same logic as normal available members)
-                  final isAvailable =
-                      member.isAvailableForEventWithTime(eventData);
-                  if (isAvailable) {
+                  // Names for every such member, available or not (the
+                  // constrained list shows them next to a constraint); only
+                  // an available member becomes a same-day candidate, and
+                  // that map alone decides the partitioning below.
+                  sameDayEventInfoMap.putIfAbsent(memberId, () => []);
+                  sameDayEventInfoMap[memberId]!.add(otherEvent.name);
+                  if (member.isAvailableForEventWithTime(eventData)) {
                     sameDayAssignedMembersMap[memberId] = member;
-                    sameDayEventInfoMap.putIfAbsent(memberId, () => []);
-                    sameDayEventInfoMap[memberId]!.add(otherEvent.name);
                   }
                 }
               }
