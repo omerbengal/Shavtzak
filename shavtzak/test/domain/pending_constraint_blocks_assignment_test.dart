@@ -25,10 +25,8 @@ void main() {
         expect(member.isAvailableForEventWithTime(event), !blocks);
       });
 
-      test('isAvailableOn / isAvailableForDateRange (event duplication) is '
-          '${!blocks}', () {
+      test('isAvailableOn is ${!blocks}', () {
         expect(member.isAvailableOn(day), !blocks);
-        expect(member.isAvailableForDateRange(day, day), !blocks);
       });
 
       test('constraintsBlockingEvent ${blocks ? 'names' : 'omits'} it', () {

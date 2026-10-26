@@ -680,12 +680,20 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
-  Future<void> insertAssignmentsBatch(List<Assignment> assignments) =>
+  Future<void> insertAssignmentsBatch(
+    List<Assignment> assignments, {
+    bool bypassAvailability = false,
+  }) =>
       _runFuture(
         op: 'insertAssignmentsBatch',
-        ctx: {'collection': 'assignments', 'count': assignments.length},
+        ctx: {
+          'collection': 'assignments',
+          'count': assignments.length,
+          'bypassAvailability': bypassAvailability,
+        },
         countOf: (_) => null,
-        action: () => _inner.insertAssignmentsBatch(assignments),
+        action: () => _inner.insertAssignmentsBatch(assignments,
+            bypassAvailability: bypassAvailability),
       );
 
   @override

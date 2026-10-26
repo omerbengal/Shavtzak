@@ -338,8 +338,12 @@ class EventRepository {
             ))
         .toList();
 
-    // Insert all new assignments in batch
-    await _database.insertAssignmentsBatch(newAssignments);
+    // Insert all new assignments in batch. The admin reviewed the duplication
+    // dialog's list, so the backend must not overrule the members they kept.
+    await _database.insertAssignmentsBatch(
+      newAssignments,
+      bypassAvailability: true,
+    );
 
   }
 
@@ -378,8 +382,12 @@ class EventRepository {
       );
     }).toList();
 
-    // Insert all new assignments in batch
-    await _database.insertAssignmentsBatch(newAssignments);
+    // Insert all new assignments in batch. The admin reviewed the duplication
+    // dialog's list, so the backend must not overrule the members they kept.
+    await _database.insertAssignmentsBatch(
+      newAssignments,
+      bypassAvailability: true,
+    );
 
     // Return map of original assignment IDs to new assignments
     final idMap = <String, Assignment>{};

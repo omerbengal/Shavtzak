@@ -1663,11 +1663,15 @@ class MockDatabaseInterface extends _i1.Mock implements _i7.DatabaseInterface {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<void> insertAssignmentsBatch(List<_i11.Assignment>? assignments) =>
+  _i5.Future<void> insertAssignmentsBatch(
+    List<_i11.Assignment>? assignments, {
+    bool? bypassAvailability = false,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
           #insertAssignmentsBatch,
           [assignments],
+          {#bypassAvailability: bypassAvailability},
         ),
         returnValue: _i5.Future<void>.value(),
         returnValueForMissingStub: _i5.Future<void>.value(),

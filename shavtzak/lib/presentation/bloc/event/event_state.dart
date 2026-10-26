@@ -204,9 +204,10 @@ class DuplicationRequiresConflictResolution extends EventState {
   List<AssignmentDuplicationInfo> get availabilityConflicts =>
       assignmentInfos.where((a) => a.hasAvailabilityConflict).toList();
 
-  /// Get suggested exclusions (all availability-conflicted assignments)
+  /// Get suggested exclusions (all availability-conflicted assignments, and
+  /// every one the backend would refuse even with the bypass)
   Set<String> get suggestedExclusions => assignmentInfos
-      .where((a) => a.hasAvailabilityConflict)
+      .where((a) => a.hasAvailabilityConflict || !a.canKeep)
       .map((a) => a.assignment.id)
       .toSet();
 
@@ -223,11 +224,17 @@ class AssignmentDuplicationInfo extends Equatable {
   final bool
       isInOverQuotaRole; // True if this role has more assignments than new quota
 
+  /// False when the backend would refuse this member even with the bypass
+  /// (member gone, inactive, or no longer able to do the role): the dialog
+  /// locks the row to removal.
+  final bool canKeep;
+
   const AssignmentDuplicationInfo({
     required this.assignment,
     required this.hasAvailabilityConflict,
     this.availabilityReason,
     required this.isInOverQuotaRole,
+    this.canKeep = true,
   });
 
   /// True if this assignment has any type of conflict
@@ -238,6 +245,7 @@ class AssignmentDuplicationInfo extends Equatable {
         assignment,
         hasAvailabilityConflict,
         availabilityReason,
-        isInOverQuotaRole
+        isInOverQuotaRole,
+        canKeep,
       ];
 }

@@ -244,8 +244,14 @@ abstract class DatabaseInterface {
   /// Insert multiple events at once (for data import)
   Future<void> insertEventsBatch(List<Event> events);
 
-  /// Insert multiple assignments at once (for data import)
-  Future<void> insertAssignmentsBatch(List<Assignment> assignments);
+  /// Insert multiple assignments at once (for data import and event
+  /// duplication). With [bypassAvailability] the backend skips only its
+  /// availability check, for a batch the admin already reviewed; it still
+  /// refuses a missing, inactive or archived member and one without the role.
+  Future<void> insertAssignmentsBatch(
+    List<Assignment> assignments, {
+    bool bypassAvailability = false,
+  });
 
   /// Atomically create + update + delete assignments in one server-side batch.
   /// [eventQuotaBumps] optionally raises event role quotas in the SAME batch

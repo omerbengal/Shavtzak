@@ -1265,12 +1265,16 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
-  Future<void> insertAssignmentsBatch(List<Assignment> assignments) async {
+  Future<void> insertAssignmentsBatch(
+    List<Assignment> assignments, {
+    bool bypassAvailability = false,
+  }) async {
     try {
       await _invokeMutation(
         'assignment.insertBatch',
         payload: {
           'assignments': assignments.map(_assignmentEntityToMap).toList(),
+          if (bypassAvailability) 'bypassAvailability': true,
         },
       );
     } catch (e) {

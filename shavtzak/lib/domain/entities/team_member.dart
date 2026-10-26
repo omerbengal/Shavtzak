@@ -386,29 +386,6 @@ class TeamMember extends Equatable {
     return isPermanent; // Permanent: available by default, Non-permanent: unavailable unless specified
   }
 
-  /// Check if team member is available for ALL dates in a range
-  /// Returns true if available on every day from startDate to endDate (inclusive)
-  bool isAvailableForDateRange(DateTime startDate, DateTime? endDate) {
-    if (!isActive || isArchived) return false;
-
-    // Normalize dates to remove time component
-    final start = DateTime(startDate.year, startDate.month, startDate.day);
-    final end = endDate != null
-        ? DateTime(endDate.year, endDate.month, endDate.day)
-        : start;
-
-    // Check each day in the range
-    DateTime currentDate = start;
-    while (!currentDate.isAfter(end)) {
-      if (!isAvailableOn(currentDate)) {
-        return false; // Not available on this day
-      }
-      currentDate = currentDate.add(const Duration(days: 1));
-    }
-
-    return true; // Available on all days
-  }
-
   /// Check if team member can perform a given role
   bool canPerformRole(String roleKey) {
     return roleCapabilities[roleKey] == true;
