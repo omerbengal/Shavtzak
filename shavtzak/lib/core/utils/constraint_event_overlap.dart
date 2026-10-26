@@ -16,19 +16,6 @@ class EventOverlapInfo {
 
 DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
 
-/// Whether [event] gives too few hours for the stretch to be exact, so that
-/// [eventStretch] had to fall back to a day edge: no assembly and no show
-/// start (the stretch begins at 00:00), or no team end and no show end (it
-/// ends at 24:00). "Missing" is decided with the stretch's own strict parser,
-/// so a time it cannot read ('24:00', a stray space) counts as missing.
-bool _eventStretchFellBack(Event event) {
-  final hasStart = wallTimeMinutes(event.assemblyTime) != null ||
-      wallTimeMinutes(event.startTime) != null;
-  final hasEnd = wallTimeMinutes(event.teamEndTime) != null ||
-      wallTimeMinutes(event.endTime) != null;
-  return !hasStart || !hasEnd;
-}
-
 /// Whether [constraint] touches any minute of [event], judged exactly as the
 /// assignment check judges it ([eventStretch], [constraintOverlapsStretch]):
 /// the event is one continuous stretch, nights included, and every occurrence
@@ -56,7 +43,7 @@ List<EventOverlapInfo> getConstraintEventOverlaps({
     }
 
     final eventHasMissingTime =
-        hasConstraintTime && _eventStretchFellBack(event);
+        hasConstraintTime && eventStretchFellBack(event);
 
     overlaps.add(
       EventOverlapInfo(

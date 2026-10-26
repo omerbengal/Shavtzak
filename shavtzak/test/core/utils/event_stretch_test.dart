@@ -196,6 +196,49 @@ void main() {
     });
   });
 
+  group('eventStretchFellBack', () {
+    final day = DateTime(2026, 10, 27);
+
+    test('false when the stretch has a real start and a real end', () {
+      for (final event in [
+        _event(day, day, assemblyTime: '17:00', teamEndTime: '22:00'),
+        _event(day, day, startTime: '19:00', endTime: '20:30'),
+        // E4: team end filled, show end empty.
+        _event(day, day, startTime: '19:00', teamEndTime: '22:00'),
+        _event(day, day, assemblyTime: '17:00', endTime: '20:30'),
+      ]) {
+        expect(eventStretchFellBack(event), isFalse,
+            reason: '${event.assemblyTime}/${event.startTime}/'
+                '${event.endTime}/${event.teamEndTime}');
+      }
+    });
+
+    test('true with no assembly and no show start (starts at 00:00)', () {
+      expect(
+          eventStretchFellBack(
+              _event(day, day, endTime: '20:30', teamEndTime: '22:00')),
+          isTrue);
+    });
+
+    test('true with no team end and no show end (ends at 24:00)', () {
+      expect(
+          eventStretchFellBack(
+              _event(day, day, assemblyTime: '17:00', startTime: '19:00')),
+          isTrue);
+    });
+
+    test('a time the strict parser cannot read counts as missing', () {
+      expect(
+          eventStretchFellBack(
+              _event(day, day, startTime: '19:00', endTime: '24:00')),
+          isTrue);
+      expect(
+          eventStretchFellBack(
+              _event(day, day, startTime: '19:00 ', endTime: '20:30')),
+          isTrue);
+    });
+  });
+
   group('formatWallMoment', () {
     test("writes 'yyyy-MM-ddTHH:mm' from the wall-clock fields", () {
       expect(

@@ -88,6 +88,23 @@ WallInterval eventStretch(Event event) {
   return WallInterval(start, end);
 }
 
+/// Whether [event] gives too few hours for [eventStretch] to be exact, so that
+/// it had to fall back to a day edge: no assembly and no show start (the
+/// stretch begins at 00:00), or no team end and no show end (it ends at
+/// 24:00). Read with [wallTimeMinutes], so a time it cannot read ('24:00', a
+/// stray space) counts as missing.
+///
+/// The one test behind both the 'missing_event_time' warning
+/// (`getConstraintEventOverlaps`) and the "שעת האירוע לא מוגדרת" label of
+/// the constraint warning dialog.
+bool eventStretchFellBack(Event event) {
+  final hasStart = wallTimeMinutes(event.assemblyTime) != null ||
+      wallTimeMinutes(event.startTime) != null;
+  final hasEnd = wallTimeMinutes(event.teamEndTime) != null ||
+      wallTimeMinutes(event.endTime) != null;
+  return !hasStart || !hasEnd;
+}
+
 /// From [startTime] on [firstDay] to [endTime] on [lastDay]; a missing start
 /// is 00:00 and a missing end is 24:00. An end not after its start rolls to
 /// the next day.

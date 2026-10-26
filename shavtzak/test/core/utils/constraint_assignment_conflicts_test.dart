@@ -394,7 +394,8 @@ void main() {
       expect(result.map((a) => a.id), ['third-tuesday']);
     });
 
-    test('reports the night of a multi-day event that a late constraint hits '
+    test(
+        'reports the night of a multi-day event that a late constraint hits '
         '(E3)', () {
       final result = findNewlyConflictingAssignments(
         originalConstraints: const [],

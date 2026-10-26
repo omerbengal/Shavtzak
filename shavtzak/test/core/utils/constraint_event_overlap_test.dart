@@ -267,11 +267,20 @@ void main() {
         repeatEndDate: DateTime(2026, 12, 29),
       );
       final thirdTuesday = _event(DateTime(2026, 10, 20),
-          id: 'third', assemblyTime: '17:00', startTime: '19:00', endTime: '21:00');
+          id: 'third',
+          assemblyTime: '17:00',
+          startTime: '19:00',
+          endTime: '21:00');
       final wednesday = _event(DateTime(2026, 10, 21),
-          id: 'wed', assemblyTime: '17:00', startTime: '19:00', endTime: '21:00');
+          id: 'wed',
+          assemblyTime: '17:00',
+          startTime: '19:00',
+          endTime: '21:00');
       final firstTuesday = _event(DateTime(2026, 10, 6),
-          id: 'first', assemblyTime: '17:00', startTime: '19:00', endTime: '21:00');
+          id: 'first',
+          assemblyTime: '17:00',
+          startTime: '19:00',
+          endTime: '21:00');
 
       final overlaps = getConstraintEventOverlaps(
         constraint: weekly,
