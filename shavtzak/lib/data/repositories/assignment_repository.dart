@@ -231,8 +231,12 @@ class AssignmentRepository {
           : '${_formatDate(event.startDate)} - ${_formatDate(event.endDate)}';
 
       if (member.isPermanent) {
-        conflicts.add(
-            '${member.name} לא זמין/ה בתאריכים $dateRange (יש הגבלה מאושרת)');
+        final blockers = member.constraintsBlockingEvent(event);
+        final onlyPending = blockers.isNotEmpty &&
+            blockers.every((constraint) => constraint.isPending());
+        final reason =
+            onlyPending ? 'יש הגבלה הממתינה לאישור' : 'יש הגבלה מאושרת';
+        conflicts.add('${member.name} לא זמין/ה בתאריכים $dateRange ($reason)');
       } else {
         conflicts.add(
             '${member.name} לא ציין/ה זמינות בתאריכים $dateRange (יש להוסיף זמינות)');

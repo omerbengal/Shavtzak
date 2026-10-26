@@ -7,7 +7,6 @@ import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/role.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/role_types.dart';
-import '../../../core/constants/constraint_status.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../../core/utils/same_day_assignments.dart';
 import '../../../data/repositories/assignment_repository.dart';
@@ -759,34 +758,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     // Members with allowMultipleAssignments bypass constraint checks
     if (teamMember.allowMultipleAssignments) return false;
 
-    return teamMember.constraints.any((constraint) {
-      // Only consider APPROVED constraints for conflicts
-      if (constraint.status != ConstraintStatus.approved) return false;
-
-      // For permanent members, check for unavailability constraints
-      // For non-permanent members, check if they DON'T have availability
-      if (teamMember.isPermanent) {
-        // Permanent members: unavailability constraints cause conflicts
-        if (constraint.constraintType != ConstraintType.unavailability) return false;
-      } else {
-        // Non-permanent members: lack of availability causes conflicts
-        // But we don't show this as a constraint warning - they just can't be selected
-        return false;
-      }
-
-      // Check if constraint overlaps with event dates
-      final constraintStart = constraint.startDate;
-      final constraintEnd = constraint.endDate ?? constraint.startDate;
-      final dateOverlap = !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
-               constraintStart.isAfter(_selectedEvent!.endDate));
-
-      if (!dateOverlap) return false;
-
-      // If dates overlap, check if constraint blocks the event
-      // If constraint has no time specified, it blocks (applies to entire day)
-      // If constraint has time, check if it blocks event time
-      return constraint.blocksEventAssignment(_selectedEvent!);
-    });
+    // Approved or pending unavailability of a permanent member. A
+    // non-permanent member's missing availability is reported separately.
+    return teamMember.constraintsBlockingEvent(_selectedEvent!).isNotEmpty;
   }
 
   /// Check if member has availability for the selected event
@@ -876,30 +850,21 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
       warningMessage = 'ל${teamMember.name} אין זמינות לאירוע "${_selectedEvent!.name}".\n\nחברי צוות לא-קבועים צריכים לציין זמינות מראש.';
     } else {
       // Date constraint conflict for permanent member
-      final conflictingConstraints = teamMember.constraints.where((constraint) {
-        // Only show approved unavailability constraints for permanent members
-        if (constraint.status != ConstraintStatus.approved) return false;
-        if (teamMember.isPermanent && constraint.constraintType != ConstraintType.unavailability) return false;
-        if (!teamMember.isPermanent) return false; // Don't show for non-permanent members
+      // Approved and pending unavailability both block; each is labelled.
+      final conflictingConstraints =
+          teamMember.constraintsBlockingEvent(_selectedEvent!);
 
-        final constraintStart = constraint.startDate;
-        final constraintEnd = constraint.endDate ?? constraint.startDate;
-        final dateOverlap = !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
-                 constraintStart.isAfter(_selectedEvent!.endDate));
-
-        if (!dateOverlap) return false;
-
-        // Check if this constraint blocks the event
-        return constraint.blocksEventAssignment(_selectedEvent!);
-      }).toList();
-
-      warningMessage = 'ל${teamMember.name} יש הגבלות אישורות החופפות לאירוע "${_selectedEvent!.name}":';
+      warningMessage = 'ל${teamMember.name} יש הגבלות החופפות לאירוע "${_selectedEvent!.name}":';
       constraintDetails = conflictingConstraints.map((constraint) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.block, size: 16, color: Colors.red),
+            Icon(
+              constraint.isPending() ? Icons.hourglass_top : Icons.block,
+              size: 16,
+              color: constraint.isPending() ? Colors.orange.shade700 : Colors.red,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -910,6 +875,16 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                         ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
                         : _formatDate(constraint.startDate),
                     style: const TextStyle(fontSize: 14),
+                  ),
+                  Text(
+                    constraint.isPending() ? 'ממתינה לאישור' : 'מאושרת',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: constraint.isPending()
+                          ? Colors.orange.shade800
+                          : Colors.red.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   // Show time range if specified
                   if (constraint.startTime != null && constraint.endTime != null)

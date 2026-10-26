@@ -3369,7 +3369,9 @@ function memberAvailableForEvent(
   if (isPermanent) {
     for (let day = normalizeDayInIsrael(eventStart); day <= normalizeDayInIsrael(eventEnd); day = addDays(day, 1)) {
       for (const constraint of constraints) {
-        if (constraint['status'] !== 'approved') continue;
+        // Approved or still-pending unavailability blocks; only a rejected
+        // request stops blocking. Mirrors DateConstraint.blocksAssignments.
+        if (constraint['status'] !== 'approved' && constraint['status'] !== 'pending') continue;
         if (constraint['constraintType'] !== 'unavailability') continue;
         if (!constraintMatchesDate(constraint, day)) continue;
         if (constraintBlocksEvent(constraint, eventData, day)) {
