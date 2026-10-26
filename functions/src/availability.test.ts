@@ -357,3 +357,74 @@ test('memberAvailableForEvent: a rejected unavailability does not block', () => 
     assert.equal(memberAvailableForEvent(member, buildEvent()), true);
   });
 });
+
+// The event is one continuous stretch (event_stretch.ts); the shared case
+// table (event_conflict_cases.test.ts) holds the rule's cases. These guard
+// stored data the table can't express.
+
+test('memberAvailableForEvent: malformed event times fall back instead of throwing', () => {
+  withUtcTimezone(() => {
+    // Assembly with a stray space and a numeric show end both count as
+    // missing: the stretch runs from the show start (17:00) to 24:00, so a
+    // 22:00-23:00 constraint blocks. Before, a bad end time threw (E4).
+    const member = buildMember({
+      constraints: [
+        {
+          id: 'late',
+          startDate: '2026-06-08T00:00:00.000',
+          endDate: null,
+          status: 'approved',
+          constraintType: 'unavailability',
+          startTime: '22:00',
+          endTime: '23:00',
+        },
+      ],
+    });
+    const event = buildEvent({assemblyTime: '16:00 ', endTime: 2030, teamEndTime: null});
+    assert.equal(memberAvailableForEvent(member, event), false);
+  });
+});
+
+test('memberAvailableForEvent: a repeat type the backend does not know matches nothing', () => {
+  withUtcTimezone(() => {
+    const member = buildMember({
+      constraints: [
+        {
+          id: 'yearly',
+          startDate: '2026-01-08T00:00:00.000',
+          repeatType: 'yearly',
+          repeatDay: 8,
+          repeatEndDate: '2027-01-01T00:00:00.000',
+          status: 'approved',
+          constraintType: 'unavailability',
+          startTime: null,
+          endTime: null,
+        },
+      ],
+    });
+    assert.equal(memberAvailableForEvent(member, buildEvent()), true);
+  });
+});
+
+test('memberAvailableForEvent: legacy timed availability on an event with no end time does not throw', () => {
+  withUtcTimezone(() => {
+    // E4 on the non-permanent path: no show end and no team end used to be a
+    // 500. The event now runs from assembly (16:00) to 24:00; the legacy path
+    // counts any overlap with an availability window as available.
+    const member = buildMember({
+      isPermanent: false,
+      constraints: [
+        {
+          id: 'avail-evening',
+          startDate: '2026-06-08T00:00:00.000',
+          endDate: '2026-06-08T00:00:00.000',
+          status: 'approved',
+          constraintType: 'availability',
+          startTime: '18:00',
+          endTime: '23:00',
+        },
+      ],
+    });
+    assert.equal(memberAvailableForEvent(member, buildEvent({endTime: '', teamEndTime: ''})), true);
+  });
+});

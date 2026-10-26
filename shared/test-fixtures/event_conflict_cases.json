@@ -1,0 +1,597 @@
+{
+  "about": "Shared conflict-check cases, run unchanged by shavtzak/test (Dart) and functions/src/event_conflict_cases.test.ts. Dates are Israel calendar days (yyyy-MM-dd); times are HH:mm on the Israel wall clock; a missing event time is \"\". The event id is always \"evt\". expectedStretch is the event's stretch as yyyy-MM-ddTHH:mm on the Israel wall clock, end exclusive.",
+  "cases": [
+    {
+      "id": "A1",
+      "label": "one day: constraint before assembly",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "14:00", "endTime": "16:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-12-01T17:00", "end": "2026-12-01T22:00"}
+    },
+    {
+      "id": "A2",
+      "label": "one day: constraint ends exactly at assembly (touching)",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "15:00", "endTime": "17:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "A3",
+      "label": "one day: constraint across assembly",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "16:30", "endTime": "17:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "A4",
+      "label": "one day: constraint in the assembly-to-show gap (E5)",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "17:30", "endTime": "18:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "A5",
+      "label": "one day: constraint between show end and team end (E2)",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "21:00", "endTime": "22:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "A6",
+      "label": "one day: constraint starts exactly at team end (touching)",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "22:00", "endTime": "23:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "A7",
+      "label": "one day: whole-day constraint that day",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "A8",
+      "label": "one day: whole-day constraint the day after",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-02", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "A9",
+      "label": "one day: whole-day constraint the day before",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-11-30", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "B1",
+      "label": "past midnight: constraint 23:00-23:59 the event day (E1)",
+      "event": {"startDate": "2026-12-07", "endDate": "2026-12-07", "assemblyTime": "18:30", "startTime": "19:30", "endTime": "23:30", "teamEndTime": "00:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-07", "endDate": null, "startTime": "23:00", "endTime": "23:59", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-07T18:30", "end": "2026-12-08T00:30"}
+    },
+    {
+      "id": "B2",
+      "label": "past midnight: next morning 00:00-02:00 overlaps the rolled end",
+      "event": {"startDate": "2026-12-07", "endDate": "2026-12-07", "assemblyTime": "18:30", "startTime": "19:30", "endTime": "23:30", "teamEndTime": "00:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-08", "endDate": null, "startTime": "00:00", "endTime": "02:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "B3",
+      "label": "past midnight: next morning from the rolled end (touching)",
+      "event": {"startDate": "2026-12-07", "endDate": "2026-12-07", "assemblyTime": "18:30", "startTime": "19:30", "endTime": "23:30", "teamEndTime": "00:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-08", "endDate": null, "startTime": "00:30", "endTime": "02:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "B4",
+      "label": "past midnight: whole next day",
+      "event": {"startDate": "2026-12-07", "endDate": "2026-12-07", "assemblyTime": "18:30", "startTime": "19:30", "endTime": "23:30", "teamEndTime": "00:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-08", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "B5",
+      "label": "past midnight: multi-day constraint 23:00 -> 01:00",
+      "event": {"startDate": "2026-12-07", "endDate": "2026-12-07", "assemblyTime": "18:30", "startTime": "19:30", "endTime": "23:30", "teamEndTime": "00:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-07", "endDate": "2026-12-08", "startTime": "23:00", "endTime": "01:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "B6",
+      "label": "event ending exactly at 00:00: whole next day touches",
+      "event": {"startDate": "2026-12-09", "endDate": "2026-12-09", "assemblyTime": "18:30", "startTime": "", "endTime": "", "teamEndTime": "00:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-10", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-12-09T18:30", "end": "2026-12-10T00:00"}
+    },
+    {
+      "id": "B7",
+      "label": "event ending exactly at 00:00: constraint 23:00-23:59",
+      "event": {"startDate": "2026-12-09", "endDate": "2026-12-09", "assemblyTime": "18:30", "startTime": "", "endTime": "", "teamEndTime": "00:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-09", "endDate": null, "startTime": "23:00", "endTime": "23:59", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "C1",
+      "label": "team end before show end: team end wins",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "22:00", "teamEndTime": "21:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "21:30", "endTime": "23:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-12-01T17:00", "end": "2026-12-01T21:00"}
+    },
+    {
+      "id": "D1",
+      "label": "two days: the night between the days (E3)",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "18:00", "startTime": "19:00", "endTime": "22:00", "teamEndTime": "23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-28", "endDate": null, "startTime": "02:00", "endTime": "04:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-10-27T18:00", "end": "2026-10-28T23:00"}
+    },
+    {
+      "id": "D2",
+      "label": "two days: before assembly on the first day",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "18:00", "startTime": "19:00", "endTime": "22:00", "teamEndTime": "23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-27", "endDate": null, "startTime": "12:00", "endTime": "17:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "D3",
+      "label": "two days: from the end on the last day (touching)",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "18:00", "startTime": "19:00", "endTime": "22:00", "teamEndTime": "23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-28", "endDate": null, "startTime": "23:00", "endTime": "23:59", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "D4",
+      "label": "two days: whole day after the last day",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "18:00", "startTime": "19:00", "endTime": "22:00", "teamEndTime": "23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-29", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "D5",
+      "label": "three days: middle-day night",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-29", "assemblyTime": "08:00", "startTime": "", "endTime": "", "teamEndTime": "20:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-28", "endDate": null, "startTime": "03:00", "endTime": "04:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-10-27T08:00", "end": "2026-10-29T20:00"}
+    },
+    {
+      "id": "D6",
+      "label": "two days, end earlier in the day than assembly: no roll, later that day is free",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "14:00", "startTime": "", "endTime": "", "teamEndTime": "12:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-28", "endDate": null, "startTime": "13:00", "endTime": "15:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-10-27T14:00", "end": "2026-10-28T12:00"}
+    },
+    {
+      "id": "D7",
+      "label": "two days, end earlier in the day than assembly: across the end",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "14:00", "startTime": "", "endTime": "", "teamEndTime": "12:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-28", "endDate": null, "startTime": "11:00", "endTime": "12:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "D8",
+      "label": "three days ending 01:00 on the last day: middle-day evening",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-29", "assemblyTime": "18:00", "startTime": "", "endTime": "", "teamEndTime": "01:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-28", "endDate": null, "startTime": "20:00", "endTime": "22:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-10-27T18:00", "end": "2026-10-29T01:00"}
+    },
+    {
+      "id": "D9",
+      "label": "du yomi shape: the evening of the first day",
+      "event": {"startDate": "2026-10-29", "endDate": "2026-10-30", "assemblyTime": "08:30", "startTime": "10:00", "endTime": "11:30", "teamEndTime": "13:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-29", "endDate": null, "startTime": "20:00", "endTime": "22:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-10-29T08:30", "end": "2026-10-30T13:00"}
+    },
+    {
+      "id": "E-1",
+      "label": "constraint 23:00->01:00 vs event ending 22:00",
+      "event": {"startDate": "2026-12-14", "endDate": "2026-12-14", "assemblyTime": "18:00", "startTime": "", "endTime": "", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-14", "endDate": "2026-12-15", "startTime": "23:00", "endTime": "01:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-12-14T18:00", "end": "2026-12-14T22:00"}
+    },
+    {
+      "id": "E-2",
+      "label": "constraint 23:00->01:00 vs event ending 23:30",
+      "event": {"startDate": "2026-12-14", "endDate": "2026-12-14", "assemblyTime": "18:00", "startTime": "", "endTime": "", "teamEndTime": "23:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-14", "endDate": "2026-12-15", "startTime": "23:00", "endTime": "01:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-14T18:00", "end": "2026-12-14T23:30"}
+    },
+    {
+      "id": "E-3",
+      "label": "constraint 23:00->01:00 vs event starting 00:30 the second day",
+      "event": {"startDate": "2026-12-15", "endDate": "2026-12-15", "assemblyTime": "00:30", "startTime": "", "endTime": "", "teamEndTime": "03:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-14", "endDate": "2026-12-15", "startTime": "23:00", "endTime": "01:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-15T00:30", "end": "2026-12-15T03:00"}
+    },
+    {
+      "id": "F1a",
+      "label": "no assembly: starts at show start, constraint ends there (touching)",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "", "startTime": "19:00", "endTime": "21:00", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "18:00", "endTime": "19:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-12-03T19:00", "end": "2026-12-03T22:00"}
+    },
+    {
+      "id": "F1b",
+      "label": "no assembly: constraint across show start",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "", "startTime": "19:00", "endTime": "21:00", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "18:30", "endTime": "19:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "F2",
+      "label": "no assembly and no show start: starts at 00:00",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "", "startTime": "", "endTime": "21:00", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "08:00", "endTime": "09:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-03T00:00", "end": "2026-12-03T21:00"}
+    },
+    {
+      "id": "F3",
+      "label": "no team end: ends at show end",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "21:00", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "21:30", "endTime": "22:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-12-03T17:00", "end": "2026-12-03T21:00"}
+    },
+    {
+      "id": "F4a",
+      "label": "team end only (E4): after the team end",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "22:30", "endTime": "23:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true,
+      "expectedStretch": {"start": "2026-12-03T17:00", "end": "2026-12-03T22:00"}
+    },
+    {
+      "id": "F4b",
+      "label": "team end only (E4): before the team end",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "21:00", "endTime": "21:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "F5a",
+      "label": "no end at all: runs to 24:00",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "23:00", "endTime": "23:59", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-03T17:00", "end": "2026-12-04T00:00"}
+    },
+    {
+      "id": "F5b",
+      "label": "no end at all: whole next day touches",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-04", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "F6a",
+      "label": "no times at all: the whole day",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "", "startTime": "", "endTime": "", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "08:00", "endTime": "09:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-03T00:00", "end": "2026-12-04T00:00"}
+    },
+    {
+      "id": "F6b",
+      "label": "no times at all: whole next day touches",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "", "startTime": "", "endTime": "", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-04", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "F7",
+      "label": "malformed show end \"24:00\" counts as missing",
+      "event": {"startDate": "2026-12-03", "endDate": "2026-12-03", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "24:00", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-03", "endDate": null, "startTime": "23:00", "endTime": "23:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-03T17:00", "end": "2026-12-04T00:00"}
+    },
+    {
+      "id": "G1",
+      "label": "weekly Wednesday on the second day of a two-day event",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "18:00", "startTime": "", "endTime": "", "teamEndTime": "23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-01", "endDate": null, "startTime": "18:00", "endTime": "20:00", "status": "approved", "constraintType": "unavailability", "repeatType": "weekly", "repeatDay": 3, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-10-27T18:00", "end": "2026-10-28T23:00"}
+    },
+    {
+      "id": "G2",
+      "label": "weekly Tuesday on its third occurrence (E6)",
+      "event": {"startDate": "2026-10-20", "endDate": "2026-10-20", "assemblyTime": "17:00", "startTime": "", "endTime": "", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-06", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": "weekly", "repeatDay": 2, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "G3a",
+      "label": "daily 01:00-02:00 vs a past-midnight event ending 00:30",
+      "event": {"startDate": "2026-12-07", "endDate": "2026-12-07", "assemblyTime": "18:30", "startTime": "19:30", "endTime": "23:30", "teamEndTime": "00:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-01", "endDate": null, "startTime": "01:00", "endTime": "02:00", "status": "approved", "constraintType": "unavailability", "repeatType": "daily", "repeatDay": null, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "G3b",
+      "label": "daily 01:00-02:00 vs the night of a two-day event",
+      "event": {"startDate": "2026-10-27", "endDate": "2026-10-28", "assemblyTime": "18:00", "startTime": "19:00", "endTime": "22:00", "teamEndTime": "23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-01", "endDate": null, "startTime": "01:00", "endTime": "02:00", "status": "approved", "constraintType": "unavailability", "repeatType": "daily", "repeatDay": null, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "G4a",
+      "label": "monthly on the 15th, event on the 15th",
+      "event": {"startDate": "2026-11-15", "endDate": "2026-11-15", "assemblyTime": "10:00", "startTime": "", "endTime": "", "teamEndTime": "12:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-15", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": "monthly", "repeatDay": 15, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "G4b",
+      "label": "monthly on the 15th, event on the 16th",
+      "event": {"startDate": "2026-11-16", "endDate": "2026-11-16", "assemblyTime": "10:00", "startTime": "", "endTime": "", "teamEndTime": "12:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-15", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": "monthly", "repeatDay": 15, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "G5",
+      "label": "weekly whose repeatEndDate is before the event",
+      "event": {"startDate": "2026-10-20", "endDate": "2026-10-20", "assemblyTime": "17:00", "startTime": "", "endTime": "", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-06", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": "weekly", "repeatDay": 2, "repeatEndDate": "2026-10-13"}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "G6",
+      "label": "daily without hours",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-01", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": "daily", "repeatDay": null, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "G7",
+      "label": "recurring with a null repeatEndDate matches nothing",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-01", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": "daily", "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "H1",
+      "label": "pending unavailability blocks",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": null, "endTime": null, "status": "pending", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "H2",
+      "label": "rejected unavailability does not block",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": null, "endTime": null, "status": "rejected", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "H3",
+      "label": "availability-type constraint on a permanent member is ignored",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "availability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "I1",
+      "label": "non-permanent with the event in availableEventIds",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": false, "isActive": true, "isArchived": false, "availableEventIds": ["evt"], "constraints": []},
+      "expectedAvailable": true
+    },
+    {
+      "id": "I2",
+      "label": "non-permanent without the event in availableEventIds",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": false, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": []},
+      "expectedAvailable": false
+    },
+    {
+      "id": "I3",
+      "label": "non-permanent with a legacy approved availability that day",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": false, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "availability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "I4",
+      "label": "inactive member",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": false, "isArchived": false, "availableEventIds": [], "constraints": []},
+      "expectedAvailable": false
+    },
+    {
+      "id": "I5",
+      "label": "archived member",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": true, "availableEventIds": [], "constraints": []},
+      "expectedAvailable": false
+    },
+    {
+      "id": "J1a",
+      "label": "DST end night (2026-10-25): constraint across the rolled end",
+      "event": {"startDate": "2026-10-24", "endDate": "2026-10-24", "assemblyTime": "20:00", "startTime": "", "endTime": "", "teamEndTime": "02:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-25", "endDate": null, "startTime": "01:30", "endTime": "03:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-10-24T20:00", "end": "2026-10-25T02:00"}
+    },
+    {
+      "id": "J1b",
+      "label": "DST end night (2026-10-25): constraint from the rolled end (touching)",
+      "event": {"startDate": "2026-10-24", "endDate": "2026-10-24", "assemblyTime": "20:00", "startTime": "", "endTime": "", "teamEndTime": "02:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-10-25", "endDate": null, "startTime": "02:00", "endTime": "03:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "J2",
+      "label": "DST start night (2026-03-27): constraint across the rolled end",
+      "event": {"startDate": "2026-03-26", "endDate": "2026-03-26", "assemblyTime": "20:00", "startTime": "", "endTime": "", "teamEndTime": "02:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-03-27", "endDate": null, "startTime": "02:00", "endTime": "04:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-03-26T20:00", "end": "2026-03-27T02:30"}
+    },
+    {
+      "id": "J3a",
+      "label": "across a month end: morning of the last day",
+      "event": {"startDate": "2026-11-30", "endDate": "2026-12-01", "assemblyTime": "18:00", "startTime": "", "endTime": "", "teamEndTime": "10:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "09:00", "endTime": "11:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-11-30T18:00", "end": "2026-12-01T10:00"}
+    },
+    {
+      "id": "J3b",
+      "label": "across a month end: whole first day",
+      "event": {"startDate": "2026-11-30", "endDate": "2026-12-01", "assemblyTime": "18:00", "startTime": "", "endTime": "", "teamEndTime": "10:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-11-30", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "J4",
+      "label": "endDate before startDate (bad data): startDate is the last day",
+      "event": {"startDate": "2026-12-05", "endDate": "2026-12-04", "assemblyTime": "17:00", "startTime": "", "endTime": "", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-05", "endDate": null, "startTime": "18:00", "endTime": "19:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-05T17:00", "end": "2026-12-05T22:00"}
+    },
+    {
+      "id": "K1",
+      "label": "constraint with a start time only runs to 24:00",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "20:00", "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    }
+  ]
+}
