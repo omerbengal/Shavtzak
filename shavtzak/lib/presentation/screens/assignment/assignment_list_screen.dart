@@ -37,6 +37,7 @@ import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/assignment_label_chip.dart';
 import '../../widgets/name_search_field.dart';
+import '../../widgets/constrained_member_reasons.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -3268,33 +3269,24 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             slot.sameDayEventInfo[member.id] ?? [];
                         final isSameDayAssigned = sameDayEvents.isNotEmpty;
 
-                        // Determine the reason for unavailability/constraint
-                        String reason;
-                        if (isSameDayAssigned) {
-                          reason = 'משובצ/ת ב: ${sameDayEvents.join(", ")}';
-                        } else if (member.isPermanent) {
-                          reason = 'מגבלה מאושרת';
-                        } else {
-                          reason = 'לא ציין/ה זמינות';
-                        }
-
                         return ListTile(
                           leading: Icon(
-                            isSameDayAssigned
-                                ? Icons.event
-                                : member.isPermanent
-                                    ? Icons.event_busy
-                                    : Icons.schedule,
-                            color: Colors.red.shade400,
+                            constrainedMemberIcon(member, slot.event,
+                                sameDayAssigned: isSameDayAssigned),
+                            color: constrainedMemberIconColor(
+                                member, slot.event,
+                                sameDayAssigned: isSameDayAssigned),
                           ),
                           title: Align(
                             alignment: Alignment.centerRight,
                             child: _buildMemberNameWithPermanentShield(member),
                           ),
-                          subtitle: Text(
-                            reason,
-                            style: TextStyle(
-                                color: Colors.red.shade600, fontSize: 12),
+                          // One line per reason: approved and pending
+                          // constraints each get their own.
+                          subtitle: ConstrainedMemberReasons(
+                            member: member,
+                            event: slot.event,
+                            sameDayEvents: sameDayEvents,
                           ),
                           trailing: ElevatedButton(
                             onPressed: () {

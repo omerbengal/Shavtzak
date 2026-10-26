@@ -114,7 +114,7 @@ class DateConstraint extends Equatable {
       final endDateStr = repeatEndDate != null
           ? '${repeatEndDate!.day.toString().padLeft(2, '0')}/${repeatEndDate!.month.toString().padLeft(2, '0')}/${repeatEndDate!.year}'
           : '?';
-      final pattern = _repeatPatternDescription();
+      final pattern = repeatPatternDescription();
       if (startTime != null && endTime != null) {
         return '$pattern ($startTime-$endTime), עד $endDateStr';
       }
@@ -137,7 +137,9 @@ class DateConstraint extends Equatable {
     return dateStr;
   }
 
-  String _repeatPatternDescription() {
+  /// The recurrence in Hebrew ("כל יום", "כל יום שלישי", "כל 15 לחודש").
+  /// Only for a recurring constraint ([repeatType] set).
+  String repeatPatternDescription() {
     switch (repeatType!) {
       case RepeatType.daily:
         return 'כל יום';
