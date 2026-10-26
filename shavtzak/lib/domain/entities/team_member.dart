@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../core/constants/constraint_status.dart';
+import '../../core/utils/event_stretch.dart';
 import '../../core/utils/time_range_utils.dart';
 import 'vehicle_info.dart';
 import 'event.dart';
@@ -221,24 +222,20 @@ class DateConstraint extends Equatable {
     );
   }
 
-  /// Check if this constraint blocks the member from being assigned to an event
-  /// on any of the event's days that the constraint covers.
-  bool blocksEventAssignment(Event event) {
-    final lastDay =
-        DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
-    for (var day = DateTime(
-            event.startDate.year, event.startDate.month, event.startDate.day);
-        !day.isAfter(lastDay);
-        day = DateTime(day.year, day.month, day.day + 1)) {
-      if (conflictsWith(day) && blocksEventOn(event, day)) return true;
-    }
-    return false;
-  }
+  /// Whether any of this constraint's time overlaps the event's continuous
+  /// stretch (assembly on the first day → team end on the last day, nights
+  /// included; see `event_stretch.dart`). Every occurrence of a recurring
+  /// constraint counts. Status and type are the caller's business.
+  bool blocksEventAssignment(Event event) =>
+      constraintOverlapsStretch(this, eventStretch(event));
 
   /// Check if this constraint's hours on [date] overlap the event's hours.
   /// The caller has already matched [date] against the constraint ([conflictsWith]).
-  /// For unavailability constraints with time specified: returns true ONLY if times overlap
-  /// For unavailability constraints without time: returns true (unavailable all day)
+  ///
+  /// Legacy, per-day comparison: only the date-based availability of
+  /// non-permanent members ([TeamMember.isAvailableForEventWithTime]) still
+  /// uses it, and it keeps that path's behaviour (start → show end on each
+  /// day). Unavailability is judged by [blocksEventAssignment] instead.
   bool blocksEventOn(Event event, DateTime date) {
     // Use assemblyTime as the event's start time if available, otherwise startTime
     final eventStart =
@@ -261,13 +258,6 @@ class DateConstraint extends Equatable {
     // If they overlap, member is unavailable during the event
     return TimeRangeUtils.timesOverlap(
         windowStart, windowEnd, eventStart, eventEnd);
-  }
-
-  /// Check if this constraint conflicts with an event's time range
-  /// This is the original method - kept for backward compatibility
-  @deprecated
-  bool conflictsWithEventTime(Event event) {
-    return blocksEventAssignment(event);
   }
 
   /// Helper methods to check constraint status
@@ -447,35 +437,21 @@ class TeamMember extends Equatable {
     return true;
   }
 
-  /// Check if team member is available for a specific event (with time-based conflict detection)
-  /// This considers both date ranges and time ranges for the full event duration.
-  /// Returns true if available, false if unavailable due to date/time constraints
+  /// Whether the member can be assigned to [event].
+  ///
+  /// - Inactive or archived: never.
+  /// - Permanent: available unless an approved or pending unavailability
+  ///   overlaps the event's continuous stretch ([constraintsBlockingEvent]).
+  /// - Non-permanent: only when the event is in [availableEventIds], or
+  ///   through the legacy date-based availability covering every event day.
+  ///
+  /// The backend's `memberAvailableForEvent` applies the same rule; both run
+  /// shared/test-fixtures/event_conflict_cases.json.
   bool isAvailableForEventWithTime(Event event) {
     if (isArchived || !isActive) return false;
 
-    // Get the full event date range
-    final eventStart = DateTime(
-        event.startDate.year, event.startDate.month, event.startDate.day);
-    final eventEnd =
-        DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
-
     if (isPermanent) {
-      // Permanent members: available by default, unavailability constraints block them
-      // Check each day of the event — if ANY day is blocked, member is not available
-      DateTime currentDate = eventStart;
-      while (!currentDate.isAfter(eventEnd)) {
-        for (final constraint in constraints) {
-          if (!constraint.blocksAssignments) continue;
-          if (!constraint.conflictsWith(currentDate)) continue;
-
-          // Date matches — check if constraint's time range blocks the event
-          if (constraint.blocksEventOn(event, currentDate)) {
-            return false;
-          }
-        }
-        currentDate = currentDate.add(const Duration(days: 1));
-      }
-      return true; // No blocking constraint found on any event day
+      return constraintsBlockingEvent(event).isEmpty;
     } else {
       // Non-permanent members: unavailable by default
       // Check event-based availability first (new system used by AvailabilityScreen)
@@ -484,7 +460,12 @@ class TeamMember extends Equatable {
       }
 
       // Fall back to date-based availability constraints (legacy system)
-      // Must have availability for ALL event days
+      // Must have availability for ALL event days, each judged per day by
+      // blocksEventOn (this path keeps its old behaviour on purpose).
+      final eventStart = DateTime(
+          event.startDate.year, event.startDate.month, event.startDate.day);
+      final eventEnd =
+          DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
       DateTime currentDate = eventStart;
       while (!currentDate.isAfter(eventEnd)) {
         bool availableOnDay = false;
@@ -506,15 +487,17 @@ class TeamMember extends Equatable {
     }
   }
 
-  /// The approved or pending unavailability constraints that block [event] —
-  /// the same rule [isAvailableForEventWithTime] applies to permanent members.
-  /// Lets callers name the blockers and tell pending from approved.
+  /// The approved or pending unavailability constraints that overlap
+  /// [event]'s continuous stretch — the rule [isAvailableForEventWithTime]
+  /// applies to permanent members. Lets callers name the blockers and tell
+  /// pending from approved.
   List<DateConstraint> constraintsBlockingEvent(Event event) {
     if (!isPermanent) return const [];
+    final stretch = eventStretch(event);
     return constraints
         .where((constraint) =>
             constraint.blocksAssignments &&
-            constraint.blocksEventAssignment(event))
+            constraintOverlapsStretch(constraint, stretch))
         .toList();
   }
 
