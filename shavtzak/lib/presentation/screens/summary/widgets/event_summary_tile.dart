@@ -956,6 +956,12 @@ class EventSummaryTile extends StatelessWidget {
                 // the snackbar below says what actually happened (a refused
                 // assignment must not look like a success).
                 final completion = CrudActionCompleter();
+                // Take the messenger before the await and use only it after.
+                // This tile's `context` can be gone by the time the save
+                // completes (filling the last missing role removes the
+                // missing-roles section that owns it), but the messenger
+                // belongs to the screen's Scaffold and outlives it.
+                final messenger = ScaffoldMessenger.of(context);
                 context.read<AssignmentBloc>().add(
                   bypassAvailability
                       ? CreateAssignmentWithBypass(assignment,
@@ -963,9 +969,8 @@ class EventSummaryTile extends StatelessWidget {
                       : CreateAssignment(assignment, completion: completion),
                 );
                 final result = await completion.future;
-                if (!context.mounted) return;
+                if (!messenger.mounted) return;
 
-                final messenger = ScaffoldMessenger.of(context);
                 if (result.isSuccess) {
                   messenger.showSnackBar(
                     SnackBar(

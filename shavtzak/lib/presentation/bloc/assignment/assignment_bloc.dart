@@ -414,30 +414,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
-      // Check if we need to reload based on view type
-      // For slots view: Real-time stream handles updates automatically
-      // For list view: Need to restart the listener
-      if (previousState is AssignmentsLoaded) {
-        // Restart real-time listener based on current filter
-        final currentState = previousState;
-        if (currentState.filterType == 'event' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByPerson(currentState.filterId!));
-        } else {
-          add(const LoadAssignments());
-        }
-      } else if (previousState is AssignmentSlotsLoaded) {
-        add(RebuildAssignmentSlots(
-          preservedFilter: previousState.selectedEventIds,
-        ));
-      } else {
-        // Only reload if not in slots view (real-time stream handles slots view)
-        add(const LoadAssignments());
-      }
-      // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
+      _reloadAfterCreate(previousState);
     } catch (e) {
       if (e is AssignmentConflictException) {
         _emitOrLog(
@@ -448,6 +425,35 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _emitOrLog(emit, AssignmentError(message));
         _completeActionFailure(event.completion, message);
       }
+    }
+  }
+
+  /// Re-dispatches the load that matches the view the bloc was in before a
+  /// successful create, so the list the screen shows reflects the new row.
+  /// Shared by the checked and the bypass create handlers.
+  ///
+  /// - List view (all / by event / by person): restart the listener with the
+  ///   same filter.
+  /// - Slots view: rebuild the slots, keeping the selected events.
+  /// - Anything else: load all assignments.
+  void _reloadAfterCreate(AssignmentState previousState) {
+    if (previousState is AssignmentsLoaded) {
+      // Restart real-time listener based on current filter
+      if (previousState.filterType == 'event' &&
+          previousState.filterId != null) {
+        add(LoadAssignmentsByEvent(previousState.filterId!));
+      } else if (previousState.filterType == 'person' &&
+          previousState.filterId != null) {
+        add(LoadAssignmentsByPerson(previousState.filterId!));
+      } else {
+        add(const LoadAssignments());
+      }
+    } else if (previousState is AssignmentSlotsLoaded) {
+      add(RebuildAssignmentSlots(
+        preservedFilter: previousState.selectedEventIds,
+      ));
+    } else {
+      add(const LoadAssignments());
     }
   }
 
@@ -4199,6 +4205,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     CreateAssignmentWithBypass event,
     Emitter<AssignmentState> emit,
   ) async {
+    // Store previous state BEFORE any emit
+    final previousState = state;
+
     _emitOrLog(emit, const AssignmentOperating('creating'));
 
     try {
@@ -4211,12 +4220,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
-      // No manual reload: the active Firestore stream subscription
-      // (emit.forEach in _onLoadAssignments / _onLoadAssignmentsByEvent /
-      // _onLoadAssignmentsByPerson, or _assignmentSubscription for slots view)
-      // will emit the updated list automatically once the write propagates.
-      // Dispatching another Load* here would re-subscribe and cause a brief
-      // AssignmentLoading flash plus a redundant _populateAssignmentRelations.
+      // Same post-success reload as the checked create. The operating and
+      // success emits above replace the loaded state, and screens such as the
+      // summary only show a list for AssignmentsLoaded / AssignmentSlotsLoaded,
+      // so without this they would keep an out-of-date list.
+      _reloadAfterCreate(previousState);
     } catch (e) {
       if (e is AssignmentConflictException) {
         _emitOrLog(
