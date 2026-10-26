@@ -149,6 +149,16 @@
       "expectedAvailable": false
     },
     {
+      "id": "B8",
+      "label": "past midnight: show ends 01:00 with no team end, constraint 23:00-23:59 the event day (E1 as the spec states it)",
+      "event": {"startDate": "2026-12-07", "endDate": "2026-12-07", "assemblyTime": "18:30", "startTime": "19:30", "endTime": "01:00", "teamEndTime": ""},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-07", "endDate": null, "startTime": "23:00", "endTime": "23:59", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false,
+      "expectedStretch": {"start": "2026-12-07T18:30", "end": "2026-12-08T01:00"}
+    },
+    {
       "id": "C1",
       "label": "team end before show end: team end wins",
       "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "22:00", "teamEndTime": "21:00"},
