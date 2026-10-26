@@ -1,0 +1,75 @@
+<style>
+  .card { width:330px; direction:rtl; font-family:system-ui, Arial, sans-serif; background:#fff; color:#222; border:1px solid #ccc; border-radius:12px; padding:14px; box-shadow:0 3px 14px rgba(0,0,0,.12); font-size:13px; line-height:1.75; }
+  .card h4 { margin:0 0 6px; font-size:16px; }
+  .k { font-weight:700; }
+  .dim { color:#9a9a9a; }
+  .dim .k { font-weight:600; }
+  .mine { background:#e8f1fc; border:1px solid #9cc0ea; border-radius:8px; padding:8px 10px; margin:6px 0 8px; }
+  .mine .t { font-weight:700; color:#0d47a1; }
+  .swap { background:#e8f1fc; border-radius:4px; padding:0 4px; }
+  .note { margin-top:6px; background:#fafafa; border-radius:6px; padding:4px 8px; }
+  .wrap { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; }
+  .cap { text-align:center; font-size:13px; margin:10px 0 4px; font-weight:600; }
+  hr { border:none; border-top:1px solid #eee; margin:6px 0; }
+</style>
+
+<h2>Dana's card in "השיבוצים שלי"</h2>
+<p class="subtitle">Dana is assigned to a 2-day event but comes only on day 1, 14:00–23:00. Both options keep the event's own details, since she still needs to know when the show starts.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>"Your hours" box on top</h3>
+      <p>A blue box at the top of the card shows her hours. The event's normal times stay below, unchanged, in grey.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Her hours replace the matching rows</h3>
+      <p>The date and "שעת התייצבות" rows show her arrival, and "סיום צוות" shows when she leaves. The show times stay as they are.</p>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div>
+    <div class="cap">A — box on top</div>
+    <div class="card">
+      <h4>כנס חורף · חובש/ת</h4>
+      <div class="mine">
+        <div class="t">⏰ השעות שלך באירוע</div>
+        יום שלישי 27 באוקטובר, 14:00<br>עד יום שלישי 27 באוקטובר, 23:00
+      </div>
+      <div class="dim">
+        <span class="k">תאריך התחלה:</span> יום שלישי 27 באוקטובר<br>
+        <span class="k">תאריך סיום:</span> יום רביעי 28 באוקטובר<br>
+        <span class="k">שעת התייצבות:</span> 12:00<br>
+      </div>
+      <span class="k">מיקום:</span> היכל התרבות<br>
+      <span class="k">תחילת המופע:</span> 20:00<br>
+      <span class="k">סיום מופע משוער:</span> 22:30<br>
+      <span class="dim"><span class="k">סיום צוות משוער:</span> 23:30</span><br>
+      <hr>
+      <span class="k">מי איתי באירוע?</span> ▾
+      <div class="note"><span class="k">הערות לשיבוץ:</span> מגיעה מהעבודה</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cap">B — rows replaced</div>
+    <div class="card">
+      <h4>כנס חורף · חובש/ת</h4>
+      <span class="k">תאריך:</span> <span class="swap">יום שלישי 27 באוקטובר</span> <span class="dim">(האירוע עד 28.10)</span><br>
+      <span class="k">מיקום:</span> היכל התרבות<br>
+      <span class="k">ההגעה שלך:</span> <span class="swap">14:00</span> <span class="dim">(התייצבות צוות 12:00)</span><br>
+      <span class="k">תחילת המופע:</span> 20:00<br>
+      <span class="k">סיום מופע משוער:</span> 22:30<br>
+      <span class="k">היציאה שלך:</span> <span class="swap">27.10 23:00</span> <span class="dim">(סיום צוות 28.10 23:30)</span><br>
+      <hr>
+      <span class="k">מי איתי באירוע?</span> ▾
+      <div class="note"><span class="k">הערות לשיבוץ:</span> מגיעה מהעבודה</div>
+    </div>
+  </div>
+</div>

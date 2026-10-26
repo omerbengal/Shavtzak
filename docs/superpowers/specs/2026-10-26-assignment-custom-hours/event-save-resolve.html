@@ -1,0 +1,78 @@
+<style>
+  .phone { width:350px; margin:0 auto; direction:rtl; font-family:system-ui, Arial, sans-serif; background:#fff; color:#222; border:1px solid #ccc; border-radius:14px; padding:16px; box-shadow:0 4px 18px rgba(0,0,0,.15); font-size:13px; }
+  .phone h4 { margin:0 0 6px; font-size:17px; }
+  .muted { color:#666; font-size:12px; }
+  .change { background:#f3f7fc; border:1px solid #d6e3f3; border-radius:8px; padding:8px 10px; margin:10px 0; font-size:12px; line-height:1.7; }
+  .old { text-decoration:line-through; color:#999; }
+  .bulk { display:block; text-align:center; border:1px dashed #1976d2; color:#1976d2; border-radius:8px; padding:7px; margin-bottom:10px; font-weight:600; }
+  .m { border:1px solid #ddd; border-radius:10px; padding:10px; margin-bottom:10px; }
+  .m.done { border-color:#9ccc9c; background:#f5fbf5; }
+  .m.todo { border-color:#f0b429; background:#fffaf0; }
+  .name { font-weight:700; font-size:14px; }
+  .hrs { margin:3px 0 8px; font-size:12px; }
+  .acts { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .a { border:1px solid #bbb; border-radius:8px; padding:6px 4px; text-align:center; font-size:12px; color:#333; background:#fff; }
+  .a.on { background:#1976d2; border-color:#1976d2; color:#fff; font-weight:600; }
+  .a small { display:block; font-size:10px; opacity:.85; }
+  .warn { margin-top:8px; font-size:12px; color:#b26a00; }
+  .btns { display:flex; justify-content:center; gap:24px; margin-top:14px; font-size:14px; }
+  .btns .save { background:#bdbdbd; color:#fff; padding:6px 18px; border-radius:6px; }
+  .btns .cancel { color:#1976d2; padding:6px 4px; }
+  .foot { text-align:center; font-size:11px; color:#888; margin-top:6px; }
+</style>
+
+<h2>Saving an event whose dates or times changed</h2>
+<p class="subtitle">Opens when the admin presses שמור in the event form and at least one member has custom hours. The event is not saved until every member has a choice. ביטול goes back to the event form with nothing saved.</p>
+
+<div class="phone">
+  <h4>⏰ לחלק מהצוות יש שעות מותאמות</h4>
+  <div class="muted">מועדי האירוע השתנו. בחר/י מה קורה עם השעות של כל אחד לפני השמירה.</div>
+  <div class="change">
+    <b>כנס חורף</b><br>
+    <span class="old">27–28.10 · התייצבות 12:00 · סיום 23:30</span><br>
+    29–30.10 · התייצבות 12:00 · סיום 23:30
+  </div>
+
+  <span class="bulk">להזיז את כולם עם האירוע (+2 ימים)</span>
+
+  <div class="m done">
+    <div class="name">דנה כהן · חובש/ת</div>
+    <div class="hrs">27.10 14:00 – 27.10 23:00</div>
+    <div class="acts">
+      <span class="a on">להזיז עם האירוע<small>29.10 14:00 – 29.10 23:00</small></span>
+      <span class="a">להשאיר כמו שזה<small>27.10 14:00 – 23:00</small></span>
+      <span class="a">לערוך…</span>
+      <span class="a">להסיר שעות מותאמות<small>יקבל/תקבל את שעות האירוע</small></span>
+    </div>
+  </div>
+
+  <div class="m done">
+    <div class="name">אבי לוי · מפקד/ת אירוע</div>
+    <div class="hrs">26.10 20:00 – 28.10 23:30</div>
+    <div class="acts">
+      <span class="a on">להזיז עם האירוע<small>28.10 20:00 – 30.10 23:30</small></span>
+      <span class="a">להשאיר כמו שזה<small>26.10 20:00 – 28.10 23:30</small></span>
+      <span class="a">לערוך…</span>
+      <span class="a">להסיר שעות מותאמות<small>יקבל/תקבל את שעות האירוע</small></span>
+    </div>
+    <div class="warn">⚠️ מתנגש עם אילוץ מאושר של אבי: 28.10 (כל היום)</div>
+  </div>
+
+  <div class="m todo">
+    <div class="name">נועה ברק · צלם/ת</div>
+    <div class="hrs">28.10 08:00 – 28.10 23:30</div>
+    <div class="acts">
+      <span class="a">להזיז עם האירוע<small>30.10 08:00 – 30.10 23:30</small></span>
+      <span class="a">להשאיר כמו שזה<small>⚠️ לא חופף לאירוע החדש</small></span>
+      <span class="a">לערוך…</span>
+      <span class="a">להסיר שעות מותאמות<small>יקבל/תקבל את שעות האירוע</small></span>
+    </div>
+  </div>
+
+  <div class="btns"><span class="cancel">ביטול</span><span class="save">שמור אירוע</span></div>
+  <div class="foot">נשאר 1 לבחירה</div>
+</div>
+
+<div class="section" style="margin-top:22px">
+  <p class="subtitle"><b>My calls, shown above:</b> "להזיז עם האירוע" moves the hours by the same number of days the event moved and keeps the clock times. When only the event's times changed, not its dates, that button is hidden. "לערוך…" opens the same date and time fields as in the notes dialog, inside this window. A choice that hits a constraint shows the warning but can still be saved, the same as assigning a constrained member today.</p>
+</div>

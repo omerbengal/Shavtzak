@@ -1,0 +1,61 @@
+<style>
+  .phone { width:340px; direction:rtl; font-family:system-ui, Arial, sans-serif; background:#fff; color:#222; border:1px solid #ccc; border-radius:14px; padding:16px; box-shadow:0 4px 18px rgba(0,0,0,.15); font-size:13px; }
+  .phone h4 { margin:0 0 6px; font-size:16px; }
+  .muted { color:#666; font-size:12px; }
+  .li { display:flex; justify-content:space-between; align-items:center; padding:8px 4px; border-top:1px solid #eee; }
+  .li small { display:block; color:#b26a00; font-size:11px; }
+  .li .fit { color:#2e7d32; font-size:11px; font-weight:600; }
+  .opt { border:1px solid #bbb; border-radius:10px; padding:10px; margin-top:10px; line-height:1.6; }
+  .opt.on { border:2px solid #1976d2; background:#f3f8fe; }
+  .opt .t { font-weight:700; }
+  .ok { color:#2e7d32; font-size:12px; }
+  .bad { color:#b26a00; font-size:12px; }
+  .btns { display:flex; justify-content:center; gap:24px; margin-top:14px; font-size:14px; }
+  .btns .save { background:#1976d2; color:#fff; padding:6px 18px; border-radius:6px; }
+  .btns .cancel { color:#1976d2; padding:6px 4px; }
+  .wrap { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; }
+  .cap { text-align:center; font-size:13px; margin:10px 0 4px; font-weight:600; }
+  .search { border:1px solid #bbb; border-radius:6px; padding:7px; color:#888; margin:8px 0; }
+</style>
+
+<h2>Replacing Dana (who has custom hours) with Yossi</h2>
+<p class="subtitle">Two steps. The scene: a 2-day event, 27–28.10. Dana has custom hours of 27.10 14:00–23:00. Yossi has an approved constraint on 28.10.</p>
+
+<div class="wrap">
+  <div>
+    <div class="cap">Step 1: choosing who replaces her (picker as today)</div>
+    <div class="phone">
+      <h4>חברי צוות עם אילוצים</h4>
+      <div class="muted">לא זמינים לאירוע בשעות האירוע</div>
+      <div class="search">חיפוש...</div>
+      <div class="li"><div>יוסי מזרחי<small>⚠️ אילוץ מאושר: 28.10 (כל היום)</small></div><span class="fit">פנוי בשעות של דנה</span></div>
+      <div class="li"><div>רון שלו<small>⚠️ אילוץ מאושר: 27.10 (כל היום)</small></div><span></span></div>
+      <div class="li"><div>מיכל אור<small>⚠️ אילוץ מאושר: 27–28.10</small></div><span></span></div>
+    </div>
+    <p class="subtitle" style="width:340px">The conflict check uses the <b>event's</b> hours, as today, because the admin is placing someone in the event. The one addition: a green "פנוי בשעות של דנה" next to anyone who fits the slot's custom hours. Text only, no icon.</p>
+  </div>
+
+  <div>
+    <div class="cap">Step 2: what happens to Dana's hours</div>
+    <div class="phone">
+      <h4>⏰ לדנה היו שעות מותאמות</h4>
+      <div class="muted">יוסי מחליף את דנה (חובש/ת, כנס חורף). אילו שעות יהיו ליוסי?</div>
+      <div class="opt on">
+        <div class="t">לשמור את השעות של דנה</div>
+        27.10 14:00 – 27.10 23:00
+        <div class="ok">✅ אין התנגשות עם אילוצים של יוסי</div>
+      </div>
+      <div class="opt">
+        <div class="t">שעות האירוע הרגילות</div>
+        27.10 12:00 – 28.10 23:30
+        <div class="bad">⚠️ מתנגש עם אילוץ מאושר של יוסי: 28.10 (כל היום)</div>
+      </div>
+      <div class="opt">
+        <div class="t">שעות אחרות…</div>
+        <span class="muted">פותח את שדות התאריך והשעה</span>
+      </div>
+      <div class="btns"><span class="cancel">ביטול</span><span class="save">אישור</span></div>
+    </div>
+    <p class="subtitle" style="width:340px">Every choice shows its own outcome for Yossi, so the admin sees the conflict exactly where it applies. ביטול undoes the replacement, and Dana stays.</p>
+  </div>
+</div>
