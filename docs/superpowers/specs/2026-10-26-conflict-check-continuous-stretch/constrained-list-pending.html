@@ -1,0 +1,49 @@
+<style>
+  .phone { width:360px; direction:rtl; font-family:system-ui, Arial, sans-serif; background:#fff; color:#222; border:1px solid #ccc; border-radius:14px; padding:16px; box-shadow:0 4px 18px rgba(0,0,0,.15); font-size:13px; }
+  .phone h4 { margin:0 0 8px; font-size:16px; }
+  .b { font-weight:700; margin-bottom:8px; }
+  .search { border:1px solid #bbb; border-radius:6px; padding:7px; color:#888; margin:8px 0; }
+  .li { display:flex; align-items:center; gap:10px; padding:9px 2px; border-top:1px solid #eee; }
+  .ic { width:22px; text-align:center; font-size:16px; }
+  .txt { flex:1; }
+  .name { font-size:14px; }
+  .red { color:#d32f2f; font-size:12px; }
+  .orange { color:#e65100; font-size:12px; }
+  .btn { background:#ff9800; color:#fff; border-radius:6px; padding:6px 8px; font-size:12px; white-space:nowrap; }
+  .wrap { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; }
+  .cap { text-align:center; font-size:13px; margin:10px 0 4px; font-weight:600; }
+  .note { width:360px; }
+</style>
+
+<h2>"בעלי מגבלות / לא זמינים": approved vs pending</h2>
+<p class="subtitle">The same list as today, from the assignments screen (the summary screen gets the same change). Only the grey line under each name changes.</p>
+
+<div class="wrap">
+  <div>
+    <div class="cap">Today</div>
+    <div class="phone">
+      <h4>⛔ בעלי מגבלות / לא זמינים - "כנס חורף"</h4>
+      <div class="b">האנשים הבאים לא זמינים או משובצים לאירועים אחרים באותם תאריכים:</div>
+      <div class="search">חיפוש...</div>
+      <div class="li"><span class="ic">📅</span><div class="txt"><div class="name">אבי כהן</div><div class="red">מגבלה מאושרת</div></div><span class="btn">שבץ בכל זאת</span></div>
+      <div class="li"><span class="ic">📅</span><div class="txt"><div class="name">דנה לוי</div><div class="red">מגבלה מאושרת</div></div><span class="btn">שבץ בכל זאת</span></div>
+      <div class="li"><span class="ic">📅</span><div class="txt"><div class="name">יוסי מזרחי</div><div class="red">מגבלה מאושרת</div></div><span class="btn">שבץ בכל זאת</span></div>
+      <div class="li"><span class="ic">🗓️</span><div class="txt"><div class="name">רון שלו</div><div class="red">משובצ/ת ב: הופעה בחיפה</div></div><span class="btn">שבץ בכל זאת</span></div>
+    </div>
+    <p class="subtitle note">Dana's constraint is only pending, and today she isn't even on this list. Once pending blocks, she'd show up as "מגבלה מאושרת", which is wrong.</p>
+  </div>
+
+  <div>
+    <div class="cap">Proposed</div>
+    <div class="phone">
+      <h4>⛔ בעלי מגבלות / לא זמינים - "כנס חורף"</h4>
+      <div class="b">האנשים הבאים לא זמינים או משובצים לאירועים אחרים באותם תאריכים:</div>
+      <div class="search">חיפוש...</div>
+      <div class="li"><span class="ic">📅</span><div class="txt"><div class="name">אבי כהן</div><div class="red">אילוץ מאושר: 28.10 (כל היום)</div></div><span class="btn">שבץ בכל זאת</span></div>
+      <div class="li"><span class="ic">⏳</span><div class="txt"><div class="name">דנה לוי</div><div class="orange">אילוץ ממתין לאישור: 27.10 17:00–20:00</div></div><span class="btn">שבץ בכל זאת</span></div>
+      <div class="li"><span class="ic">📅</span><div class="txt"><div class="name">יוסי מזרחי</div><div class="red">אילוץ מאושר: 27.10 (כל היום)</div><div class="orange">אילוץ ממתין לאישור: 28.10 (כל היום)</div></div><span class="btn">שבץ בכל זאת</span></div>
+      <div class="li"><span class="ic">🗓️</span><div class="txt"><div class="name">רון שלו</div><div class="red">משובצ/ת ב: הופעה בחיפה</div></div><span class="btn">שבץ בכל זאת</span></div>
+    </div>
+    <p class="subtitle note">Each blocking constraint gets its own line with its dates and hours. Approved is red with the calendar icon, as today. Pending is orange with an hourglass. Someone with both shows both lines. This is the same wording as the warnings in the custom-hours design ("אילוץ ממתין לאישור").</p>
+  </div>
+</div>
