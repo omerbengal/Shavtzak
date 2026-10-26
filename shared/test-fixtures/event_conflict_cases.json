@@ -617,7 +617,7 @@
       "label": "constraint endDate before startDate (bad data): startDate is the last day",
       "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
       "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
-        {"startDate": "2026-12-01", "endDate": "2026-11-30", "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+        {"startDate": "2026-12-01", "endDate": "2026-11-29", "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
       ]},
       "expectedAvailable": false
     }
