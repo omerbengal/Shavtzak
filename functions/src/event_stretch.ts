@@ -120,7 +120,8 @@ function recurrenceMatches(constraint: StretchConstraintInput, dayStart: number)
 /**
  * The constraint's intervals that can reach `stretch`:
  * - one-time: one interval, from startTime on its first day to endTime on its
- *   last day (the whole days without hours);
+ *   last day (the whole days without hours). A last day before the first day
+ *   (bad data) is taken as the first day, as on the event side;
  * - recurring: one interval on each matching day between its first day and
  *   repeatEndDay, the whole day or startTime→endTime. A null repeatEndDay
  *   matches nothing.
@@ -131,7 +132,8 @@ export function constraintIntervalsNear(
 ): WallInterval[] {
   const firstDay = dayMinutes(constraint.firstDay);
   if (constraint.repeatType == null) {
-    return [timeWindow(firstDay, dayMinutes(constraint.lastDay), constraint.startTime, constraint.endTime)];
+    const lastDay = Math.max(firstDay, dayMinutes(constraint.lastDay));
+    return [timeWindow(firstDay, lastDay, constraint.startTime, constraint.endTime)];
   }
   if (constraint.repeatEndDay == null) {
     return [];

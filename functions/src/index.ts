@@ -3326,9 +3326,10 @@ function constraintTimeWindowOn(
 // Whether an availability constraint covers the event on `day`. Only the
 // legacy date-based availability of non-permanent members still uses this
 // per-day comparison (production has four such entries, all whole-day and all
-// past). A missing or malformed event time falls back the way the stretch
-// does (start: assembly, show start, 00:00; end: show end, team end, 24:00)
-// instead of throwing.
+// past). A missing or malformed event time falls back instead of throwing.
+// The start falls back like the stretch's: assembly, then show start, then
+// 00:00. The end keeps this path's show-end-first order: show end, then team
+// end, then 24:00 (the stretch puts team end first).
 function constraintBlocksEvent(
   constraint: Record<string, unknown>,
   eventData: Record<string, unknown>,

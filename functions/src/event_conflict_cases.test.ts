@@ -137,8 +137,14 @@ for (const row of cases) {
           `${row.id}: stretch`,
         );
       }
+      // Bad or missing data must fall back, never throw (a thrown error is a
+      // 500 in the API).
+      let available: boolean | undefined;
+      assert.doesNotThrow(() => {
+        available = memberAvailableForEvent(memberData(row), event);
+      }, `${row.id}: must not throw`);
       assert.equal(
-        memberAvailableForEvent(memberData(row), event),
+        available,
         row.expectedAvailable,
         `${row.id}: expected ${row.expectedAvailable ? 'free' : 'blocked'}`,
       );
