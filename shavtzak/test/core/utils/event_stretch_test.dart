@@ -125,6 +125,41 @@ void main() {
       expect(stretch.end.difference(stretch.start), const Duration(hours: 6));
     });
 
+    test(
+        'a show ending past midnight with no team end rolls to the next '
+        'morning, so 23:00–23:59 that day blocks (E1 as the spec states it)',
+        () {
+      // The table's B1 has a show end of 23:30, which the old app rule read
+      // first; this pins the literal E1 shape, show end 01:00, which the old
+      // per-day minutes comparison judged free.
+      final event = _event(DateTime(2026, 12, 7), DateTime(2026, 12, 7),
+          startTime: '20:00', endTime: '01:00');
+      final constraint = DateConstraint(
+        id: 'late',
+        startDate: DateTime(2026, 12, 7),
+        constraintType: ConstraintType.unavailability,
+        startTime: '23:00',
+        endTime: '23:59',
+      );
+      final member = TeamMember(
+        id: 'm1',
+        name: 'חבר',
+        isActive: true,
+        isPermanent: true,
+        constraints: [constraint],
+        roleCapabilities: const {},
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+        uniqueKey: 'k1',
+      );
+
+      expect(
+          eventStretch(event),
+          WallInterval(
+              DateTime.utc(2026, 12, 7, 20), DateTime.utc(2026, 12, 8, 1)));
+      expect(member.isAvailableForEventWithTime(event), isFalse);
+    });
+
     test('moments are UTC wall-clock values', () {
       final stretch = eventStretch(_event(
           DateTime(2026, 12, 1), DateTime(2026, 12, 1),
