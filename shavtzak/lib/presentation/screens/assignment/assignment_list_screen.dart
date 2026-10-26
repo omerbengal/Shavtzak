@@ -652,14 +652,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   }
 
                   if (state is AssignmentSlotsLoaded) {
-                    // If slots are empty, the load is complete (no events in time window)
-                    // Only check for team members if there are actual slots
-                    if (!_isInitialLoadComplete && state.slots.isNotEmpty) {
-                      final hasTeamMembers = state.slots
-                          .any((slot) => slot.availableMembers.isNotEmpty);
-                      if (!hasTeamMembers) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+                    // Hold the spinner until the team members have actually
+                    // arrived. The bloc says so outright (`membersLoaded`); it
+                    // used to be guessed from "some slot has an available
+                    // member", which is also false when every member IS loaded
+                    // and unavailable, and then nothing re-ran the builder.
+                    if (!_isInitialLoadComplete && !state.membersLoaded) {
+                      return const Center(child: CircularProgressIndicator());
                     }
 
                     // Mark initial load as complete

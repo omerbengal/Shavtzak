@@ -91,6 +91,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   bool _slotsRolesReady = false;
   bool _slotsEventsReady = false;
   bool _slotsAssignmentsReady = false;
+  // Unlike the three above this is NOT a gate on the first emit — it is reported
+  // on every slots state as `membersLoaded` so the screen can tell "members
+  // not here yet" from "members here, all unavailable".
+  bool _slotsMembersReady = false;
 
   // Events/assignments older than the window, loaded on demand.
   final Map<String, Event> _extraPastEventsMap = {};
@@ -762,6 +766,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _slotsRolesReady = false;
       _slotsEventsReady = false;
       _slotsAssignmentsReady = false;
+      _slotsMembersReady = false;
 
       // Reset past-history pagination on every (re)load, incl. toggling past.
       _slotsWindowStart = windowStart;
@@ -808,6 +813,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update member cache
           _windowMembersMap.clear();
           _windowMembersMap.addAll({for (var tm in updatedMembers) tm.id: tm});
+          // Reported on the state as `membersLoaded`. Set even when the list is
+          // empty or every member is unavailable: the screen waits for the
+          // stream to deliver, not for anyone to be available.
+          _slotsMembersReady = true;
           // Assignments are kept live by the watchAssignmentsInTimeWindow listener
           // (the source of truth); reuse its cache instead of re-querying.
           final currentAssignments = _repository.getCurrentAssignments();
@@ -3190,6 +3199,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         AssignmentSlotsLoaded(
           updatedSlots,
           selectedEventIds: currentState.selectedEventIds,
+          membersLoaded: currentState.membersLoaded,
           pendingOperations: _pendingOperations,
         ));
 
@@ -3211,6 +3221,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             updatedSlots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
@@ -3224,6 +3235,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             currentState.slots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       final message = e is AssignmentConflictException
@@ -3274,6 +3286,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         AssignmentSlotsLoaded(
           updatedSlots,
           selectedEventIds: currentState.selectedEventIds,
+          membersLoaded: currentState.membersLoaded,
           pendingOperations: _pendingOperations,
         ));
 
@@ -3299,6 +3312,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             updatedSlots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionSuccess(event.completion, 'השיבוץ עודכן בהצלחה');
@@ -3312,6 +3326,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             currentState.slots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       final message = e is AssignmentConflictException
@@ -3362,6 +3377,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         AssignmentSlotsLoaded(
           updatedSlots,
           selectedEventIds: currentState.selectedEventIds,
+          membersLoaded: currentState.membersLoaded,
           pendingOperations: _pendingOperations,
         ));
 
@@ -3388,6 +3404,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             updatedSlots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionSuccess(event.completion, 'השיבוץ נמחק בהצלחה');
@@ -3401,6 +3418,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             currentState.slots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionFailure(event.completion, 'שגיאה במחיקת שיבוץ: $e');
@@ -3703,6 +3721,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
       stagedGoneSlotKeys: goneKeys,
       stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
+      membersLoaded: _slotsMembersReady,
     );
   }
 
@@ -3818,6 +3837,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
+            membersLoaded: _slotsMembersReady,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -4198,6 +4218,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
+            membersLoaded: _slotsMembersReady,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
