@@ -34,9 +34,12 @@ List<DateConstraint> changedConstraints({
 ///   time rather than taking it away.
 /// * Events that already ended are skipped — history is not a conflict to
 ///   resolve, and deleting those assignments would destroy the record.
-/// * Overlap is decided by [constraintOverlapsEvent], the same date+time rule
-///   the constraint screens use, so a 16:00–23:59 constraint leaves a
-///   09:00–13:00 event on that day alone.
+/// * Overlap is decided by [constraintOverlapsEvent], the same rule the
+///   constraint screens and the assignment check use: the event is one
+///   continuous stretch (assembly on its first day to team end on its last,
+///   nights included), and every occurrence of a recurring constraint counts.
+///   So a 16:00–23:59 constraint leaves a 08:30–13:00 event on that day alone,
+///   but a 17:30–18:30 one hits an event assembling at 17:00 for a 19:00 show.
 List<Assignment> findNewlyConflictingAssignments({
   required List<DateConstraint> originalConstraints,
   required List<DateConstraint> updatedConstraints,

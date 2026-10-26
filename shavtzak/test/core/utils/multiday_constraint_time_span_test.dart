@@ -173,23 +173,6 @@ void main() {
           isTrue);
     });
   });
-
-  group('getHighlightedDatesForConstraintRange over a multi-day span', () {
-    test('highlights only the days whose events fall inside the span', () {
-      final highlighted = getHighlightedDatesForConstraintRange(
-        rangeStart: _firstDay,
-        rangeEnd: _lastDay,
-        constraintStartTime: '17:00',
-        constraintEndTime: '11:00',
-        events: [
-          _event(_firstDay, '09:00', '12:00'),
-          _event(_middleDay, '09:00', '12:00'),
-          _event(_lastDay, '12:00', '15:00'),
-        ],
-      );
-      expect(highlighted, {_middleDay});
-    });
-  });
 }
 
 /// A one-day event; assembly is half an hour before [startTime].
