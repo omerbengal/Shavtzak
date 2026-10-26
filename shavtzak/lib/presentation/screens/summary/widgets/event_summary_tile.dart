@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import 'package:collection/collection.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
+import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/same_day_assignments.dart';
 import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/slot_annotations.dart';
@@ -609,6 +610,11 @@ class EventSummaryTile extends StatelessWidget {
                       categorized.sameDayEventInfo,
                     );
                     if (selectedMember != null) {
+                      // The constrained list holds members a constraint (or
+                      // missing availability) blocks. Picking one is the
+                      // admin's explicit "assign anyway", so it must go
+                      // through the bypass event; a plain CreateAssignment
+                      // would be refused by the conflict check.
                       _showAssignmentConfirmationDialog(
                         outerContext,
                         event,
@@ -618,6 +624,7 @@ class EventSummaryTile extends StatelessWidget {
                         annotation,
                         selectedMember.id,
                         selectedMember,
+                        bypassAvailability: true,
                       );
                     }
                   } else {
@@ -904,8 +911,9 @@ class EventSummaryTile extends StatelessWidget {
     int slotIndex,
     SlotAnnotation? annotation,
     String memberId,
-    TeamMember member,
-  ) {
+    TeamMember member, {
+    bool bypassAvailability = false,
+  }) {
     showDialog(
       context: context,
       builder: (dialogContext) => Directionality(
@@ -926,34 +934,54 @@ class EventSummaryTile extends StatelessWidget {
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () {
-                Logger.action('tap:confirmAssignment', {'eventId': event.id, 'roleKey': roleKey, 'memberId': memberId});
+              onPressed: () async {
+                Logger.action('tap:confirmAssignment', {'eventId': event.id, 'roleKey': roleKey, 'memberId': memberId, 'bypassAvailability': bypassAvailability});
                 Navigator.of(dialogContext).pop();
                 final now = DateTime.now();
 
-                context.read<AssignmentBloc>().add(
-                      CreateAssignment(
-                        Assignment(
-                          id: const Uuid().v4(),
-                          eventId: event.id,
-                          teamMemberId: memberId,
-                          roleType: roleKey,
-                          slotIndex: slotIndex,
-                          status: AssignmentStatus.pending,
-                          notes: annotation?.note ?? '',
-                          semanticLabelId: annotation?.labelId,
-                          createdAt: now,
-                          updatedAt: now,
-                        ),
-                      ),
-                    );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content:
-                        Text('שיבצת את ${member.name} לתפקיד $roleHebrewName'),
-                    backgroundColor: Colors.green,
-                  ),
+                final assignment = Assignment(
+                  id: const Uuid().v4(),
+                  eventId: event.id,
+                  teamMemberId: memberId,
+                  roleType: roleKey,
+                  slotIndex: slotIndex,
+                  status: AssignmentStatus.pending,
+                  notes: annotation?.note ?? '',
+                  semanticLabelId: annotation?.labelId,
+                  createdAt: now,
+                  updatedAt: now,
                 );
+
+                // The bloc reports the real outcome through this completer, so
+                // the snackbar below says what actually happened (a refused
+                // assignment must not look like a success).
+                final completion = CrudActionCompleter();
+                context.read<AssignmentBloc>().add(
+                  bypassAvailability
+                      ? CreateAssignmentWithBypass(assignment,
+                          completion: completion)
+                      : CreateAssignment(assignment, completion: completion),
+                );
+                final result = await completion.future;
+                if (!context.mounted) return;
+
+                final messenger = ScaffoldMessenger.of(context);
+                if (result.isSuccess) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'שיבצת את ${member.name} לתפקיד $roleHebrewName'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(result.message ?? 'השיבוץ נכשל'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
