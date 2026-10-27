@@ -7,7 +7,7 @@ import {
   __testEventStretchFromData as eventStretchFromData,
   __testMemberAvailableForEvent as memberAvailableForEvent,
 } from './index';
-import {formatWallMinutes} from './event_stretch';
+import {customHoursInterval, formatWallMinutes} from './event_stretch';
 
 // The shared case table. The Flutter runner reads the same file and must reach
 // the same answers, so the app and the backend can't drift apart again.
@@ -44,6 +44,7 @@ interface ConflictCase {
     availableEventIds: string[];
     constraints: CaseConstraint[];
   };
+  customHours?: {start: string; end: string};
   expectedAvailable: boolean;
   expectedStretch?: {start: string; end: string};
 }
@@ -137,11 +138,15 @@ for (const row of cases) {
           `${row.id}: stretch`,
         );
       }
+      // A case with customHours is judged against that window (null where the
+      // hours are unreadable, which means the event stretch); one without
+      // passes none.
+      const window = row.customHours == null ? null : customHoursInterval(row.customHours.start, row.customHours.end);
       // Bad or missing data must fall back, never throw (a thrown error is a
       // 500 in the API).
       let available: boolean | undefined;
       assert.doesNotThrow(() => {
-        available = memberAvailableForEvent(memberData(row), event);
+        available = memberAvailableForEvent(memberData(row), event, window);
       }, `${row.id}: must not throw`);
       assert.equal(
         available,

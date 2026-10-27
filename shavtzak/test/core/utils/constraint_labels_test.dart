@@ -170,5 +170,12 @@ void main() {
       expect(constraintStatusLabel(_constraint(startDate: day)),
           'אילוץ מאושר: 28.10 (כל היום)');
     });
+
+    test('rejected reads אילוץ שנדחה', () {
+      expect(
+          constraintStatusLabel(
+              _constraint(startDate: day, status: ConstraintStatus.rejected)),
+          'אילוץ שנדחה: 28.10 (כל היום)');
+    });
   });
 }

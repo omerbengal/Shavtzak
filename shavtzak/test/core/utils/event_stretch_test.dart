@@ -247,6 +247,118 @@ void main() {
           '2026-12-31T23:59');
     });
   });
+
+  group('WallInterval', () {
+    test('refuses moments that are not UTC wall-clock values', () {
+      expect(
+          () => WallInterval(
+              DateTime(2026, 12, 1, 17), DateTime(2026, 12, 1, 22)),
+          throwsA(isA<AssertionError>()));
+      expect(
+          () => WallInterval(
+              DateTime.utc(2026, 12, 1, 17), DateTime(2026, 12, 1, 22)),
+          throwsA(isA<AssertionError>()));
+    });
+  });
+
+  group('parseWallMoment', () {
+    test("reads 'yyyy-MM-ddTHH:mm' into a UTC wall-clock moment", () {
+      expect(parseWallMoment('2026-10-25T01:30'),
+          DateTime.utc(2026, 10, 25, 1, 30));
+      expect(parseWallMoment('2026-12-31T23:59'),
+          DateTime.utc(2026, 12, 31, 23, 59));
+    });
+
+    test('anything else is null, never a throw', () {
+      expect(parseWallMoment('2026-02-30T10:00'), isNull,
+          reason: 'not a calendar date');
+      expect(parseWallMoment('2026-10-25T24:00'), isNull);
+      expect(parseWallMoment('2026-10-25T10:60'), isNull);
+      expect(parseWallMoment('2026-10-25T9:00'), isNull);
+      expect(parseWallMoment('2026-12-01 17:00'), isNull);
+      expect(parseWallMoment('2026-10-25T10:00 '), isNull);
+      expect(parseWallMoment('2026-10-25T10:00:00'), isNull);
+      expect(parseWallMoment(''), isNull);
+      expect(parseWallMoment(null), isNull);
+    });
+  });
+
+  group('customHoursInterval', () {
+    test('is the interval when both read and the end is after the start', () {
+      expect(
+          customHoursInterval('2026-12-01T17:00', '2026-12-02T02:00'),
+          WallInterval(
+              DateTime.utc(2026, 12, 1, 17), DateTime.utc(2026, 12, 2, 2)));
+    });
+
+    test('is null when either value is missing or unreadable', () {
+      expect(customHoursInterval(null, '2026-12-01T22:00'), isNull);
+      expect(customHoursInterval('2026-12-01T17:00', null), isNull);
+      expect(
+          customHoursInterval('2026-12-01 17:00', '2026-12-01T22:00'), isNull);
+    });
+
+    test('is null when the end is not after the start', () {
+      expect(
+          customHoursInterval('2026-12-01T17:00', '2026-12-01T17:00'), isNull);
+      expect(
+          customHoursInterval('2026-12-01T23:00', '2026-12-01T17:00'), isNull);
+    });
+  });
+
+  group('assignmentWindow', () {
+    final event = _event(
+      DateTime(2026, 12, 1),
+      DateTime(2026, 12, 2),
+      assemblyTime: '17:00',
+      startTime: '19:00',
+      endTime: '20:30',
+      teamEndTime: '22:00',
+    );
+
+    test('is the custom hours when they are set and readable', () {
+      expect(
+          assignmentWindow(event,
+              customStartAt: '2026-11-30T19:00',
+              customEndAt: '2026-12-01T22:00'),
+          WallInterval(
+              DateTime.utc(2026, 11, 30, 19), DateTime.utc(2026, 12, 1, 22)));
+    });
+
+    test('is the event stretch with no hours, or hours that cannot be used',
+        () {
+      final stretch = eventStretch(event);
+      expect(assignmentWindow(event), stretch);
+      expect(
+          assignmentWindow(event,
+              customStartAt: '2026-12-01T23:00',
+              customEndAt: '2026-12-01T17:00'),
+          stretch);
+      expect(
+          assignmentWindow(event,
+              customStartAt: 'x', customEndAt: '2026-12-01T17:00'),
+          stretch);
+    });
+  });
+
+  group('shiftWallMoment', () {
+    test(
+        'moves whole calendar days with the clock unchanged, across the DST '
+        'change of 2026-10-25', () {
+      expect(shiftWallMoment('2026-10-24T22:00', 2), '2026-10-26T22:00');
+      expect(shiftWallMoment('2026-10-26T22:00', -2), '2026-10-24T22:00');
+    });
+
+    test('goes back over a month edge', () {
+      expect(shiftWallMoment('2026-12-01T17:00', -1), '2026-11-30T17:00');
+    });
+
+    test('is null when the value is unreadable', () {
+      expect(shiftWallMoment('2026-12-01 17:00', 1), isNull);
+      expect(shiftWallMoment('', 1), isNull);
+      expect(shiftWallMoment(null, 1), isNull);
+    });
+  });
 }
 
 Event _event(

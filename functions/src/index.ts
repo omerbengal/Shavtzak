@@ -3397,9 +3397,14 @@ function toStretchConstraint(constraint: Record<string, unknown>): StretchConstr
   };
 }
 
+// Whether the member can be assigned to the event. For a permanent member the
+// judged window is the assignment's custom hours when set (see
+// customHoursInterval); a null or absent window means the event's stretch. A
+// non-permanent member ignores the window: availableEventIds stays available.
 function memberAvailableForEvent(
   memberData: Record<string, unknown>,
   eventData: Record<string, unknown>,
+  window?: WallInterval | null,
 ): boolean {
   if (memberData['isArchived'] === true || memberData['isActive'] !== true) {
     return false;
@@ -3411,16 +3416,17 @@ function memberAvailableForEvent(
     : [];
 
   if (isPermanent) {
-    // The event is one continuous stretch, nights included; any minute of an
-    // approved or still-pending unavailability inside it blocks. Only a
-    // rejected request stops blocking. Mirrors TeamMember on the client; both
-    // run shared/test-fixtures/event_conflict_cases.json.
-    const stretch = eventStretchFromData(eventData);
+    // The window is the assignment's custom hours when set, else the event as
+    // one continuous stretch, nights included; any minute of an approved or
+    // still-pending unavailability inside it blocks. Only a rejected request
+    // stops blocking. Mirrors TeamMember on the client; both run
+    // shared/test-fixtures/event_conflict_cases.json.
+    const judged = window ?? eventStretchFromData(eventData);
     for (const constraint of constraints) {
       if (constraint['status'] !== 'approved' && constraint['status'] !== 'pending') continue;
       if (constraint['constraintType'] !== 'unavailability') continue;
       const input = toStretchConstraint(constraint);
-      if (input != null && constraintOverlapsStretch(input, stretch)) {
+      if (input != null && constraintOverlapsStretch(input, judged)) {
         return false;
       }
     }

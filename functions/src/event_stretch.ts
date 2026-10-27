@@ -9,6 +9,11 @@
 // A moment is minutes since 1970-01-01 00:00 of the Israel wall clock: an
 // Israel calendar day (as UTC midnight, normalizeDayInIsrael's output) plus
 // minutes since that midnight. DST therefore never shifts a comparison.
+//
+// An assignment can carry hours of its own (custom hours, stored as two
+// 'yyyy-MM-ddTHH:mm' strings). Its window is those hours when they are usable
+// (customHoursInterval) and the event's stretch otherwise; the same overlap
+// rule then judges the member against that window.
 
 export const MINUTES_PER_DAY = 24 * 60;
 const MS_PER_MINUTE = 60 * 1000;
@@ -165,4 +170,58 @@ export function constraintOverlapsStretch(
 /** A wall-clock moment as 'yyyy-MM-ddTHH:mm'. */
 export function formatWallMinutes(minutes: number): string {
   return new Date(minutes * MS_PER_MINUTE).toISOString().slice(0, 16);
+}
+
+/**
+ * A stored 'yyyy-MM-ddTHH:mm' as minutes on the wall clock (the same scale as
+ * WallInterval). Strict: a real calendar date, hours 0–23, minutes 0–59.
+ * Anything else ('2026-02-30T10:00', '…T24:00', '…T9:00', a space for the T, a
+ * non-string) is null, never a throw. The Flutter app's parseWallMoment reads
+ * the same way.
+ */
+export function parseWallMoment(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (match == null) return null;
+  const [year, month, day, hours, minutes] = match.slice(1).map(Number);
+  if (hours > 23 || minutes > 59) return null;
+  // setUTCFullYear, not Date.UTC: Date.UTC maps years 0–99 to 1900–1999.
+  const moment = new Date(0);
+  moment.setUTCFullYear(year, month - 1, day);
+  moment.setUTCHours(hours, minutes, 0, 0);
+  // Date rolls 30 February into March; a real date round-trips.
+  if (moment.getUTCFullYear() !== year || moment.getUTCMonth() !== month - 1 || moment.getUTCDate() !== day) {
+    return null;
+  }
+  return Math.round(moment.getTime() / MS_PER_MINUTE);
+}
+
+/**
+ * An assignment's own hours as an interval: non-null only when both values
+ * parse (parseWallMoment) and the end is after the start.
+ */
+export function customHoursInterval(start: unknown, end: unknown): WallInterval | null {
+  const startMinutes = parseWallMoment(start);
+  const endMinutes = parseWallMoment(end);
+  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) return null;
+  return {start: startMinutes, end: endMinutes};
+}
+
+/**
+ * `value` moved by `days` whole calendar days, the clock unchanged (the wall
+ * clock has no DST here), or null when `value` is unreadable.
+ */
+export function shiftWallMoment(value: string, days: number): string | null {
+  const minutes = parseWallMoment(value);
+  if (minutes == null) return null;
+  return formatWallMinutes(minutes + days * MINUTES_PER_DAY);
+}
+
+/**
+ * The 'yyyy-MM-dd' keys of the days an interval touches: its start's day and
+ * the day of its last minute (end - 1 minute), so an interval ending exactly
+ * at midnight does not touch the next day.
+ */
+export function wallDayKeysTouched(interval: WallInterval): [string, string] {
+  return [formatWallMinutes(interval.start).slice(0, 10), formatWallMinutes(interval.end - 1).slice(0, 10)];
 }

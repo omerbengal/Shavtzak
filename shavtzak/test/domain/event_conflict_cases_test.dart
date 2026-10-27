@@ -111,8 +111,19 @@ void main() {
         );
       }
 
+      // A case with customHours is judged against that window (or the event
+      // stretch where the hours are unreadable); one without passes none.
+      final customHours = row['customHours'] as Map<String, dynamic>?;
+      final window = customHours == null
+          ? null
+          : assignmentWindow(
+              event,
+              customStartAt: customHours['start'] as String?,
+              customEndAt: customHours['end'] as String?,
+            );
+
       // Bad or missing data must fall back, never throw.
-      expect(member.isAvailableForEventWithTime(event),
+      expect(member.isAvailableForEventWithTime(event, window: window),
           row['expectedAvailable'] as bool,
           reason: id);
     });

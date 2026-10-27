@@ -5,6 +5,7 @@ import 'event_stretch.dart' show wallTimeMinutes;
 
 const String _approvedPrefix = 'אילוץ מאושר: ';
 const String _pendingPrefix = 'אילוץ ממתין לאישור: ';
+const String _rejectedPrefix = 'אילוץ שנדחה: ';
 const String _dash = '–';
 
 /// What a constraint covers, without its status:
@@ -48,11 +49,16 @@ String constraintShortLabel(DateConstraint c) {
   return '$from $_dash $until';
 }
 
-/// The constraint with its status in front: 'אילוץ מאושר: …' or
-/// 'אילוץ ממתין לאישור: …'. Meant for the constraints that block an
-/// assignment, which are approved or pending.
+/// The constraint with its status in front: 'אילוץ מאושר: …',
+/// 'אילוץ ממתין לאישור: …' or 'אילוץ שנדחה: …'. Meant for the constraints
+/// that block an assignment, which are approved or pending; a rejected one
+/// is for a listing that shows constraints that do not block.
 String constraintStatusLabel(DateConstraint c) {
-  final prefix = c.isPending() ? _pendingPrefix : _approvedPrefix;
+  final prefix = c.isPending()
+      ? _pendingPrefix
+      : c.isRejected()
+          ? _rejectedPrefix
+          : _approvedPrefix;
   return '$prefix${constraintShortLabel(c)}';
 }
 

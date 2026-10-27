@@ -1,5 +1,5 @@
 {
-  "about": "Shared conflict-check cases, run unchanged by shavtzak/test (Dart) and functions/src/event_conflict_cases.test.ts. Dates are Israel calendar days (yyyy-MM-dd); times are HH:mm on the Israel wall clock; a missing event time is \"\". The event id is always \"evt\". expectedStretch is the event's stretch as yyyy-MM-ddTHH:mm on the Israel wall clock, end exclusive.",
+  "about": "Shared conflict-check cases, run unchanged by shavtzak/test (Dart) and functions/src/event_conflict_cases.test.ts. Dates are Israel calendar days (yyyy-MM-dd); times are HH:mm on the Israel wall clock; a missing event time is \"\". The event id is always \"evt\". An optional customHours {start, end} (yyyy-MM-ddTHH:mm on the Israel wall clock) is the assignment's own window: the runners pass it as the window the member is judged against, and where it is unreadable or ends before it starts they fall back to the event stretch. A case without customHours passes no window. expectedStretch is the event's stretch as yyyy-MM-ddTHH:mm on the Israel wall clock, end exclusive.",
   "cases": [
     {
       "id": "A1",
@@ -628,6 +628,124 @@
       "event": {"startDate": "2026-12-01", "endDate": "2026-12-01", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
       "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
         {"startDate": "2026-12-01", "endDate": "2026-11-29", "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "L1",
+      "label": "custom hours end before a constraint on the event's last day: free",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-01T17:00", "end": "2026-12-01T23:30"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-02", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "L2",
+      "label": "custom hours start the day before the event and reach a constraint there: blocked",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-11-30T19:00", "end": "2026-12-02T22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-11-30", "endDate": null, "startTime": "18:00", "endTime": "20:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "L3",
+      "label": "custom hours end exactly where a constraint starts (touching): free",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-01T17:00", "end": "2026-12-01T20:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "20:00", "endTime": "23:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "L4",
+      "label": "custom hours run past midnight into a constraint: blocked",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-01T17:00", "end": "2026-12-02T02:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-02", "endDate": null, "startTime": "01:00", "endTime": "03:00", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "L5",
+      "label": "a pending constraint inside the custom hours blocks",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-01T17:00", "end": "2026-12-01T23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "21:00", "endTime": "22:00", "status": "pending", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "L6",
+      "label": "a rejected constraint inside the custom hours does not block",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-01T17:00", "end": "2026-12-01T23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": "21:00", "endTime": "22:00", "status": "rejected", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "L7",
+      "label": "a weekly Monday constraint reaches custom hours that start the day before the event: blocked",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-11-30T19:00", "end": "2026-12-01T22:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-11-01", "endDate": null, "startTime": "18:00", "endTime": "21:00", "status": "approved", "constraintType": "unavailability", "repeatType": "weekly", "repeatDay": 1, "repeatEndDate": "2026-12-31"}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "L8",
+      "label": "non-permanent member stays available through availableEventIds whatever the custom hours",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-11-29T08:00", "end": "2026-11-29T10:00"},
+      "member": {"isPermanent": false, "isActive": true, "isArchived": false, "availableEventIds": ["evt"], "constraints": []},
+      "expectedAvailable": true
+    },
+    {
+      "id": "L9",
+      "label": "unreadable custom hours (a space instead of T) fall back to the event stretch",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-01 17:00", "end": "2026-12-01T23:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-02", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "L10",
+      "label": "custom hours that end before they start fall back to the event stretch",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-01T23:00", "end": "2026-12-01T17:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-02", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": false
+    },
+    {
+      "id": "L11",
+      "label": "custom hours on another day: a constraint on the event's own day no longer blocks",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-05T10:00", "end": "2026-12-05T12:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-01", "endDate": null, "startTime": null, "endTime": null, "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
+      ]},
+      "expectedAvailable": true
+    },
+    {
+      "id": "L12",
+      "label": "custom hours on another day: a constraint inside them blocks",
+      "event": {"startDate": "2026-12-01", "endDate": "2026-12-02", "assemblyTime": "17:00", "startTime": "19:00", "endTime": "20:30", "teamEndTime": "22:00"},
+      "customHours": {"start": "2026-12-05T10:00", "end": "2026-12-05T12:00"},
+      "member": {"isPermanent": true, "isActive": true, "isArchived": false, "availableEventIds": [], "constraints": [
+        {"startDate": "2026-12-05", "endDate": null, "startTime": "11:00", "endTime": "11:30", "status": "approved", "constraintType": "unavailability", "repeatType": null, "repeatDay": null, "repeatEndDate": null}
       ]},
       "expectedAvailable": false
     }
