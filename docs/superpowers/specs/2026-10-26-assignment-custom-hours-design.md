@@ -348,10 +348,14 @@ overrides the text above where they disagree.
    מאושר של <first name>: <label>" / "⚠️ מתנגש עם אילוץ ממתין לאישור של
    <first name>: <label>", where the label is `constraintShortLabel`
    (`constraint_labels.dart`).
-3. **Storage format** = `formatWallMoment` output (`yyyy-MM-ddTHH:mm`,
-   zero-padded, Israel wall clock). The backend writes `customStartAt` /
-   `customEndAt` as `?? null`, so an update without them clears them
-   (updates are field merges).
+3. **Storage format.** Hours are stored as `formatWallMoment` output:
+   `yyyy-MM-ddTHH:mm`, zero-padded, on the Israel wall clock.
+   - The new client always sends both keys, as `null` when there are no hours.
+   - On an update, an explicit `null` clears the hours.
+   - An **absent** key leaves the stored hours untouched. After a deploy, users'
+     devices run the previous build for one open, and an old build's update
+     carries no hours. Reading absent as `null` would silently erase hours that
+     a new build set.
 4. **One window rule, both sides, shared cases.**
    - Window = the assignment's custom hours when both parse and the end is
      after the start; otherwise the event stretch.
@@ -429,3 +433,13 @@ overrides the text above where they disagree.
     - `WallInterval` asserts its ends are UTC.
     - `constraintStatusLabel` labels a rejected constraint as rejected, never
       as approved.
+15. **Direct creates inherit the member's hours.**
+    - Some paths create an assignment directly through `assignment.insert` or
+      `assignment.insertBatch`: the summary tile, the manual-assignment flow,
+      and "שבץ בכל זאת".
+    - When such a create carries no hours and the member already has hours in
+      that event, the backend copies those hours onto it.
+    - A create that carries different hours is refused with 400.
+    - `saveBatch` never inherits. The staged client states hours explicitly. A
+      batch that leaves a member with different hours across roles in one event
+      is refused with 400, but only for groups the batch touches.
