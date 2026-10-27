@@ -1,14 +1,14 @@
 # Custom hours for one member's assignment (partial attendance)
 
 **Date:** 2026-10-26
-**Status:** agreed in conversation, written spec awaiting the user's review
-**Depends on:** "Project 1", a fix of today's conflict check (agreed 2026-10-26,
-to be designed and shipped **before** this feature). Today an event is
-checked day by day from assembly to *show* end, so constraints at night,
-after the show, or on a show that ends past midnight are missed. Project 1
-checks every event as one continuous stretch, from assembly on the first day
-to team end on the last day, rolling past midnight. This feature plugs a
-member's custom hours into that same rule.
+**Status:** approved 2026-10-27. The user delegated the review ("I trust you.
+You can start."); the section "Revisions after Project 1" at the end was
+written then and **overrides** anything above it that disagrees.
+**Depends on:** "Project 1", SHIPPED 2026-10-27 (main `6f148f1`). Every
+conflict check now judges an event as one continuous stretch
+(`eventStretch` in `shavtzak/lib/core/utils/event_stretch.dart`, twin in
+`functions/src/event_stretch.ts`), and a pending unavailability blocks like an
+approved one. This feature plugs a member's custom hours into that same rule.
 **Mockups (approved):** `2026-10-26-assignment-custom-hours/` next to this file
 (`custom-hours-dialog.html` — option **A** was chosen; `event-save-resolve.html`;
 `duplicate-custom-hours.html`; `member-card.html` — option **B** was chosen;
@@ -330,3 +330,102 @@ a slot with another member:
   `time_range_utils.dart`).
 - Whether the replace-popup and the event-save modal share a "custom hours
   choice card" widget.
+
+## Revisions after Project 1 (2026-10-27)
+
+Written after Project 1 shipped and the code was re-surveyed. Each item
+overrides the text above where they disagree.
+
+1. **The event's normal span is `eventStretch(event)`** (backend:
+   `eventStretchFromData`), the span every conflict check uses. It is used
+   for the pre-fill, the hint, "שעות האירוע הרגילות", "להסיר שעות מותאמות"
+   and the "לא חופף לאירוע החדש" check. Missing times fall back to its
+   00:00 / 24:00 edges (24:00 shows as 00:00 of the next day). This replaces
+   the ICS-based definition and the 23:59 fallback in §1.
+2. **Pending constraints block, exactly like approved ones.** This is the
+   user's Project 1 decision, and it replaces the §4 call "pending ones are
+   shown, never block". Warnings still label each one: "⚠️ מתנגש עם אילוץ
+   מאושר של <first name>: <label>" / "⚠️ מתנגש עם אילוץ ממתין לאישור של
+   <first name>: <label>", where the label is `constraintShortLabel`
+   (`constraint_labels.dart`).
+3. **Storage format** = `formatWallMoment` output (`yyyy-MM-ddTHH:mm`,
+   zero-padded, Israel wall clock). The backend writes `customStartAt` /
+   `customEndAt` as `?? null`, so an update without them clears them
+   (updates are field merges).
+4. **One window rule, both sides, shared cases.**
+   - Window = the assignment's custom hours when both parse and the end is
+     after the start; otherwise the event stretch.
+   - Readers never trust stored data blindly: unreadable hours fall back to
+     the event stretch.
+   - `shared/test-fixtures/event_conflict_cases.json` gains cases with an
+     optional `customHours: {start, end}`, and both runners judge them.
+5. **Which checks use the member's hours.**
+   - The assignment's window is used by every check about an existing or
+     chosen assignment:
+     - `AssignmentRepository.checkConflicts` and
+       `Assignment.hasAvailabilityConflict`.
+     - The duplication flags.
+     - `findNewlyConflictingAssignments` (the dialog "your new constraint hits
+       these assignments").
+     - The "constraints that collide with this event" button, for members
+       assigned with custom hours.
+     - The backend `memberAvailableForEvent`, when a write carries hours.
+   - Checks about picking a member for a slot keep the event stretch: the
+     picker lists, "בעלי מגבלות", and the manual-assignment flow.
+   - `shouldCheckAvailability` and `saveBatch`'s bypass stay as they are:
+     hours are admin-confirmed in the client, like notes.
+6. **Same-day booking by days touched.**
+   - An assignment's days are the calendar days its window touches: from the
+     start's day to the day of the last minute before its end. With no
+     custom hours they are the event's dates, as today.
+   - This applies on both sides of every same-day check: slot builders,
+     summary tile, manual flow, filled-slot marks, and the Drive by-event
+     export.
+7. **`assignment.updateMetadata` is unchanged.** It never writes hours, so it
+   cannot break the shared-hours rule, and no UI calls it.
+8. **ICS with several assignments in one event.** One part, from the earliest
+   custom start to the latest custom end among the member's assignments
+   there that carry valid hours. For a normal member these are all equal
+   (shared rule). For an `allowMultipleAssignments` member it is the
+   envelope, as §Data says.
+9. **Drive.**
+   - The full raw export (`serializeAssignments`, English headers) appends
+     `customStartAt` and `customEndAt`.
+   - The assignments-only export keeps its 10 columns, because the Apps
+     Script formatting is index-coupled. It changes only through item 6.
+10. **Changing an event's dates/times.**
+    - The client already knows which assignments carry hours (from the live
+      stream), so the 409 is a plain Hebrew message for the race case, not a
+      structured body: "לחלק מהצוות נוספו שעות מותאמות בינתיים — יש לפתוח את
+      האירוע מחדש".
+    - The resolve modal runs **before** the existing quota-reduction step, so
+      "ביטול" leaves nothing written.
+    - The backend ignores resolutions for assignments no longer in the event
+      (e.g. deleted by a quota reduction). It also ignores resolutions when no
+      date/time field changed.
+    - The event write and the resolved assignments go in one Firestore
+      transaction.
+11. **Duplication.**
+    - The sub-switch "שכפל שעות מותאמות" appears only when the source event
+      has an assignment with hours. The form reads that from the source
+      event's assignments stream (first value), never from an awaited
+      one-shot get.
+    - Moved hours shift by whole calendar days, from the source start date to
+      the new start date.
+12. **Filling or replacing a slot (§7, generalised).**
+    - The hours popup appears after picking whenever the slot's previous
+      occupant had hours **or** the incoming member already has hours in this
+      event.
+    - Choices, shown only where they apply: the previous occupant's hours;
+      the incoming member's existing hours; שעות האירוע הרגילות; שעות אחרות….
+    - Nothing is preselected.
+    - The choice applies to every role of the incoming member in the event
+      (shared rule), except for `allowMultipleAssignments` members.
+    - Without either condition, nothing changes from today.
+13. **Display format.** Days use `d.M` like the constraint labels:
+    `27.10 14:00 – 28.10 02:00`, or `27.10 14:00–23:00` when both ends fall
+    on one day.
+14. **Project 1 follow-ups folded in.**
+    - `WallInterval` asserts its ends are UTC.
+    - `constraintStatusLabel` labels a rejected constraint as rejected, never
+      as approved.
