@@ -560,6 +560,8 @@ function serializeAssignments(
     'alternativePhoneNumber',
     'createdAt',
     'updatedAt',
+    'customStartAt',
+    'customEndAt',
   ];
 
   const rows = assignments.map((doc) => {
@@ -581,6 +583,8 @@ function serializeAssignments(
       asString(doc.data['alternativePhoneNumber']),
       toTimestampString(doc.data['createdAt']),
       toTimestampString(doc.data['updatedAt']),
+      asString(doc.data['customStartAt']),
+      asString(doc.data['customEndAt']),
     ];
   });
 
@@ -1338,6 +1342,20 @@ export function canExecuteDriveAction(action: string): action is DriveAction {
     'listFiles',
     'archiveCheck',
   ].includes(action);
+}
+
+export function __testSerializeAssignments(input: {
+  assignments: FirestoreDoc[];
+  eventsData: Record<string, Record<string, unknown>>;
+  memberNames: Record<string, string>;
+  roleHebrewNames: Record<string, string>;
+}): {sheetName: string; headers: string[]; rows: unknown[][]} {
+  return serializeAssignments(
+    input.assignments,
+    input.eventsData,
+    input.memberNames,
+    input.roleHebrewNames,
+  ) as {sheetName: string; headers: string[]; rows: unknown[][]};
 }
 
 export function __testSerializeAssignmentsOnly(input: {

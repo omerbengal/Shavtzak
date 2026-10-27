@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DriveExportValidationError,
+  __testSerializeAssignments,
   __testSerializeAssignmentsOnly,
 } from './drive_export';
 
@@ -639,4 +640,38 @@ test('neither row is marked when a past and future event genuinely overlap on a 
   // pool is still future-only, so this real overlap must not produce a
   // "(משובץ גם ב…)" mark on either row.
   assert.deepEqual(sheet.rows.map((row) => row[0]), ['אדם אחד', 'אדם אחד']);
+});
+
+test('full export assignments sheet ends with the custom hours columns', () => {
+  const sheet = __testSerializeAssignments({
+    assignments: [
+      {
+        id: 'with-hours',
+        data: {
+          eventId: 'e1',
+          teamMemberId: 'm1',
+          roleType: 'medic',
+          customStartAt: '2026-12-01T17:00',
+          customEndAt: '2026-12-02T01:00',
+        },
+      },
+      {id: 'without-hours', data: {eventId: 'e1', teamMemberId: 'm1', roleType: 'medic'}},
+      {
+        id: 'null-hours',
+        data: {eventId: 'e1', teamMemberId: 'm1', roleType: 'medic', customStartAt: null, customEndAt: null},
+      },
+    ],
+    eventsData: {e1: {name: 'Event'}},
+    memberNames: {m1: 'אדם אחד'},
+    roleHebrewNames: {medic: 'חובש'},
+  });
+
+  assert.deepEqual(sheet.headers.slice(-4), ['createdAt', 'updatedAt', 'customStartAt', 'customEndAt']);
+  assert.deepEqual(sheet.rows.map((row) => row.slice(-2)), [
+    ['2026-12-01T17:00', '2026-12-02T01:00'],
+    ['', ''],
+    ['', ''],
+  ]);
+  // Every row is as long as the header row.
+  for (const row of sheet.rows) assert.equal(row.length, sheet.headers.length);
 });
