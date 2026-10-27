@@ -16,9 +16,12 @@ import 'package:shavtzak/domain/entities/assignment_label.dart' as _i10;
 import 'package:shavtzak/domain/entities/category.dart' as _i16;
 import 'package:shavtzak/domain/entities/checklist_item.dart' as _i13;
 import 'package:shavtzak/domain/entities/event.dart' as _i7;
+import 'package:shavtzak/domain/entities/imported_stage.dart' as _i19;
 import 'package:shavtzak/domain/entities/preset.dart' as _i14;
 import 'package:shavtzak/domain/entities/role.dart' as _i15;
 import 'package:shavtzak/domain/entities/slot_annotation.dart' as _i8;
+import 'package:shavtzak/domain/entities/stage.dart' as _i18;
+import 'package:shavtzak/domain/entities/task_item.dart' as _i17;
 import 'package:shavtzak/domain/entities/team_member.dart' as _i5;
 
 // ignore_for_file: type=lint
@@ -397,6 +400,16 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Stream<List<_i9.Assignment>>);
 
   @override
+  _i4.Stream<List<String>> watchAssignedMemberIds(String? eventId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #watchAssignedMemberIds,
+          [eventId],
+        ),
+        returnValue: _i4.Stream<List<String>>.empty(),
+      ) as _i4.Stream<List<String>>);
+
+  @override
   _i4.Future<_i9.Assignment?> getAssignmentById(String? id) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -688,11 +701,15 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> insertAssignmentsBatch(List<_i9.Assignment>? assignments) =>
+  _i4.Future<void> insertAssignmentsBatch(
+    List<_i9.Assignment>? assignments, {
+    bool? bypassAvailability = false,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
           #insertAssignmentsBatch,
           [assignments],
+          {#bypassAvailability: bypassAvailability},
         ),
         returnValue: _i4.Future<void>.value(),
         returnValueForMissingStub: _i4.Future<void>.value(),
@@ -1431,6 +1448,154 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
         ),
         returnValue: _i4.Stream<List<_i16.Category>>.empty(),
       ) as _i4.Stream<List<_i16.Category>>);
+
+  @override
+  _i4.Stream<List<_i17.TaskItem>> watchTasks() => (super.noSuchMethod(
+        Invocation.method(
+          #watchTasks,
+          [],
+        ),
+        returnValue: _i4.Stream<List<_i17.TaskItem>>.empty(),
+      ) as _i4.Stream<List<_i17.TaskItem>>);
+
+  @override
+  _i4.Future<void> insertTask(_i17.TaskItem? task) => (super.noSuchMethod(
+        Invocation.method(
+          #insertTask,
+          [task],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> updateTask(_i17.TaskItem? task) => (super.noSuchMethod(
+        Invocation.method(
+          #updateTask,
+          [task],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> deleteTask(String? taskId) => (super.noSuchMethod(
+        Invocation.method(
+          #deleteTask,
+          [taskId],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> setSubtaskDone(
+    String? taskId,
+    String? subtaskId,
+    bool? isDone,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #setSubtaskDone,
+          [
+            taskId,
+            subtaskId,
+            isDone,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> setTaskComplete(
+    String? taskId,
+    bool? isComplete,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #setTaskComplete,
+          [
+            taskId,
+            isComplete,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> setTaskAssigneeUpdate(
+    String? taskId,
+    String? text,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #setTaskAssigneeUpdate,
+          [
+            taskId,
+            text,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Stream<List<_i18.Stage>> watchStages() => (super.noSuchMethod(
+        Invocation.method(
+          #watchStages,
+          [],
+        ),
+        returnValue: _i4.Stream<List<_i18.Stage>>.empty(),
+      ) as _i4.Stream<List<_i18.Stage>>);
+
+  @override
+  _i4.Future<void> insertStage(_i18.Stage? stage) => (super.noSuchMethod(
+        Invocation.method(
+          #insertStage,
+          [stage],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> updateStage(_i18.Stage? stage) => (super.noSuchMethod(
+        Invocation.method(
+          #updateStage,
+          [stage],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> deleteStage(String? stageId) => (super.noSuchMethod(
+        Invocation.method(
+          #deleteStage,
+          [stageId],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> importStages(
+    String? eventId,
+    List<_i19.ImportedStage>? stages,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #importStages,
+          [
+            eventId,
+            stages,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
 }
 
 /// A class which mocks [GoogleCalendarService].

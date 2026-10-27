@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/debug/logger.dart';
-import '../../core/utils/time_range_utils.dart';
 import '../../core/utils/constraint_event_overlap.dart';
+import '../../core/utils/event_stretch.dart';
+import '../../domain/entities/event.dart';
 
 class ConstraintEventWarningDialog extends StatelessWidget {
   final String title;
@@ -57,18 +58,35 @@ class ConstraintEventWarningDialog extends StatelessWidget {
     return '${_formatDate(start)} - ${_formatDate(end)}';
   }
 
-  String _formatEventTime(EventOverlapInfo overlap) {
-    final event = overlap.event;
-    final hasValidTime =
-        TimeRangeUtils.parseTimeToMinutes(event.startTime) != null &&
-            TimeRangeUtils.parseTimeToMinutes(event.endTime) != null;
-
-    if (!hasValidTime) {
+  /// The hours the conflict check judges the event by ([eventStretch]): from
+  /// assembly (else show start) to team end (else show end). A multi-day
+  /// event names the day of each end ('27.10 18:00 – 28.10 23:00'). When the
+  /// stretch had to fall back to a day edge ([eventStretchFellBack], the same
+  /// test as 'missing_event_time') the time is not defined.
+  String _formatEventTime(Event event) {
+    if (eventStretchFellBack(event)) {
       return 'שעת האירוע לא מוגדרת';
     }
 
-    return '${event.startTime} - ${event.endTime}';
+    final stretch = eventStretch(event);
+    final from = _formatClock(stretch.start);
+    final until = _formatClock(stretch.end);
+    final multiDay = DateTime(
+            event.endDate.year, event.endDate.month, event.endDate.day)
+        .isAfter(DateTime(
+            event.startDate.year, event.startDate.month, event.startDate.day));
+    if (!multiDay) {
+      return '$from - $until';
+    }
+    return '${_formatDayMonth(stretch.start)} $from – '
+        '${_formatDayMonth(stretch.end)} $until';
   }
+
+  String _formatClock(DateTime moment) =>
+      '${moment.hour.toString().padLeft(2, '0')}:'
+      '${moment.minute.toString().padLeft(2, '0')}';
+
+  String _formatDayMonth(DateTime moment) => '${moment.day}.${moment.month}';
 
   String _formatLocation(String rawLocation) {
     final trimmed = rawLocation.trim();
@@ -133,7 +151,7 @@ class ConstraintEventWarningDialog extends StatelessWidget {
                                 const SizedBox(height: 4),
                                 Text(
                                     'תאריך: ${_formatDateRange(event.startDate, event.endDate)}'),
-                                Text('שעה: ${_formatEventTime(overlap)}'),
+                                Text('שעה: ${_formatEventTime(event)}'),
                                 Text('מיקום: $locationText'),
                                 if (showMissingTimeNote &&
                                     overlap.eventHasMissingTime)

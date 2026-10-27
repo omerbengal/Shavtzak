@@ -97,6 +97,14 @@ class AssignmentSlotsLoaded extends AssignmentState {
   /// not yet Saved.
   final Set<String> stagedDeletionSlotKeys;
 
+  /// True once the team-members stream has delivered for this load. The
+  /// screen holds its first-load spinner until then. It is an explicit signal
+  /// on purpose: "no slot has an available member" cannot tell "members not
+  /// here yet" from "members here, all unavailable", and the latter left the
+  /// spinner up forever. Defaults to true so every construction that is not a
+  /// slot BUILD (optimistic copies, tests) keeps meaning "loaded".
+  final bool membersLoaded;
+
   AssignmentSlotsLoaded(
     this.slots, {
     this.selectedEventIds = const {},
@@ -106,6 +114,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
     this.stagedSlotKeys = const {},
     this.stagedGoneSlotKeys = const {},
     this.stagedDeletionSlotKeys = const {},
+    this.membersLoaded = true,
   })  : totalSlots = slots.length,
         filledSlots = slots.where((s) => s.isFilled).length,
         unfilledSlots = slots.where((s) => !s.isFilled).length;
@@ -126,6 +135,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
         stagedSlotKeys,
         stagedGoneSlotKeys,
         stagedDeletionSlotKeys,
+        membersLoaded,
       ];
 
   /// Create a copy with new filter or pending operations
@@ -137,6 +147,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
     Set<String>? stagedSlotKeys,
     Set<String>? stagedGoneSlotKeys,
     Set<String>? stagedDeletionSlotKeys,
+    bool? membersLoaded,
   }) {
     return AssignmentSlotsLoaded(
       slots,
@@ -148,6 +159,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
       stagedGoneSlotKeys: stagedGoneSlotKeys ?? this.stagedGoneSlotKeys,
       stagedDeletionSlotKeys:
           stagedDeletionSlotKeys ?? this.stagedDeletionSlotKeys,
+      membersLoaded: membersLoaded ?? this.membersLoaded,
     );
   }
 }

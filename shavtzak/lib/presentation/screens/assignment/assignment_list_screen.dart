@@ -37,6 +37,7 @@ import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/assignment_label_chip.dart';
 import '../../widgets/name_search_field.dart';
+import '../../widgets/constrained_member_reasons.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -651,14 +652,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   }
 
                   if (state is AssignmentSlotsLoaded) {
-                    // If slots are empty, the load is complete (no events in time window)
-                    // Only check for team members if there are actual slots
-                    if (!_isInitialLoadComplete && state.slots.isNotEmpty) {
-                      final hasTeamMembers = state.slots
-                          .any((slot) => slot.availableMembers.isNotEmpty);
-                      if (!hasTeamMembers) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+                    // Hold the spinner until the team members have actually
+                    // arrived. The bloc says so outright (`membersLoaded`); it
+                    // used to be guessed from "some slot has an available
+                    // member", which is also false when every member IS loaded
+                    // and unavailable, and then nothing re-ran the builder.
+                    if (!_isInitialLoadComplete && !state.membersLoaded) {
+                      return const Center(child: CircularProgressIndicator());
                     }
 
                     // Mark initial load as complete
@@ -2819,8 +2819,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       ...slot.availableMembers,
     ];
 
-    // Determine if dropdown should be enabled
-    // Enable if: there are available members, OR there's a current assignment, OR there are already assigned members
+    // Whether anyone can be picked straight from the list. This only colours
+    // the field (grey = no one available); it must NOT disable it. The menu's
+    // two fixed actions, "שובצו כבר" and "בעלי מגבלות / לא זמינים", are always
+    // valid and are the way to assign a blocked member anyway ("שבץ בכל זאת")
+    // — exactly when every capable member is blocked. Their dialogs say so
+    // when there is nobody to list.
     final bool hasOptions = slot.availableMembers.isNotEmpty ||
         currentMember != null ||
         slot.alreadyAssignedMembers.isNotEmpty;
@@ -2834,7 +2838,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           selected: currentMember,
           members: members,
           dense: dense,
-          enabled: hasOptions,
+          enabled: true,
           backgroundColor: hasOptions
               ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
               : Colors.grey.shade200,
@@ -3268,33 +3272,24 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             slot.sameDayEventInfo[member.id] ?? [];
                         final isSameDayAssigned = sameDayEvents.isNotEmpty;
 
-                        // Determine the reason for unavailability/constraint
-                        String reason;
-                        if (isSameDayAssigned) {
-                          reason = 'משובצ/ת ב: ${sameDayEvents.join(", ")}';
-                        } else if (member.isPermanent) {
-                          reason = 'מגבלה מאושרת';
-                        } else {
-                          reason = 'לא ציין/ה זמינות';
-                        }
-
                         return ListTile(
                           leading: Icon(
-                            isSameDayAssigned
-                                ? Icons.event
-                                : member.isPermanent
-                                    ? Icons.event_busy
-                                    : Icons.schedule,
-                            color: Colors.red.shade400,
+                            constrainedMemberIcon(member, slot.event,
+                                sameDayAssigned: isSameDayAssigned),
+                            color: constrainedMemberIconColor(
+                                member, slot.event,
+                                sameDayAssigned: isSameDayAssigned),
                           ),
                           title: Align(
                             alignment: Alignment.centerRight,
                             child: _buildMemberNameWithPermanentShield(member),
                           ),
-                          subtitle: Text(
-                            reason,
-                            style: TextStyle(
-                                color: Colors.red.shade600, fontSize: 12),
+                          // One line per reason: approved and pending
+                          // constraints each get their own.
+                          subtitle: ConstrainedMemberReasons(
+                            member: member,
+                            event: slot.event,
+                            sameDayEvents: sameDayEvents,
                           ),
                           trailing: ElevatedButton(
                             onPressed: () {

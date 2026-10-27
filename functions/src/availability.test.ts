@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Timestamp} from 'firebase-admin/firestore';
 import {
+  __testEventStretchFromData as eventStretchFromData,
   __testMemberAvailableForEvent as memberAvailableForEvent,
   __testNormalizeDayInIsrael as normalizeDayInIsrael,
 } from './index';
+import {formatWallMinutes} from './event_stretch';
 
 // All tests pin TZ=UTC to mirror the deployed Cloud Function environment.
 // The fix should be TZ-independent, but pinning makes the assertions about
@@ -329,5 +331,136 @@ test('memberAvailableForEvent: non-permanent with availability only on UTC day (
       ],
     });
     assert.equal(memberAvailableForEvent(member, buildEvent()), false);
+  });
+});
+
+function sameDayUnavailability(status: string): Mutable {
+  return {
+    id: `same-day-${status}`,
+    startDate: '2026-06-08T00:00:00.000',
+    endDate: '2026-06-08T00:00:00.000',
+    status,
+    constraintType: 'unavailability',
+    startTime: null,
+    endTime: null,
+  };
+}
+
+test('memberAvailableForEvent: a pending unavailability blocks like an approved one', () => {
+  withUtcTimezone(() => {
+    const member = buildMember({constraints: [sameDayUnavailability('pending')]});
+    assert.equal(memberAvailableForEvent(member, buildEvent()), false);
+  });
+});
+
+test('memberAvailableForEvent: a rejected unavailability does not block', () => {
+  withUtcTimezone(() => {
+    const member = buildMember({constraints: [sameDayUnavailability('rejected')]});
+    assert.equal(memberAvailableForEvent(member, buildEvent()), true);
+  });
+});
+
+// The event is one continuous stretch (event_stretch.ts); the shared case
+// table (event_conflict_cases.test.ts) holds the rule's cases. These guard
+// stored data the table can't express.
+
+function june8Unavailability(startTime: string, endTime: string): Mutable {
+  return buildMember({
+    constraints: [
+      {
+        id: `june8-${startTime}`,
+        startDate: '2026-06-08T00:00:00.000',
+        endDate: null,
+        status: 'approved',
+        constraintType: 'unavailability',
+        startTime,
+        endTime,
+      },
+    ],
+  });
+}
+
+test('memberAvailableForEvent: malformed event times fall back instead of throwing', () => {
+  withUtcTimezone(() => {
+    // Assembly with a stray space and a numeric show end both count as
+    // missing: the stretch runs from the show start (17:00) to 24:00. Before,
+    // a bad end time threw (E4).
+    const event = buildEvent({assemblyTime: '16:00 ', endTime: 2030, teamEndTime: null});
+    const stretch = eventStretchFromData(event);
+    assert.equal(formatWallMinutes(stretch.start), '2026-06-08T17:00');
+    assert.equal(formatWallMinutes(stretch.end), '2026-06-09T00:00');
+    // Free only because '16:00 ' is not read as 16:00.
+    assert.equal(memberAvailableForEvent(june8Unavailability('16:00', '17:00'), event), true);
+    // Blocked only because the numeric show end falls back to 24:00.
+    assert.equal(memberAvailableForEvent(june8Unavailability('22:00', '23:00'), event), false);
+  });
+});
+
+test('memberAvailableForEvent: a constraint whose endDate is before its startDate covers its startDate', () => {
+  withUtcTimezone(() => {
+    // Bad data, clamped like the event side: the start day is the last day.
+    // Two days back, so the one-day roll alone can't hide a missing clamp.
+    const member = buildMember({
+      constraints: [
+        {
+          id: 'inverted',
+          startDate: '2026-06-08T00:00:00.000',
+          endDate: '2026-06-06T00:00:00.000',
+          status: 'approved',
+          constraintType: 'unavailability',
+          startTime: null,
+          endTime: null,
+        },
+      ],
+    });
+    let available: boolean | undefined;
+    assert.doesNotThrow(() => {
+      available = memberAvailableForEvent(member, buildEvent());
+    });
+    assert.equal(available, false);
+  });
+});
+
+test('memberAvailableForEvent: a repeat type the backend does not know matches nothing', () => {
+  withUtcTimezone(() => {
+    const member = buildMember({
+      constraints: [
+        {
+          id: 'yearly',
+          startDate: '2026-01-08T00:00:00.000',
+          repeatType: 'yearly',
+          repeatDay: 8,
+          repeatEndDate: '2027-01-01T00:00:00.000',
+          status: 'approved',
+          constraintType: 'unavailability',
+          startTime: null,
+          endTime: null,
+        },
+      ],
+    });
+    assert.equal(memberAvailableForEvent(member, buildEvent()), true);
+  });
+});
+
+test('memberAvailableForEvent: legacy timed availability on an event with no end time does not throw', () => {
+  withUtcTimezone(() => {
+    // E4 on the non-permanent path: no show end and no team end used to be a
+    // 500. The event now runs from assembly (16:00) to 24:00; the legacy path
+    // counts any overlap with an availability window as available.
+    const member = buildMember({
+      isPermanent: false,
+      constraints: [
+        {
+          id: 'avail-evening',
+          startDate: '2026-06-08T00:00:00.000',
+          endDate: '2026-06-08T00:00:00.000',
+          status: 'approved',
+          constraintType: 'availability',
+          startTime: '18:00',
+          endTime: '23:00',
+        },
+      ],
+    });
+    assert.equal(memberAvailableForEvent(member, buildEvent({endTime: '', teamEndTime: ''})), true);
   });
 });

@@ -163,9 +163,10 @@ void main() {
     role: role,
     slotIndex: 0,
     currentAssignment: assignment,
-    // Must be non-empty: the screen shows a spinner-until-loaded gate keyed
-    // on "does any slot have availableMembers", never rendering the grid at
-    // all if every slot's availableMembers list is empty.
+    // Historical: the screen's first-load spinner used to be keyed on "does
+    // any slot have availableMembers", so this had to be non-empty or the grid
+    // never rendered. It now waits on AssignmentSlotsLoaded.membersLoaded
+    // (default true here), so this is no longer load-bearing.
     availableMembers: [member],
   );
 
@@ -193,8 +194,8 @@ void main() {
   /// [extraSlots] (Task 7 / SG7) defaults to none, so every EXISTING call
   /// site below renders exactly `[slot]`, unchanged — it exists purely to let
   /// the new orphaned-annotation-row test add `orphanedNoteSlot` alongside
-  /// `slot` (needed to satisfy the availableMembers spinner-gate above, since
-  /// an orphaned-annotation row's own availableMembers is always empty).
+  /// `slot` (an orphaned-annotation row's own availableMembers is always
+  /// empty).
   Future<_MockAssignmentBloc> pumpAssignmentListWith(
     WidgetTester tester, {
     required Set<String> stagedDeletionSlotKeys,

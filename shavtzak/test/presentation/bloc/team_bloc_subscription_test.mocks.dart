@@ -467,11 +467,15 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<String>> checkConflicts(_i7.Assignment? assignment) =>
+  _i4.Future<List<String>> checkConflicts(
+    _i7.Assignment? assignment, {
+    bool? skipAvailability = false,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
           #checkConflicts,
           [assignment],
+          {#skipAvailability: skipAvailability},
         ),
         returnValue: _i4.Future<List<String>>.value(<String>[]),
       ) as _i4.Future<List<String>>);

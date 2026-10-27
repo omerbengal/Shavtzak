@@ -47,7 +47,8 @@ class _DuplicationConflictResolutionDialogState
   @override
   void initState() {
     super.initState();
-    // Start with availability-conflicted assignments marked for removal
+    // Start with availability-conflicted assignments marked for removal. The
+    // ones that cannot be kept (canKeep false) are in there and stay there.
     _markedForRemoval = Set.from(widget.conflictState.suggestedExclusions);
     // Start with all quota roles collapsed
     _expandedRoles = <String>{};
@@ -108,6 +109,17 @@ class _DuplicationConflictResolutionDialogState
     }
 
     return result;
+  }
+
+  /// Flip one row between kept and marked for removal. A row that cannot be
+  /// kept (the backend would refuse it even with the bypass) never changes.
+  void _toggleRemoval(AssignmentDuplicationInfo info) {
+    if (!info.canKeep) return;
+    setState(() {
+      if (!_markedForRemoval.remove(info.assignment.id)) {
+        _markedForRemoval.add(info.assignment.id);
+      }
+    });
   }
 
   String _formatDate(DateTime date) {
@@ -506,19 +518,15 @@ class _DuplicationConflictResolutionDialogState
             ),
           ),
           child: InkWell(
-            onTap: () {
-              Logger.action('toggle:availabilityConflictAssignment', {
-                'assignmentId': info.assignment.id,
-                'markedForRemoval': !isMarkedForRemoval,
-              });
-              setState(() {
-                if (isMarkedForRemoval) {
-                  _markedForRemoval.remove(info.assignment.id);
-                } else {
-                  _markedForRemoval.add(info.assignment.id);
-                }
-              });
-            },
+            onTap: !info.canKeep
+                ? null
+                : () {
+                    Logger.action('toggle:availabilityConflictAssignment', {
+                      'assignmentId': info.assignment.id,
+                      'markedForRemoval': !isMarkedForRemoval,
+                    });
+                    _toggleRemoval(info);
+                  },
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -526,8 +534,9 @@ class _DuplicationConflictResolutionDialogState
                 children: [
                   Row(
                     children: [
-                      // Red X checkbox
-                      _buildRemovalCheckbox(isMarkedForRemoval),
+                      // Red X checkbox (disabled when the member cannot be kept)
+                      _buildRemovalCheckbox(isMarkedForRemoval,
+                          enabled: info.canKeep),
                       const SizedBox(width: 12),
 
                       // Member name as title
@@ -602,10 +611,11 @@ class _DuplicationConflictResolutionDialogState
                     ),
                   ),
 
-                  // Availability conflict reason
+                  // Availability conflict reason: one line per reason
                   if (info.hasAvailabilityConflict && info.availabilityReason != null) ...[
                     const SizedBox(height: 8),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(Icons.event_busy, size: 14, color: Colors.red.shade400),
                         const SizedBox(width: 4),
@@ -744,19 +754,15 @@ class _DuplicationConflictResolutionDialogState
     final memberName = info.assignment.teamMember?.name ?? 'לא ידוע';
 
     return InkWell(
-      onTap: () {
-        Logger.action('toggle:quotaAssignment', {
-          'assignmentId': info.assignment.id,
-          'markedForRemoval': !isMarkedForRemoval,
-        });
-        setState(() {
-          if (isMarkedForRemoval) {
-            _markedForRemoval.remove(info.assignment.id);
-          } else {
-            _markedForRemoval.add(info.assignment.id);
-          }
-        });
-      },
+      onTap: !info.canKeep
+          ? null
+          : () {
+              Logger.action('toggle:quotaAssignment', {
+                'assignmentId': info.assignment.id,
+                'markedForRemoval': !isMarkedForRemoval,
+              });
+              _toggleRemoval(info);
+            },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
@@ -767,8 +773,8 @@ class _DuplicationConflictResolutionDialogState
         ),
         child: Row(
           children: [
-            // Red X checkbox
-            _buildRemovalCheckbox(isMarkedForRemoval),
+            // Red X checkbox (disabled when the member cannot be kept)
+            _buildRemovalCheckbox(isMarkedForRemoval, enabled: info.canKeep),
             const SizedBox(width: 12),
 
             // Member info
@@ -798,10 +804,12 @@ class _DuplicationConflictResolutionDialogState
                       ],
                     ],
                   ),
-                  // Only show availability conflicts in the availability section
-                  if (isAvailabilitySection && info.hasAvailabilityConflict && info.availabilityReason != null) ...[
+                  // Availability conflicts show in the availability section; a
+                  // locked row (cannot be kept) shows its reason wherever it is
+                  if ((isAvailabilitySection || !info.canKeep) && info.hasAvailabilityConflict && info.availabilityReason != null) ...[
                     const SizedBox(height: 2),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(Icons.event_busy, size: 14, color: Colors.red.shade400),
                         const SizedBox(width: 4),
@@ -844,15 +852,18 @@ class _DuplicationConflictResolutionDialogState
     );
   }
 
-  Widget _buildRemovalCheckbox(bool isChecked) {
+  Widget _buildRemovalCheckbox(bool isChecked, {bool enabled = true}) {
+    // A disabled box is always checked (its row is locked to removal), drawn
+    // greyed so it does not look tappable.
+    final fill = !enabled ? Colors.grey.shade400 : Colors.red.shade500;
     return Container(
       width: 24,
       height: 24,
       decoration: BoxDecoration(
-        color: isChecked ? Colors.red.shade500 : Colors.white,
+        color: isChecked ? fill : Colors.white,
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: isChecked ? Colors.red.shade500 : Colors.grey.shade400,
+          color: isChecked ? fill : Colors.grey.shade400,
           width: 2,
         ),
       ),

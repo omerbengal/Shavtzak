@@ -91,6 +91,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   bool _slotsRolesReady = false;
   bool _slotsEventsReady = false;
   bool _slotsAssignmentsReady = false;
+  // Unlike the three above this is NOT a gate on the first emit — it is reported
+  // on every slots state as `membersLoaded` so the screen can tell "members
+  // not here yet" from "members here, all unavailable".
+  bool _slotsMembersReady = false;
 
   // Events/assignments older than the window, loaded on demand.
   final Map<String, Event> _extraPastEventsMap = {};
@@ -414,30 +418,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
-      // Check if we need to reload based on view type
-      // For slots view: Real-time stream handles updates automatically
-      // For list view: Need to restart the listener
-      if (previousState is AssignmentsLoaded) {
-        // Restart real-time listener based on current filter
-        final currentState = previousState;
-        if (currentState.filterType == 'event' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByPerson(currentState.filterId!));
-        } else {
-          add(const LoadAssignments());
-        }
-      } else if (previousState is AssignmentSlotsLoaded) {
-        add(RebuildAssignmentSlots(
-          preservedFilter: previousState.selectedEventIds,
-        ));
-      } else {
-        // Only reload if not in slots view (real-time stream handles slots view)
-        add(const LoadAssignments());
-      }
-      // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
+      _reloadAfterCreate(previousState);
     } catch (e) {
       if (e is AssignmentConflictException) {
         _emitOrLog(
@@ -448,6 +429,35 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _emitOrLog(emit, AssignmentError(message));
         _completeActionFailure(event.completion, message);
       }
+    }
+  }
+
+  /// Re-dispatches the load that matches the view the bloc was in before a
+  /// successful create, so the list the screen shows reflects the new row.
+  /// Shared by the checked and the bypass create handlers.
+  ///
+  /// - List view (all / by event / by person): restart the listener with the
+  ///   same filter.
+  /// - Slots view: rebuild the slots, keeping the selected events.
+  /// - Anything else: load all assignments.
+  void _reloadAfterCreate(AssignmentState previousState) {
+    if (previousState is AssignmentsLoaded) {
+      // Restart real-time listener based on current filter
+      if (previousState.filterType == 'event' &&
+          previousState.filterId != null) {
+        add(LoadAssignmentsByEvent(previousState.filterId!));
+      } else if (previousState.filterType == 'person' &&
+          previousState.filterId != null) {
+        add(LoadAssignmentsByPerson(previousState.filterId!));
+      } else {
+        add(const LoadAssignments());
+      }
+    } else if (previousState is AssignmentSlotsLoaded) {
+      add(RebuildAssignmentSlots(
+        preservedFilter: previousState.selectedEventIds,
+      ));
+    } else {
+      add(const LoadAssignments());
     }
   }
 
@@ -466,7 +476,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           await _repository.getAssignmentById(event.assignment.id);
 
       if (!event.bypassAvailability) {
-        final conflicts = await _repository.checkConflicts(event.assignment);
+        // An update that keeps the stored member and event is never re-refused
+        // on availability (same rule as updateAssignment and the backend).
+        final unchanged = previousAssignment != null &&
+            previousAssignment.teamMemberId == event.assignment.teamMemberId &&
+            previousAssignment.eventId == event.assignment.eventId;
+        final conflicts = await _repository.checkConflicts(
+          event.assignment,
+          skipAvailability: unchanged,
+        );
 
         if (conflicts.isNotEmpty) {
           _emitOrLog(
@@ -748,6 +766,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _slotsRolesReady = false;
       _slotsEventsReady = false;
       _slotsAssignmentsReady = false;
+      _slotsMembersReady = false;
 
       // Reset past-history pagination on every (re)load, incl. toggling past.
       _slotsWindowStart = windowStart;
@@ -794,6 +813,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update member cache
           _windowMembersMap.clear();
           _windowMembersMap.addAll({for (var tm in updatedMembers) tm.id: tm});
+          // Reported on the state as `membersLoaded`. Set even when the list is
+          // empty or every member is unavailable: the screen waits for the
+          // stream to deliver, not for anyone to be available.
+          _slotsMembersReady = true;
           // Assignments are kept live by the watchAssignmentsInTimeWindow listener
           // (the source of truth); reuse its cache instead of re-querying.
           final currentAssignments = _repository.getCurrentAssignments();
@@ -3176,6 +3199,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         AssignmentSlotsLoaded(
           updatedSlots,
           selectedEventIds: currentState.selectedEventIds,
+          membersLoaded: currentState.membersLoaded,
           pendingOperations: _pendingOperations,
         ));
 
@@ -3197,6 +3221,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             updatedSlots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
@@ -3210,6 +3235,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             currentState.slots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       final message = e is AssignmentConflictException
@@ -3260,6 +3286,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         AssignmentSlotsLoaded(
           updatedSlots,
           selectedEventIds: currentState.selectedEventIds,
+          membersLoaded: currentState.membersLoaded,
           pendingOperations: _pendingOperations,
         ));
 
@@ -3285,6 +3312,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             updatedSlots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionSuccess(event.completion, 'השיבוץ עודכן בהצלחה');
@@ -3298,6 +3326,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             currentState.slots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       final message = e is AssignmentConflictException
@@ -3348,6 +3377,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         AssignmentSlotsLoaded(
           updatedSlots,
           selectedEventIds: currentState.selectedEventIds,
+          membersLoaded: currentState.membersLoaded,
           pendingOperations: _pendingOperations,
         ));
 
@@ -3374,6 +3404,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             updatedSlots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionSuccess(event.completion, 'השיבוץ נמחק בהצלחה');
@@ -3387,6 +3418,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           AssignmentSlotsLoaded(
             currentState.slots,
             selectedEventIds: currentState.selectedEventIds,
+            membersLoaded: currentState.membersLoaded,
             pendingOperations: _pendingOperations,
           ));
       _completeActionFailure(event.completion, 'שגיאה במחיקת שיבוץ: $e');
@@ -3592,12 +3624,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Only add if member has the capability for current role and doesn't allow multiple assignments
               if (member.canPerformRole(role.key) &&
                   !member.allowMultipleAssignments) {
-                // Check availability (same logic as normal available members)
-                final isAvailable = member.isAvailableForEventWithTime(event);
-                if (isAvailable) {
+                // The names go to every such member, available or not, so the
+                // constrained list can show a blocked member's same-day
+                // booking next to their constraint. Only an available member
+                // becomes a same-day candidate, and that map alone decides
+                // the partitioning below.
+                sameDayEventInfoMap.putIfAbsent(memberId, () => []);
+                sameDayEventInfoMap[memberId]!.add(otherEvent.name);
+                if (member.isAvailableForEventWithTime(event)) {
                   sameDayAssignedMembersMap[memberId] = member;
-                  sameDayEventInfoMap.putIfAbsent(memberId, () => []);
-                  sameDayEventInfoMap[memberId]!.add(otherEvent.name);
                 }
               }
             }
@@ -3686,6 +3721,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
       stagedGoneSlotKeys: goneKeys,
       stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
+      membersLoaded: _slotsMembersReady,
     );
   }
 
@@ -3801,6 +3837,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
+            membersLoaded: _slotsMembersReady,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -4053,13 +4090,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 // Only add if member has the capability for current role and doesn't allow multiple assignments
                 if (member.canPerformRole(role.key) &&
                     !member.allowMultipleAssignments) {
-                  // Check availability (same logic as normal available members)
-                  final isAvailable =
-                      member.isAvailableForEventWithTime(eventData);
-                  if (isAvailable) {
+                  // Names for every such member, available or not (the
+                  // constrained list shows them next to a constraint); only
+                  // an available member becomes a same-day candidate, and
+                  // that map alone decides the partitioning below.
+                  sameDayEventInfoMap.putIfAbsent(memberId, () => []);
+                  sameDayEventInfoMap[memberId]!.add(otherEvent.name);
+                  if (member.isAvailableForEventWithTime(eventData)) {
                     sameDayAssignedMembersMap[memberId] = member;
-                    sameDayEventInfoMap.putIfAbsent(memberId, () => []);
-                    sameDayEventInfoMap[memberId]!.add(otherEvent.name);
                   }
                 }
               }
@@ -4180,6 +4218,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
+            membersLoaded: _slotsMembersReady,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
@@ -4191,6 +4230,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     CreateAssignmentWithBypass event,
     Emitter<AssignmentState> emit,
   ) async {
+    // Store previous state BEFORE any emit
+    final previousState = state;
+
     _emitOrLog(emit, const AssignmentOperating('creating'));
 
     try {
@@ -4203,12 +4245,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
-      // No manual reload: the active Firestore stream subscription
-      // (emit.forEach in _onLoadAssignments / _onLoadAssignmentsByEvent /
-      // _onLoadAssignmentsByPerson, or _assignmentSubscription for slots view)
-      // will emit the updated list automatically once the write propagates.
-      // Dispatching another Load* here would re-subscribe and cause a brief
-      // AssignmentLoading flash plus a redundant _populateAssignmentRelations.
+      // Same post-success reload as the checked create. The operating and
+      // success emits above replace the loaded state, and screens such as the
+      // summary only show a list for AssignmentsLoaded / AssignmentSlotsLoaded,
+      // so without this they would keep an out-of-date list.
+      _reloadAfterCreate(previousState);
     } catch (e) {
       if (e is AssignmentConflictException) {
         _emitOrLog(

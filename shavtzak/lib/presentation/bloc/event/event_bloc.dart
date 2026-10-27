@@ -10,6 +10,7 @@ import '../../../core/constants/role_types.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
 import '../calendar_sync/calendar_sync_event.dart';
+import 'duplication_availability.dart';
 import 'event_event.dart';
 import 'event_state.dart';
 
@@ -555,31 +556,27 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       bool hasAnyConflict = false;
 
       for (final assignment in assignments) {
-        bool hasAvailabilityConflict = false;
-        String? availabilityReason;
-
-        // Check availability conflict with new dates
-        // Skip for members with allowMultipleAssignments
-        if (assignment.teamMember != null &&
-            !assignment.teamMember!.allowMultipleAssignments) {
-          if (!assignment.teamMember!
-              .isAvailableForDateRange(event.newStartDate, event.newEndDate)) {
-            hasAvailabilityConflict = true;
-            availabilityReason = 'חבר הצוות לא זמין בתאריכים החדשים';
-          }
-        }
+        // Same rule as assigning, judged against the proposed event (new dates
+        // and times). Members the backend refuses even with the bypass come
+        // back with canKeep false.
+        final availability = duplicationAvailability(
+          assignment: assignment,
+          proposedEvent: proposedEvent,
+        );
 
         final isInOverQuotaRole = overQuotaRoles.contains(assignment.roleType);
 
-        if (hasAvailabilityConflict || isInOverQuotaRole) {
+        if (availability.flagged || isInOverQuotaRole) {
           hasAnyConflict = true;
         }
 
         assignmentInfos.add(AssignmentDuplicationInfo(
           assignment: assignment,
-          hasAvailabilityConflict: hasAvailabilityConflict,
-          availabilityReason: availabilityReason,
+          hasAvailabilityConflict: availability.flagged,
+          availabilityReason:
+              availability.flagged ? availability.reasons.join('\n') : null,
           isInOverQuotaRole: isInOverQuotaRole,
+          canKeep: availability.canKeep,
         ));
       }
 
@@ -623,9 +620,16 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       final allAssignments = await _assignmentRepository
           .getAssignmentsByEvent(event.originalEvent.id);
 
-      // Filter out excluded assignments
+      // Filter out excluded assignments. Also drop any the backend would
+      // refuse even with the bypass (member gone, inactive, role lost): the
+      // dialog locks those rows, and this re-judges the freshly fetched data
+      // so a kept one can never fail the whole batch.
       final assignmentsToInclude = allAssignments
           .where((a) => !event.assignmentIdsToExclude.contains(a.id))
+          .where((a) => duplicationAvailability(
+                assignment: a,
+                proposedEvent: event.proposedEvent,
+              ).canKeep)
           .toList();
 
       // LOGIC FIX: Adjust quotas in the proposed event to match kept assignments
@@ -640,8 +644,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       );
 
       // Build success message
-      final excludedCount = event.assignmentIdsToExclude.length;
       final includedCount = assignmentsToInclude.length;
+      final excludedCount = allAssignments.length - includedCount;
 
       String message;
       if (excludedCount == 0) {

@@ -72,6 +72,14 @@ import {
 import {buildStageImport, importEventId} from './stage_import';
 import {buildSlotAnnotationMerge} from './slot_annotations';
 import {buildMemberFeedParts, renderIcsFeed} from './calendar_feed';
+import {
+  MINUTES_PER_DAY,
+  constraintOverlapsStretch,
+  eventStretch,
+  wallTimeMinutes,
+  type StretchConstraintInput,
+  type WallInterval,
+} from './event_stretch';
 
 initializeApp();
 
@@ -1881,22 +1889,6 @@ function parseTimeToMinutes(value: unknown): number | null {
   return hours * 60 + minutes;
 }
 
-function timesOverlap(
-  firstStart: string | null,
-  firstEnd: string | null,
-  secondStart: string | null,
-  secondEnd: string | null,
-): boolean {
-  const aStart = parseTimeToMinutes(firstStart);
-  const aEnd = parseTimeToMinutes(firstEnd);
-  const bStart = parseTimeToMinutes(secondStart);
-  const bEnd = parseTimeToMinutes(secondEnd);
-  if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
-    return true;
-  }
-  return aStart < bEnd && bStart < aEnd;
-}
-
 function hashPasscode(passcode: string): string {
   const salt = randomBytes(16);
   const hash = scryptSync(passcode, salt, 64);
@@ -3331,6 +3323,13 @@ function constraintTimeWindowOn(
   };
 }
 
+// Whether an availability constraint covers the event on `day`. Only the
+// legacy date-based availability of non-permanent members still uses this
+// per-day comparison (production has four such entries, all whole-day and all
+// past). A missing or malformed event time falls back instead of throwing.
+// The start falls back like the stretch's: assembly, then show start, then
+// 00:00. The end keeps this path's show-end-first order: show end, then team
+// end, then 24:00 (the stretch puts team end first).
 function constraintBlocksEvent(
   constraint: Record<string, unknown>,
   eventData: Record<string, unknown>,
@@ -3340,15 +3339,62 @@ function constraintBlocksEvent(
   if (constraintStart == null && constraintEnd == null) {
     return true;
   }
-  const eventStartRaw = requireString(
-    typeof eventData['assemblyTime'] === 'string' &&
-      (eventData['assemblyTime'] as string).length > 0
-      ? eventData['assemblyTime']
-      : eventData['startTime'],
-    'event.startTime',
-  );
-  const eventEndRaw = requireString(eventData['endTime'], 'event.endTime');
-  return timesOverlap(constraintStart, constraintEnd, eventStartRaw, eventEndRaw);
+  const constraintStartMinutes = parseTimeToMinutes(constraintStart);
+  const constraintEndMinutes = parseTimeToMinutes(constraintEnd);
+  // One bound or a malformed time: counted as covering, as before.
+  if (constraintStartMinutes == null || constraintEndMinutes == null) {
+    return true;
+  }
+  const eventStartMinutes =
+    wallTimeMinutes(timeFieldOrNull(eventData['assemblyTime'])) ??
+    wallTimeMinutes(timeFieldOrNull(eventData['startTime'])) ??
+    0;
+  const eventEndMinutes =
+    wallTimeMinutes(timeFieldOrNull(eventData['endTime'])) ??
+    wallTimeMinutes(timeFieldOrNull(eventData['teamEndTime'])) ??
+    MINUTES_PER_DAY;
+  return constraintStartMinutes < eventEndMinutes && eventStartMinutes < constraintEndMinutes;
+}
+
+// A stored time field as a string, or null; event_stretch decides whether it
+// is a valid HH:mm. Never throws, so a malformed time falls back.
+function timeFieldOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+// The event's continuous stretch on the Israel wall clock (see event_stretch.ts).
+function eventStretchFromData(eventData: Record<string, unknown>): WallInterval {
+  return eventStretch({
+    firstDay: normalizeDayInIsrael(asDate(eventData['startDate'], 'event.startDate')),
+    lastDay: normalizeDayInIsrael(asDate(eventData['endDate'], 'event.endDate')),
+    assemblyTime: timeFieldOrNull(eventData['assemblyTime']),
+    startTime: timeFieldOrNull(eventData['startTime']),
+    endTime: timeFieldOrNull(eventData['endTime']),
+    teamEndTime: timeFieldOrNull(eventData['teamEndTime']),
+  });
+}
+
+const STRETCH_REPEAT_TYPES: ReadonlySet<string> = new Set(['daily', 'weekly', 'monthly']);
+
+// A parsed constraint (see parseConstraint) as event_stretch input. Null for a
+// repeat type this backend doesn't know: it matches no day, as in
+// constraintMatchesDate.
+function toStretchConstraint(constraint: Record<string, unknown>): StretchConstraintInput | null {
+  const repeatType = typeof constraint['repeatType'] === 'string' ? constraint['repeatType'] : null;
+  if (repeatType != null && !STRETCH_REPEAT_TYPES.has(repeatType)) {
+    return null;
+  }
+  const firstDay = normalizeDayInIsrael(constraint['startDate'] as Date);
+  return {
+    firstDay,
+    lastDay: constraint['endDate'] == null ? firstDay : normalizeDayInIsrael(constraint['endDate'] as Date),
+    startTime: timeFieldOrNull(constraint['startTime']),
+    endTime: timeFieldOrNull(constraint['endTime']),
+    repeatType: repeatType as StretchConstraintInput['repeatType'],
+    repeatDay: typeof constraint['repeatDay'] === 'number' ? constraint['repeatDay'] : null,
+    repeatEndDay:
+      constraint['repeatEndDate'] == null ? null : normalizeDayInIsrael(constraint['repeatEndDate'] as Date),
+  };
 }
 
 function memberAvailableForEvent(
@@ -3363,22 +3409,26 @@ function memberAvailableForEvent(
   const constraints = Array.isArray(memberData['constraints'])
     ? memberData['constraints'].map((item) => parseConstraint(item as Record<string, unknown>))
     : [];
-  const eventStart = asDate(eventData['startDate'], 'event.startDate');
-  const eventEnd = asDate(eventData['endDate'], 'event.endDate');
 
   if (isPermanent) {
-    for (let day = normalizeDayInIsrael(eventStart); day <= normalizeDayInIsrael(eventEnd); day = addDays(day, 1)) {
-      for (const constraint of constraints) {
-        if (constraint['status'] !== 'approved') continue;
-        if (constraint['constraintType'] !== 'unavailability') continue;
-        if (!constraintMatchesDate(constraint, day)) continue;
-        if (constraintBlocksEvent(constraint, eventData, day)) {
-          return false;
-        }
+    // The event is one continuous stretch, nights included; any minute of an
+    // approved or still-pending unavailability inside it blocks. Only a
+    // rejected request stops blocking. Mirrors TeamMember on the client; both
+    // run shared/test-fixtures/event_conflict_cases.json.
+    const stretch = eventStretchFromData(eventData);
+    for (const constraint of constraints) {
+      if (constraint['status'] !== 'approved' && constraint['status'] !== 'pending') continue;
+      if (constraint['constraintType'] !== 'unavailability') continue;
+      const input = toStretchConstraint(constraint);
+      if (input != null && constraintOverlapsStretch(input, stretch)) {
+        return false;
       }
     }
     return true;
   }
+
+  const eventStart = asDate(eventData['startDate'], 'event.startDate');
+  const eventEnd = asDate(eventData['endDate'], 'event.endDate');
 
   const availableEventIds = Array.isArray(memberData['availableEventIds'])
     ? memberData['availableEventIds'].map((value) => String(value))
@@ -3401,6 +3451,29 @@ function memberAvailableForEvent(
     if (!availableOnDay) {
       return false;
     }
+  }
+  return true;
+}
+
+// Whether assignment.update must run the availability check. An update that
+// keeps the stored member and event is not a new decision about who may be
+// placed where, so it is never re-refused: the conflict rule may have grown
+// stricter since the assignment was made, and editing only its notes or label
+// must not be blocked by that. Pure so it can be tested directly -- see
+// assignment_availability_gate.test.ts.
+export function shouldCheckAvailability(args: {
+  bypassRequested: boolean;
+  stored: {teamMemberId?: unknown; eventId?: unknown} | null;
+  next: {teamMemberId: string; eventId: string};
+}): boolean {
+  if (args.bypassRequested) return false;
+  const {stored, next} = args;
+  if (
+    stored != null &&
+    stored.teamMemberId === next.teamMemberId &&
+    stored.eventId === next.eventId
+  ) {
+    return false;
   }
   return true;
 }
@@ -4484,8 +4557,20 @@ async function executeMutation(
       const assignment = payload['assignment'] as Record<string, unknown>;
       const assignmentId = requireString(assignment['id'], 'assignment.id');
       const assignmentRef = db.collection(collections.assignments).doc(assignmentId);
+      // Read the stored assignment first: an update that keeps its member and
+      // event is never re-refused on availability. A missing doc is still
+      // refused (404) inside the transaction below.
+      const storedSnap = await assignmentRef.get();
+      const checkAvailability = shouldCheckAvailability({
+        bypassRequested: payload['bypassAvailability'] === true,
+        stored: storedSnap.exists ? (storedSnap.data() ?? null) : null,
+        next: {
+          teamMemberId: requireString(assignment['teamMemberId'], 'assignment.teamMemberId'),
+          eventId: requireString(assignment['eventId'], 'assignment.eventId'),
+        },
+      });
       await validateAssignmentPayload(db, collections, assignment, assignmentId, {
-        bypassAvailability: payload['bypassAvailability'] === true,
+        bypassAvailability: !checkAvailability,
       });
       const nextAssignment = assignmentDocFromJson(assignment);
       let existing: Record<string, unknown> = {};
@@ -4782,7 +4867,9 @@ async function executeMutation(
       for (const rawAssignment of assignments) {
         const assignment = rawAssignment as Record<string, unknown>;
         const assignmentId = requireString(assignment['id'], 'assignment.id');
-        await validateAssignmentPayload(db, collections, assignment);
+        await validateAssignmentPayload(db, collections, assignment, undefined, {
+          bypassAvailability: payload['bypassAvailability'] === true,
+        });
         const data = assignmentDocFromJson(assignment);
         preparedAssignments.push({
           assignmentId,
@@ -6970,6 +7057,7 @@ export {
   normalizeDayInIsrael as __testNormalizeDayInIsrael,
   constraintMatchesDate as __testConstraintMatchesDate,
   memberAvailableForEvent as __testMemberAvailableForEvent,
+  eventStretchFromData as __testEventStretchFromData,
   applySelfEditableFields as __testApplySelfEditableFields,
   teamMemberDocFromJson as __testTeamMemberDocFromJson,
 };

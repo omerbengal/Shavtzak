@@ -150,6 +150,8 @@ void main() {
             event: _event(
               id: 'e1',
               start: DateTime(2026, 9, 29),
+              // The whole stretch, assembly included, is 08:30-13:00.
+              assemblyTime: '08:30',
               startTime: '09:00',
               endTime: '13:00',
             ),
@@ -212,8 +214,7 @@ void main() {
       expect(result, isEmpty);
     });
 
-    test('ignores a pending constraint — pending does not block assignment yet',
-        () {
+    test('reports a pending constraint — pending blocks like approved', () {
       final result = findNewlyConflictingAssignments(
         originalConstraints: const [],
         updatedConstraints: [
@@ -232,7 +233,7 @@ void main() {
         now: _now,
       );
 
-      expect(result, isEmpty);
+      expect(result.map((a) => a.id), ['a1']);
     });
 
     test('ignores an availability constraint — it grants time, never blocks it',
@@ -326,6 +327,104 @@ void main() {
 
       expect(result.map((a) => a.id), ['a1']);
     });
+
+    test(
+        'reports a pending constraint that covers only the assembly gap — the '
+        'delete offer must see what the assignment check blocks (E5)', () {
+      // Assembly 17:00, show 19:00-20:30; the constraint 17:30-18:30 sits
+      // wholly before the show starts.
+      final result = findNewlyConflictingAssignments(
+        originalConstraints: const [],
+        updatedConstraints: [
+          _constraint(
+            id: 'c1',
+            date: DateTime(2026, 9, 29),
+            status: ConstraintStatus.pending,
+            startTime: '17:30',
+            endTime: '18:30',
+          ),
+        ],
+        assignments: [
+          _assignment(
+            id: 'a1',
+            event: _event(
+              id: 'e1',
+              start: DateTime(2026, 9, 29),
+              assemblyTime: '17:00',
+              startTime: '19:00',
+              endTime: '20:30',
+            ),
+          ),
+        ],
+        now: _now,
+      );
+
+      expect(result.map((a) => a.id), ['a1']);
+    });
+
+    test('reports an event on the third occurrence of a weekly constraint (E6)',
+        () {
+      // 2026-09-08 is a Tuesday; 2026-09-22 is its third occurrence.
+      final weekly = DateConstraint(
+        id: 'weekly',
+        startDate: DateTime(2026, 9, 8),
+        status: ConstraintStatus.approved,
+        constraintType: ConstraintType.unavailability,
+        repeatType: RepeatType.weekly,
+        repeatDay: DateTime.tuesday,
+        repeatEndDate: DateTime(2026, 12, 29),
+      );
+
+      final result = findNewlyConflictingAssignments(
+        originalConstraints: const [],
+        updatedConstraints: [weekly],
+        assignments: [
+          _assignment(
+            id: 'third-tuesday',
+            event: _event(id: 'e3', start: DateTime(2026, 9, 22)),
+          ),
+          _assignment(
+            id: 'wednesday',
+            event: _event(id: 'e4', start: DateTime(2026, 9, 23)),
+          ),
+        ],
+        now: _now,
+      );
+
+      expect(result.map((a) => a.id), ['third-tuesday']);
+    });
+
+    test(
+        'reports the night of a multi-day event that a late constraint hits '
+        '(E3)', () {
+      final result = findNewlyConflictingAssignments(
+        originalConstraints: const [],
+        updatedConstraints: [
+          _constraint(
+            id: 'c1',
+            date: DateTime(2026, 9, 30),
+            status: ConstraintStatus.approved,
+            startTime: '02:00',
+            endTime: '04:00',
+          ),
+        ],
+        assignments: [
+          _assignment(
+            id: 'a1',
+            event: _event(
+              id: 'e1',
+              start: DateTime(2026, 9, 29),
+              end: DateTime(2026, 9, 30),
+              startTime: '18:00',
+              endTime: '23:00',
+            ),
+          ),
+        ],
+        now: _now,
+      );
+
+      expect(result.map((a) => a.id), ['a1']);
+    });
   });
 }
 
@@ -355,6 +454,7 @@ Event _event({
   DateTime? end,
   String startTime = '18:00',
   String endTime = '22:00',
+  String assemblyTime = '17:00',
   String name = 'אירוע',
 }) {
   final now = DateTime(2026, 7, 1);
@@ -365,7 +465,7 @@ Event _event({
     endDate: end ?? start,
     startTime: startTime,
     endTime: endTime,
-    assemblyTime: '17:00',
+    assemblyTime: assemblyTime,
     requiresArmed: false,
     roleRequirements: const {'medic': 1},
     createdAt: now,
