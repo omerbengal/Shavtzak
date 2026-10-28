@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/custom_hours.dart';
+import '../../../bloc/event/duplication_custom_hours.dart';
 import '../../../bloc/event/event_state.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_state.dart';
@@ -53,6 +54,9 @@ class _DuplicationConflictResolutionDialogState
     extends State<DuplicationConflictResolutionDialog> {
   // Set of assignment IDs marked for REMOVAL (checked = remove)
   late Set<String> _markedForRemoval;
+  // The part of _markedForRemoval the admin chose in the quota section. Ticking
+  // or unticking hours never undoes these.
+  final Set<String> _removedInQuota = {};
   // Set of expanded role cards in quota section
   late Set<String> _expandedRoles;
 
@@ -83,8 +87,7 @@ class _DuplicationConflictResolutionDialogState
   /// `allowMultipleAssignments` stands for a different person in each slot,
   /// so each copy is a group of its own.
   String _hoursKey(AssignmentDuplicationInfo info) {
-    final member = info.assignment.teamMember;
-    if (member != null && member.allowMultipleAssignments) {
+    if (isHoursExempt(info.assignment.teamMember)) {
       return 'assignment:${info.assignment.id}';
     }
     return 'member:${info.assignment.teamMemberId}';
@@ -116,25 +119,29 @@ class _DuplicationConflictResolutionDialogState
   bool _isHoursGroupVisible(String key) => _hoursGroups[key]!
       .any((info) => !_markedForRemoval.contains(info.assignment.id));
 
-  /// Set which hours groups are unticked. A copy whose availability verdict
-  /// changes with it goes back to its default: marked for removal when flagged
-  /// or locked, kept otherwise, as when the dialog opened. A change that leaves
-  /// the verdict alone keeps what the admin chose.
+  /// Set which hours groups are unticked.
+  ///
+  /// Ticking or unticking never removes a copy. A copy it newly flags enters
+  /// the availability list kept, for the admin to decide. A copy it frees
+  /// leaves that list, where its removal could no longer be seen, so a removal
+  /// made there is let go; a removal made in the quota section stays.
   void _setHoursDropped(Set<String> keys) {
     final infos = [for (final group in _hoursGroups.values) ...group];
-    final before = {for (final info in infos) info.assignment.id: _verdict(info)};
+    final wasFlagged = {
+      for (final info in infos) info.assignment.id: _verdict(info).flagged,
+    };
     setState(() {
       _hoursDroppedKeys
         ..clear()
         ..addAll(keys);
       for (final info in infos) {
-        final was = before[info.assignment.id]!;
+        final id = info.assignment.id;
         final now = _verdict(info);
-        if (was.flagged == now.flagged && was.canKeep == now.canKeep) continue;
-        if (now.flagged || !now.canKeep) {
-          _markedForRemoval.add(info.assignment.id);
-        } else {
-          _markedForRemoval.remove(info.assignment.id);
+        if (wasFlagged[id]! &&
+            !now.flagged &&
+            now.canKeep &&
+            !_removedInQuota.contains(id)) {
+          _markedForRemoval.remove(id);
         }
       }
     });
@@ -149,9 +156,12 @@ class _DuplicationConflictResolutionDialogState
     _setHoursDropped(dropped);
   }
 
+  /// Tick every hours row on show. A group whose member is marked for removal
+  /// has no row, so it keeps whatever it was.
   void _copyAllHours() {
     Logger.action('tap:copyAllDuplicationHours');
-    _setHoursDropped(const {});
+    final hidden = _hoursGroups.keys.where((key) => !_isHoursGroupVisible(key));
+    _setHoursDropped(_hoursDroppedKeys.intersection(hidden.toSet()));
   }
 
   /// What the dialog returns: the removals and the assignments whose hours are
@@ -224,11 +234,18 @@ class _DuplicationConflictResolutionDialogState
 
   /// Flip one row between kept and marked for removal. A row that cannot be
   /// kept (the backend would refuse it even with the bypass) never changes.
-  void _toggleRemoval(AssignmentDuplicationInfo info) {
+  /// [fromQuota] says the tap was in the quota section: that removal is the
+  /// admin's quota choice and is not undone by the hours ticks.
+  void _toggleRemoval(AssignmentDuplicationInfo info,
+      {required bool fromQuota}) {
     if (!_verdict(info).canKeep) return;
+    final id = info.assignment.id;
     setState(() {
-      if (!_markedForRemoval.remove(info.assignment.id)) {
-        _markedForRemoval.add(info.assignment.id);
+      if (_markedForRemoval.remove(id)) {
+        _removedInQuota.remove(id);
+      } else {
+        _markedForRemoval.add(id);
+        if (fromQuota) _removedInQuota.add(id);
       }
     });
   }
@@ -798,7 +815,7 @@ class _DuplicationConflictResolutionDialogState
                       'assignmentId': info.assignment.id,
                       'markedForRemoval': !isMarkedForRemoval,
                     });
-                    _toggleRemoval(info);
+                    _toggleRemoval(info, fromQuota: false);
                   },
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -1035,7 +1052,7 @@ class _DuplicationConflictResolutionDialogState
                 'assignmentId': info.assignment.id,
                 'markedForRemoval': !isMarkedForRemoval,
               });
-              _toggleRemoval(info);
+              _toggleRemoval(info, fromQuota: !isAvailabilitySection);
             },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

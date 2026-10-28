@@ -11,6 +11,18 @@ import 'package:shavtzak/presentation/bloc/event/duplication_custom_hours.dart';
 void main() {
   CopiedHours hours(String start, String end) => (start: start, end: end);
 
+  group('isHoursExempt', () {
+    test('only a member flagged allowMultipleAssignments is exempt', () {
+      expect(isHoursExempt(_member('pool', allowMultipleAssignments: true)),
+          isTrue);
+      expect(isHoursExempt(_member('m1')), isFalse);
+    });
+
+    test('a missing member is not exempt', () {
+      expect(isHoursExempt(null), isFalse);
+    });
+  });
+
   group('movedCustomHours', () {
     test('moves both ends by the shift, the clock times unchanged', () {
       final result = movedCustomHours(

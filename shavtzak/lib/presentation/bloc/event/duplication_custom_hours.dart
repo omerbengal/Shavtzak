@@ -1,5 +1,6 @@
 import '../../../core/utils/event_stretch.dart';
 import '../../../domain/entities/assignment.dart';
+import '../../../domain/entities/team_member.dart';
 
 /// The custom hours one copied assignment carries: both strings are set, as
 /// `yyyy-MM-ddTHH:mm` on the Israel wall clock.
@@ -29,7 +30,7 @@ Map<String, CopiedHours> movedCustomHours(
   final ordinaryHours = <String, CopiedHours?>{};
   final ordinaryDropped = <String>{};
   for (final assignment in assignments) {
-    if (_isPool(assignment)) continue;
+    if (isHoursExempt(assignment.teamMember)) continue;
     if (dropped.contains(assignment.id)) {
       ordinaryDropped.add(assignment.teamMemberId);
     }
@@ -41,7 +42,7 @@ Map<String, CopiedHours> movedCustomHours(
   final result = <String, CopiedHours>{};
   for (final assignment in assignments) {
     final CopiedHours? hours;
-    if (_isPool(assignment)) {
+    if (isHoursExempt(assignment.teamMember)) {
       hours = dropped.contains(assignment.id)
           ? null
           : _moved(assignment, shiftDays);
@@ -55,9 +56,12 @@ Map<String, CopiedHours> movedCustomHours(
   return result;
 }
 
-/// Whether [assignment]'s member is exempt from the one-set-of-hours rule.
-bool _isPool(Assignment assignment) =>
-    assignment.teamMember?.allowMultipleAssignments == true;
+/// Whether [member] is exempt from the one-set-of-hours rule: a member flagged
+/// `allowMultipleAssignments` stands for a different person in each slot, so
+/// each of their assignments holds hours of its own. A missing member is not
+/// exempt. The dialog and [movedCustomHours] both group copies by this.
+bool isHoursExempt(TeamMember? member) =>
+    member?.allowMultipleAssignments == true;
 
 /// [assignment]'s own hours moved by [shiftDays]; null when it has none.
 CopiedHours? _moved(Assignment assignment, int shiftDays) {

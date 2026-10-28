@@ -329,8 +329,9 @@ void main() {
       expect(find.text('סמן הכל'), findsNothing);
     });
 
-    testWidgets('unticking switches the member to the verdict for the '
-        "event's own hours", (tester) async {
+    testWidgets('unticking a member the new hours flag puts them in the '
+        'conflicts list kept, with their hours row still there',
+        (tester) async {
       // Free during the moved hours, busy 21:00-22:00 of the new event.
       final evening = _hoursInfo('h-evening', 'דנה כהן',
           eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
@@ -341,11 +342,30 @@ void main() {
       await tester.tap(find.byType(Checkbox));
       await tester.pump();
 
-      // A conflict card now, marked for removal like any other conflict.
+      // A conflict card now, but nobody was removed: the admin decides.
       expect(find.text('אילוץ מאושר: 8.12 21:00–22:00'), findsOneWidget);
       expect(find.text('מעולה! כל חברי הצוות זמינים'), findsNothing);
+      expect(find.text('יוסר'), findsNothing);
+      expect(find.text('⏰ שעות מותאמות (1)'), findsOneWidget);
+      expect(find.text('לא יועתק — יקבל/תקבל את שעות האירוע'), findsOneWidget);
+
+      await confirm(tester);
+      expect(result?.excluded, isEmpty);
+      expect(result?.hoursDropped, {'h-evening'});
+    });
+
+    testWidgets('the admin can then remove the flagged member from the card, '
+        'which takes their hours row away', (tester) async {
+      final evening = _hoursInfo('h-evening', 'דנה כהן',
+          eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
+      await openDialog(tester, infos: [evening]);
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+
+      await tester.tap(find.text('דנה כהן'));
+      await tester.pump();
+
       expect(find.text('יוסר'), findsOneWidget);
-      // The hours row is gone with it: the member is leaving anyway.
       expect(find.textContaining('שעות מותאמות'), findsNothing);
 
       await confirm(tester);
@@ -360,16 +380,9 @@ void main() {
       await openDialog(tester, infos: [evening]);
       await tester.tap(find.byType(Checkbox));
       await tester.pump();
-      expect(find.text('יוסר'), findsOneWidget);
+      expect(find.text('אילוץ מאושר: 8.12 21:00–22:00'), findsOneWidget);
 
-      // The row left with its member; "סמן הכל" is gone too, so the admin
-      // frees the member in the conflict card and ticks the hours there.
-      await tester.tap(find.text('דנה כהן'));
-      await tester.pump();
-      expect(find.text('יוסר'), findsNothing);
-      expect(find.text('⏰ שעות מותאמות (1)'), findsOneWidget);
-
-      await tester.tap(find.text('סמן הכל'));
+      await tester.tap(find.byType(Checkbox));
       await tester.pump();
 
       expect(find.text('אילוץ מאושר: 8.12 21:00–22:00'), findsNothing);
@@ -379,6 +392,114 @@ void main() {
       await confirm(tester);
       expect(result?.excluded, isEmpty);
       expect(result?.hoursDropped, isEmpty);
+    });
+
+    testWidgets('ticking the hours back lets go of a removal made in the '
+        'conflicts list once the member no longer shows there',
+        (tester) async {
+      // Two copies of one member, both busy 21:00-22:00 of the new event.
+      final first = _hoursInfo('h-1', 'דנה כהן',
+          memberId: 'dana',
+          eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
+      final second = _hoursInfo('h-2', 'דנה כהן',
+          memberId: 'dana',
+          eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
+      await openDialog(tester, infos: [first, second]);
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+      expect(find.text('אילוץ מאושר: 8.12 21:00–22:00'), findsNWidgets(2));
+      expect(find.text('יוסר'), findsNothing);
+
+      // Remove the first copy in the conflicts list; the second keeps the
+      // hours row on show.
+      await tester.tap(find.text('דנה כהן').first);
+      await tester.pump();
+      expect(find.text('יוסר'), findsOneWidget);
+      expect(find.text('⏰ שעות מותאמות (1)'), findsOneWidget);
+
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+
+      // Both copies are clear again; the removal nobody can see is gone.
+      expect(find.text('מעולה! כל חברי הצוות זמינים'), findsOneWidget);
+      expect(find.text('יוסר'), findsNothing);
+
+      await confirm(tester);
+      expect(result?.excluded, isEmpty);
+      expect(result?.hoursDropped, isEmpty);
+    });
+
+    testWidgets('a removal made in the quota section survives unticking and '
+        'ticking the hours', (tester) async {
+      // Three copies in a role with room for two: one over quota.
+      final first = _hoursInfo('h-1', 'דנה כהן',
+          memberId: 'dana',
+          eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
+      final second = _hoursInfo('h-2', 'דנה כהן',
+          memberId: 'dana',
+          eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
+      final third = AssignmentDuplicationInfo(
+        assignment: _assignment('plain', 'חבר שלישי', DateTime(2026, 10, 1)),
+        hasAvailabilityConflict: false,
+        isInOverQuotaRole: true,
+      );
+      await openDialog(tester, infos: [first, second, third]);
+
+      // Open the quota card and remove the first copy there.
+      await tester.tap(find.text('3 שיבוצים • 2 מכסה'));
+      await tester.pump();
+      await tester.tap(find.text('דנה כהן').first);
+      await tester.pump();
+      expect(find.text('יוסר'), findsOneWidget);
+
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+
+      // The copies are clear again, and the quota removal is still there.
+      expect(find.text('מעולה! כל חברי הצוות זמינים'), findsOneWidget);
+      expect(find.text('יוסר'), findsOneWidget);
+
+      await confirm(tester);
+      expect(result?.excluded, {'h-1'});
+      expect(result?.hoursDropped, isEmpty);
+    });
+
+    testWidgets('"סמן הכל" leaves the hours of a member marked for removal '
+        'as they were', (tester) async {
+      final dana = _hoursInfo('h-dana', 'דנה כהן',
+          eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
+      final avi = _hoursInfo('h-avi', 'אבי לוי',
+          eventHoursReason: 'אילוץ מאושר: 8.12 21:00–22:00');
+      await openDialog(tester, infos: [dana, avi]);
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.tap(find.byType(Checkbox).last);
+      await tester.pump();
+
+      // Avi is removed in the conflicts list, so his hours row goes.
+      await tester.tap(find.text('אבי לוי'));
+      await tester.pump();
+      expect(find.text('⏰ שעות מותאמות (1)'), findsOneWidget);
+
+      await tester.tap(find.text('סמן הכל'));
+      await tester.pump();
+
+      // Dana is ticked and leaves the conflicts list; Avi, out of sight,
+      // stays as he was: still unticked, still in the list.
+      expect(find.text('אילוץ מאושר: 8.12 21:00–22:00'), findsOneWidget);
+      expect(find.text('אבי לוי'), findsOneWidget);
+      expect(find.text('יוסר'), findsOneWidget);
+
+      // Bringing Avi back shows his row unticked.
+      await tester.tap(find.text('אבי לוי'));
+      await tester.pump();
+      expect(find.text('⏰ שעות מותאמות (2)'), findsOneWidget);
+      expect(find.text('לא יועתק — יקבל/תקבל את שעות האירוע'), findsOneWidget);
+
+      await confirm(tester);
+      expect(result?.excluded, isEmpty);
+      expect(result?.hoursDropped, {'h-avi'});
     });
 
     testWidgets('unticking releases a member the moved hours had flagged, '
@@ -406,8 +527,8 @@ void main() {
       expect(result?.hoursDropped, {'h-morning'});
     });
 
-    testWidgets('a member freed by unticking is under removal again once the '
-        'hours are ticked back', (tester) async {
+    testWidgets('a member freed by unticking enters the conflicts list kept '
+        'when the hours are ticked back', (tester) async {
       final morning = _hoursInfo('h-morning', 'דנה כהן',
           flaggedReason: 'אילוץ מאושר: 8.12 08:00–10:00');
       await openDialog(tester, infos: [morning]);
@@ -419,15 +540,16 @@ void main() {
       expect(find.text('מעולה! כל חברי הצוות זמינים'), findsOneWidget);
       expect(find.text('יוסר'), findsNothing);
 
-      // The moved hours flag them again, as they did when the dialog opened.
+      // The moved hours flag them again, but ticking never removes anyone.
       await tester.tap(find.text('סמן הכל'));
       await tester.pump();
 
       expect(find.text('אילוץ מאושר: 8.12 08:00–10:00'), findsOneWidget);
-      expect(find.text('יוסר'), findsOneWidget);
+      expect(find.text('יוסר'), findsNothing);
+      expect(find.text('⏰ שעות מותאמות (1)'), findsOneWidget);
 
       await confirm(tester);
-      expect(result?.excluded, {'h-morning'});
+      expect(result?.excluded, isEmpty);
       expect(result?.hoursDropped, isEmpty);
     });
 
