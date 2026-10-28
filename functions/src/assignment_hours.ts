@@ -115,8 +115,9 @@ export function hoursRowFromDoc(id: string, data: Record<string, unknown>): Hour
  * The rows once a set of writes applies: deletes first, then updates, then
  * creates. An update takes its event and member from its doc, and its hours
  * from the keys its doc carries, the stored row's hours where a key is
- * absent. A create's absent key is null. `live` must hold every stored row
- * an update rewrites.
+ * absent (as Firestore merges it; settleOccupantChangeHours has already
+ * given an update that changes the member or event both keys). A create's
+ * absent key is null. `live` must hold every stored row an update rewrites.
  */
 export function hoursAfterWrites(args: {
   live: HoursRow[];
@@ -148,6 +149,43 @@ export function hoursAfterWrites(args: {
     });
   }
   return Array.from(rows.values());
+}
+
+/**
+ * The doc an update writes once an old build's change of occupant is
+ * settled. An update that carries neither hours key keeps the stored hours,
+ * which is right while the row keeps its member and event; once either
+ * changes, those hours are the previous occupant's (or another event's). Such
+ * an update is settled like a create: the incoming member's hours in the
+ * event, from their OTHER rows there as stored before this request
+ * (`liveBefore`, so a swap leaves each member their own), never for an exempt
+ * member; else an explicit null pair. Returned as sent: an update that
+ * carries a key, keeps its member and event, or rewrites no stored row.
+ */
+export function settleOccupantChangeHours(args: {
+  id: string;
+  doc: Record<string, unknown>;
+  stored: HoursRow | null;
+  liveBefore: HoursRow[];
+  exempt: boolean;
+}): Record<string, unknown> {
+  const {id, doc, stored, liveBefore, exempt} = args;
+  if ('customStartAt' in doc || 'customEndAt' in doc || stored == null) return doc;
+  const eventId = String(doc['eventId']);
+  const teamMemberId = String(doc['teamMemberId']);
+  if (eventId === stored.eventId && teamMemberId === stored.teamMemberId) return doc;
+  const inherited = exempt
+    ? null
+    : inheritedHours(
+        liveBefore.filter((row) => row.id !== id),
+        eventId,
+        teamMemberId,
+      );
+  return {
+    ...doc,
+    customStartAt: inherited?.customStartAt ?? null,
+    customEndAt: inherited?.customEndAt ?? null,
+  };
 }
 
 /** The five times of an event; with its two dates they place it in time. */

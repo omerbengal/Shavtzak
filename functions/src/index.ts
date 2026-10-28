@@ -90,6 +90,7 @@ import {
   inheritedHours,
   planEventHoursResolution,
   rowHasHours,
+  settleOccupantChangeHours,
   validateCustomHoursPair,
   type HoursResolution,
   type HoursRow,
@@ -2960,7 +2961,9 @@ function eventDocFromJson(event: Record<string, unknown>): Record<string, unknow
 // Custom hours are written only when the key is present: on an update, an
 // absent key keeps the stored hours (an old build's update carries none) and
 // an explicit null clears them. Creates state both keys themselves (see
-// planCreatedAssignmentHours and planAssignmentSaveBatch).
+// planCreatedAssignmentHours and planAssignmentSaveBatch), and so does an
+// old build's update that changes the member or event
+// (settleOccupantChangeHours, applied by assignment.update and saveBatch).
 function assignmentDocFromJson(assignment: Record<string, unknown>): Record<string, unknown> {
   return stripUndefined({
     id: assignment['id'],
@@ -3151,7 +3154,8 @@ export function planAssignmentSaveBatch(payload: {
   });
   // A create states its hours: absent means none (saveBatch never inherits;
   // the staged client states hours explicitly). An update keeps absent keys
-  // absent, so the stored hours stay.
+  // absent, so the stored hours stay; the saveBatch case settles an update
+  // that changes the member or event (settleOccupantChangeHours).
   const shapeCreate = (a: Record<string, unknown>) => {
     const {id, doc} = shape(a);
     return {
@@ -4823,7 +4827,8 @@ async function executeMutation(
         assignmentId,
         {bypassAvailability: !checkAvailability},
       );
-      const nextAssignment = assignmentDocFromJson(assignment);
+      const sentAssignment = assignmentDocFromJson(assignment);
+      let nextAssignment = sentAssignment;
       let existing: Record<string, unknown> = {};
       await db.runTransaction(async (transaction) => {
         const current = await transaction.get(assignmentRef);
@@ -4831,22 +4836,31 @@ async function executeMutation(
         existing = current.data() ?? {};
         const sourceEventId = requireString(existing['eventId'], 'assignment.eventId');
         const destinationEventId = requireString(
-          nextAssignment['eventId'],
+          sentAssignment['eventId'],
           'assignment.eventId',
         );
         for (const eventId of new Set([sourceEventId, destinationEventId])) {
           await requireWritableEventInTransaction(transaction, collections, eventId);
         }
+        // An exempt member needs no rows: it never inherits, and its hours
+        // are its own.
+        const destinationRows = allowsMultipleAssignments
+          ? []
+          : await readEventHoursRowsInTransaction(transaction, collections, destinationEventId);
+        const storedRow = hoursRowFromDoc(assignmentId, existing);
+        // An old build's member or event change (no hours keys) never keeps
+        // the previous occupant's hours (see settleOccupantChangeHours).
+        nextAssignment = settleOccupantChangeHours({
+          id: assignmentId,
+          doc: sentAssignment,
+          stored: storedRow,
+          liveBefore: destinationRows,
+          exempt: allowsMultipleAssignments,
+        });
         // Shared hours: the row after this update (its stored hours, overlaid
-        // by the keys the payload carries) must match the member's other
-        // assignments in its event. An update never inherits.
+        // by the keys the settled doc carries) must match the member's other
+        // assignments in its event.
         if (!allowsMultipleAssignments) {
-          const destinationRows = await readEventHoursRowsInTransaction(
-            transaction,
-            collections,
-            destinationEventId,
-          );
-          const storedRow = hoursRowFromDoc(assignmentId, existing);
           const after = hoursAfterWrites({
             live: [
               ...destinationRows.filter((row) => row.id !== assignmentId),
@@ -5348,6 +5362,27 @@ async function executeMutation(
         throw new HttpError(400, 'חבר/ת הצוות כבר משובץ/ת לתפקיד זה באירוע');
       }
 
+      // An old build's update (no hours keys) that changes a row's member or
+      // event never keeps the previous occupant's hours: it takes the incoming
+      // member's hours from their other rows as stored before this batch, so
+      // a swap leaves each member their own (see settleOccupantChangeHours).
+      // Every later step (the check, the writes, the audit) uses these docs.
+      const updatesToWrite = plan.updates.map(({id, doc}) => {
+        const storedData = before.get(id);
+        return {
+          id,
+          doc: settleOccupantChangeHours({
+            id,
+            doc,
+            stored: storedData == null ? null : hoursRowFromDoc(id, storedData),
+            liveBefore: existingForAffectedEvents,
+            exempt: exemptMemberIds.has(
+              requireString(doc['teamMemberId'], 'assignment.teamMemberId'),
+            ),
+          }),
+        };
+      });
+
       // Shared hours: after this batch, every assignment of one member in one
       // event carries the same hours. Updates overlay the keys they carry on
       // the stored hours; creates carry theirs explicitly (never inherited).
@@ -5359,7 +5394,7 @@ async function executeMutation(
         hoursAfterWrites({
           live: existingForAffectedEvents,
           creates: plan.creates,
-          updates: plan.updates,
+          updates: updatesToWrite,
           deletes: plan.deletes,
         }),
         exemptMemberIds,
@@ -5432,7 +5467,7 @@ async function executeMutation(
       for (const {id, doc} of plan.creates) {
         batch.create(db.collection(collections.assignments).doc(id), doc);
       }
-      for (const {id, doc} of plan.updates) {
+      for (const {id, doc} of updatesToWrite) {
         batch.update(db.collection(collections.assignments).doc(id), doc);
       }
       for (const id of plan.deletes) {
@@ -5462,7 +5497,7 @@ async function executeMutation(
           after: doc,
         });
       }
-      for (const {id, doc} of plan.updates) {
+      for (const {id, doc} of updatesToWrite) {
         await writeAuditLog(db, collections, actor, 'assignment.update', 'assignment', id, {}, {
           before: before.get(id) ?? {},
           after: doc,

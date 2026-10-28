@@ -7,6 +7,7 @@ import {
   hoursAfterWrites,
   inheritedHours,
   planEventHoursResolution,
+  settleOccupantChangeHours,
   validateCustomHoursPair,
   type HoursResolution,
   type HoursRow,
@@ -146,10 +147,19 @@ test('hoursAfterWrites: an update with explicit nulls clears the hours', () => {
   );
 });
 
-test('hoursAfterWrites: an update takes its event and member from the payload', () => {
-  const live = [row('a1', 'm', '2026-12-01T17:00', '2026-12-02T01:00')];
-  assert.deepEqual(hoursAfterWrites({live, updates: [{id: 'a1', doc: doc('e2', 'n')}]}), [
-    row('a1', 'n', '2026-12-01T17:00', '2026-12-02T01:00', 'e2'),
+test('hoursAfterWrites: an update takes its event and member from the payload, never the previous occupant\'s hours', () => {
+  // An old build's update carries no hours keys; settled first (as both
+  // assignment.update and saveBatch do), the moved row keeps nothing of m's.
+  const stored = row('a1', 'm', '2026-12-01T17:00', '2026-12-02T01:00');
+  const settled = settleOccupantChangeHours({
+    id: 'a1',
+    doc: doc('e2', 'n'),
+    stored,
+    liveBefore: [stored],
+    exempt: false,
+  });
+  assert.deepEqual(hoursAfterWrites({live: [stored], updates: [{id: 'a1', doc: settled}]}), [
+    row('a1', 'n', null, null, 'e2'),
   ]);
 });
 
@@ -176,6 +186,132 @@ test('hoursAfterWrites: an update of an unknown row overlays nothing', () => {
   assert.deepEqual(
     hoursAfterWrites({live: [], updates: [{id: 'a1', doc: doc('e', 'm')}]}),
     [row('a1', 'm', null, null)],
+  );
+});
+
+// settleOccupantChangeHours: an old build's update (no hours keys) that
+// changes the member or the event is settled like a create.
+
+const H = {customStartAt: '2026-12-01T17:00', customEndAt: '2026-12-02T01:00'};
+const J = {customStartAt: '2026-12-01T18:00', customEndAt: '2026-12-01T23:00'};
+const hoursRow = (id: string, teamMemberId: string, hours: typeof H | null, eventId = 'e') =>
+  row(id, teamMemberId, hours?.customStartAt ?? null, hours?.customEndAt ?? null, eventId);
+
+/** Settles every update against the rows as stored before the batch, then projects. */
+function settleAndProject(
+  live: HoursRow[],
+  updates: Array<{id: string; doc: Record<string, unknown>}>,
+  exemptMemberIds: ReadonlySet<string> = new Set(),
+): HoursRow[] {
+  const settled = updates.map(({id, doc: sent}) => ({
+    id,
+    doc: settleOccupantChangeHours({
+      id,
+      doc: sent,
+      stored: live.find((stored) => stored.id === id) ?? null,
+      liveBefore: live,
+      exempt: exemptMemberIds.has(String(sent['teamMemberId'])),
+    }),
+  }));
+  return hoursAfterWrites({live, updates: settled});
+}
+
+test('settleOccupantChangeHours: (a) replacing X by Y, who holds nothing else in the event, clears the hours', () => {
+  const live = [hoursRow('a1', 'x', H)];
+  assert.deepEqual(
+    settleOccupantChangeHours({id: 'a1', doc: doc('e', 'y'), stored: live[0], liveBefore: live, exempt: false}),
+    {...doc('e', 'y'), customStartAt: null, customEndAt: null},
+  );
+  assert.deepEqual(settleAndProject(live, [{id: 'a1', doc: doc('e', 'y')}]), [hoursRow('a1', 'y', null)]);
+});
+
+test('settleOccupantChangeHours: (b) replacing X by Y, who has hours J on another role, gives J', () => {
+  const live = [hoursRow('a1', 'x', H), hoursRow('a2', 'y', J)];
+  assert.deepEqual(
+    settleOccupantChangeHours({id: 'a1', doc: doc('e', 'y'), stored: live[0], liveBefore: live, exempt: false}),
+    {...doc('e', 'y'), ...J},
+  );
+  const after = settleAndProject(live, [{id: 'a1', doc: doc('e', 'y')}]);
+  assert.deepEqual(after, [hoursRow('a1', 'y', J), hoursRow('a2', 'y', J)]);
+  assert.deepEqual(findSharedHoursViolations(after, new Set(), new Set(['a1'])), []);
+});
+
+test('settleOccupantChangeHours: (c) an old build swapping X and Y in one batch leaves each their own hours', () => {
+  // X also holds a third role, so the check sees a group of two after the swap.
+  const live = [hoursRow('a1', 'x', H), hoursRow('a2', 'y', J), hoursRow('a3', 'x', H)];
+  const after = settleAndProject(live, [
+    {id: 'a1', doc: doc('e', 'y')},
+    {id: 'a2', doc: doc('e', 'x')},
+  ]);
+  assert.deepEqual(after, [hoursRow('a1', 'y', J), hoursRow('a2', 'x', H), hoursRow('a3', 'x', H)]);
+  assert.deepEqual(findSharedHoursViolations(after, new Set(), new Set(['a1', 'a2'])), []);
+});
+
+test('settleOccupantChangeHours: (d) the same member and event without the keys keeps the stored hours', () => {
+  const live = [hoursRow('a1', 'x', H)];
+  const sent = {...doc('e', 'x'), notes: 'הערה'};
+  assert.deepEqual(
+    settleOccupantChangeHours({id: 'a1', doc: sent, stored: live[0], liveBefore: live, exempt: false}),
+    sent,
+  );
+  assert.deepEqual(settleAndProject(live, [{id: 'a1', doc: sent}]), [hoursRow('a1', 'x', H)]);
+});
+
+test('settleOccupantChangeHours: (e) an exempt incoming member gets no hours, even with hours elsewhere', () => {
+  const live = [hoursRow('a1', 'x', H), hoursRow('a2', 'pool', J)];
+  assert.deepEqual(
+    settleOccupantChangeHours({id: 'a1', doc: doc('e', 'pool'), stored: live[0], liveBefore: live, exempt: true}),
+    {...doc('e', 'pool'), customStartAt: null, customEndAt: null},
+  );
+  assert.deepEqual(settleAndProject(live, [{id: 'a1', doc: doc('e', 'pool')}], new Set(['pool'])), [
+    hoursRow('a1', 'pool', null),
+    hoursRow('a2', 'pool', J),
+  ]);
+});
+
+test('settleOccupantChangeHours: (f) an update that carries the keys is written as sent', () => {
+  const live = [hoursRow('a1', 'x', H), hoursRow('a2', 'y', J)];
+  for (const sent of [doc('e', 'y', H), doc('e', 'y', {customStartAt: null, customEndAt: null})]) {
+    assert.equal(
+      settleOccupantChangeHours({id: 'a1', doc: sent, stored: live[0], liveBefore: live, exempt: false}),
+      sent,
+    );
+  }
+});
+
+test('settleOccupantChangeHours: moving a row to another event takes the member\'s hours there, else none', () => {
+  const live = [hoursRow('a1', 'x', H), hoursRow('b1', 'x', J, 'e2')];
+  assert.deepEqual(
+    settleOccupantChangeHours({id: 'a1', doc: doc('e2', 'x'), stored: live[0], liveBefore: live, exempt: false}),
+    {...doc('e2', 'x'), ...J},
+  );
+  assert.deepEqual(
+    settleOccupantChangeHours({id: 'a1', doc: doc('e3', 'x'), stored: live[0], liveBefore: live, exempt: false}),
+    {...doc('e3', 'x'), customStartAt: null, customEndAt: null},
+  );
+});
+
+test('settleOccupantChangeHours: the row itself never counts as the incoming member\'s other row', () => {
+  // A stale stored row listed under the incoming member must not hand its own
+  // hours back: only the member's OTHER rows count.
+  const stored = hoursRow('a1', 'x', H);
+  assert.deepEqual(
+    settleOccupantChangeHours({
+      id: 'a1',
+      doc: doc('e', 'y'),
+      stored,
+      liveBefore: [hoursRow('a1', 'y', H)],
+      exempt: false,
+    }),
+    {...doc('e', 'y'), customStartAt: null, customEndAt: null},
+  );
+});
+
+test('settleOccupantChangeHours: an update of a row not stored is written as sent', () => {
+  const sent = doc('e', 'y');
+  assert.equal(
+    settleOccupantChangeHours({id: 'a1', doc: sent, stored: null, liveBefore: [], exempt: false}),
+    sent,
   );
 });
 
