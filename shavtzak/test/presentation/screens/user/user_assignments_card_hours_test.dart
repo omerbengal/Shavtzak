@@ -512,16 +512,38 @@ void main() {
       expect(rows.departureLine, 'היציאה שלך: 27.10 23:00');
     });
 
+    test('a team end: the bracket names the team end', () {
+      final rows = memberCardTimeRows(
+        fixed(),
+        hours('2026-10-27T14:00', '2026-10-27T22:00'),
+      );
+
+      expect(rows.departureLine,
+          'היציאה שלך: 27.10 22:00 (סיום צוות 28.10 23:30)');
+    });
+
     test(
         'no team end: the bracket reads the stretch, which falls back to the '
-        'show end', () {
+        'show end, and names the show end', () {
       final rows = memberCardTimeRows(
         fixed(teamEndTime: ''),
         hours('2026-10-27T14:00', '2026-10-27T22:00'),
       );
 
       expect(rows.departureLine,
-          'היציאה שלך: 27.10 22:00 (סיום צוות 28.10 22:30)');
+          'היציאה שלך: 27.10 22:00 (סיום המופע 28.10 22:30)');
+    });
+
+    test(
+        'a team end the stretch cannot read counts as none: the bracket names '
+        'the show end', () {
+      final rows = memberCardTimeRows(
+        fixed(teamEndTime: '24:00'),
+        hours('2026-10-27T14:00', '2026-10-27T22:00'),
+      );
+
+      expect(rows.departureLine,
+          'היציאה שלך: 27.10 22:00 (סיום המופע 28.10 22:30)');
     });
 
     test('without hours: the rows are the ones the card always had', () {

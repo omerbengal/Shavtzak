@@ -2177,9 +2177,10 @@ class MemberCardTimeRows extends Equatable {
 ///   its day when it is not the event's first day, the bracket dropped when
 ///   the event has no assembly time;
 /// - `היציאה שלך: <d.M HH:mm> (סיום צוות <d.M HH:mm>)`, the bracket the end of
-///   the event's stretch, dropped when the event gives neither a team end nor
-///   a show end (the stretch would only be a day edge). A departure at exactly
-///   00:00 reads as the next day's 00:00.
+///   the event's stretch: `סיום צוות` at the team end, `סיום המופע` when the
+///   event has no team end and the stretch ends at the show end, dropped when
+///   it gives neither (the stretch would only be a day edge). A departure at
+///   exactly 00:00 reads as the next day's 00:00.
 MemberCardTimeRows memberCardTimeRows(Event event, WallInterval? window) {
   if (window == null) {
     return MemberCardTimeRows(
@@ -2199,8 +2200,13 @@ MemberCardTimeRows memberCardTimeRows(Event event, WallInterval? window) {
   final assembly = event.assemblyTime.trim();
 
   final stretchEnd = eventStretch(event).end;
-  final eventHasAnEnd = wallTimeMinutes(event.teamEndTime) != null ||
-      wallTimeMinutes(event.endTime) != null;
+  // The bracket names the time the stretch ends on: the team end, else the
+  // show end (read as eventStretch reads them).
+  final String? stretchEndLabel = wallTimeMinutes(event.teamEndTime) != null
+      ? 'סיום צוות'
+      : wallTimeMinutes(event.endTime) != null
+          ? 'סיום המופע'
+          : null;
 
   return MemberCardTimeRows(
     hasCustomHours: true,
@@ -2219,8 +2225,8 @@ MemberCardTimeRows memberCardTimeRows(Event event, WallInterval? window) {
     arrivalNote: assembly.isEmpty ? '' : ' (התייצבות צוות $assembly)',
     departureLabel: 'היציאה שלך:',
     departure: '${formatWallDay(window.end)} ${formatWallTime(window.end)}',
-    departureNote: eventHasAnEnd
-        ? ' (סיום צוות ${formatWallDay(stretchEnd)} ${formatWallTime(stretchEnd)})'
-        : '',
+    departureNote: stretchEndLabel == null
+        ? ''
+        : ' ($stretchEndLabel ${formatWallDay(stretchEnd)} ${formatWallTime(stretchEnd)})',
   );
 }
