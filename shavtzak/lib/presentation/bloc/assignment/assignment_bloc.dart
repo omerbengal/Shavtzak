@@ -3138,11 +3138,26 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // Converge the EXISTING DB doc to the desired state, preserving its
         // id and createdAt (the backend `batch.update` writes the full doc,
         // so a fresh createdAt here would silently overwrite the original).
-        updates.add(_assignmentFromStaged(
+        final update = _assignmentFromStaged(
           c,
           id: dbAssignment.id,
           createdAt: dbAssignment.createdAt,
-        ));
+        );
+        // Hours this change never touched are not part of it: send the hours
+        // the database holds now, so an override ("דרוס DB") of a notes edit
+        // never reverts hours another admin changed meanwhile. Only while the
+        // occupant is the one stored: another member's hours never pass on.
+        final keepsDbHours = c.desiredCustomStartAt ==
+                c.baselineCustomStartAt &&
+            c.desiredCustomEndAt == c.baselineCustomEndAt &&
+            c.desiredMemberId == c.baselineMemberId &&
+            c.desiredMemberId == dbAssignment.teamMemberId;
+        updates.add(keepsDbHours
+            ? update.copyWith(
+                customStartAt: () => dbAssignment.customStartAt,
+                customEndAt: () => dbAssignment.customEndAt,
+              )
+            : update);
         touchedEventIds.add(c.eventId);
         decision = 'update';
       }

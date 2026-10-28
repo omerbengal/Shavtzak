@@ -211,9 +211,11 @@ void main() {
           !s.isOffQuota);
 
   /// Saves and returns the (creates, updates) lists the repository received.
+  /// [resolutions] are the conflict dialog's choices, per slot key.
   Future<({List<Assignment> creates, List<Assignment> updates})> save(
-      AssignmentBloc bloc) async {
-    bloc.add(const SaveStagedChanges());
+      AssignmentBloc bloc,
+      {Map<String, ConflictResolution>? resolutions}) async {
+    bloc.add(SaveStagedChanges(resolutions: resolutions));
     await pumpEventQueue();
     final captured = verify(assignmentRepo.saveAssignmentsBatch(
       creates: captureAnyNamed('creates'),
@@ -661,6 +663,139 @@ void main() {
           (bloc.state as AssignmentSlotsLoaded).slots);
       expect(conflicts.single.description,
           'ההערות/הלייבל של השיבוץ שונו בינתיים ב-DB.');
+    });
+  });
+
+  // The conflict dialog's default for type F is "דרוס DB" (overrideDb): the
+  // staged change wins. Hours the staged change never touched are not part of
+  // it, so they must not revert someone else's newer hours.
+  group('Save over hours someone else changed meanwhile', () {
+    const slotKey = 'e1_medic_0';
+
+    Future<AssignmentBloc> loadWithHours() async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      await load(
+        bloc,
+        events: [event('e1', start: day1, end: day2)],
+        assignments: [
+          assignment('a1', 'e1', 'm1',
+              customStartAt: at(day1, '10:00'), customEndAt: at(day1, '16:00')),
+        ],
+      );
+      return bloc;
+    }
+
+    AssignmentSlot liveSlot(AssignmentBloc bloc) =>
+        medicSlot(bloc.state as AssignmentSlotsLoaded, 'e1');
+
+    test('a notes-only edit sends the hours the database holds now', () async {
+      final bloc = await loadWithHours();
+      bloc.add(StageNotesChange(
+        slot: liveSlot(bloc),
+        notes: 'הערה',
+        semanticLabelId: null,
+        alternativePhoneNumber: null,
+      ));
+      await pumpEventQueue();
+
+      // Another admin moves m1's hours after the edit was staged.
+      assignmentStream.add([
+        assignment('a1', 'e1', 'm1',
+            customStartAt: at(day1, '11:00'), customEndAt: at(day1, '18:00')),
+      ]);
+      await pumpEventQueue();
+      expect(
+          bloc
+              .classifyStagedConflicts(
+                  (bloc.state as AssignmentSlotsLoaded).slots)
+              .single
+              .type,
+          AssignmentConflictType.notesChanged);
+
+      final saved = await save(bloc,
+          resolutions: {slotKey: ConflictResolution.overrideDb});
+
+      final update = saved.updates.single;
+      expect(update.id, 'a1');
+      expect(update.notes, 'הערה');
+      expect(update.customStartAt, at(day1, '11:00'));
+      expect(update.customEndAt, at(day1, '18:00'));
+    });
+
+    test('a notes-only edit keeps hours someone else cleared cleared',
+        () async {
+      final bloc = await loadWithHours();
+      bloc.add(StageNotesChange(
+        slot: liveSlot(bloc),
+        notes: 'הערה',
+        semanticLabelId: null,
+        alternativePhoneNumber: null,
+      ));
+      await pumpEventQueue();
+
+      assignmentStream.add([assignment('a1', 'e1', 'm1')]);
+      await pumpEventQueue();
+
+      final saved = await save(bloc,
+          resolutions: {slotKey: ConflictResolution.overrideDb});
+
+      final wire = AssignmentModel.fromEntity(saved.updates.single).toJson();
+      expect(wire.containsKey('customStartAt'), isTrue);
+      expect(wire['customStartAt'], isNull);
+      expect(wire['customEndAt'], isNull);
+    });
+
+    test('an hours edit still sends the hours the admin chose', () async {
+      final bloc = await loadWithHours();
+      bloc.add(StageNotesChange(
+        slot: liveSlot(bloc),
+        notes: '',
+        customStartAt: at(day1, '12:00'),
+        customEndAt: at(day1, '20:00'),
+      ));
+      await pumpEventQueue();
+
+      assignmentStream.add([
+        assignment('a1', 'e1', 'm1',
+            customStartAt: at(day1, '11:00'), customEndAt: at(day1, '18:00')),
+      ]);
+      await pumpEventQueue();
+
+      final saved = await save(bloc,
+          resolutions: {slotKey: ConflictResolution.overrideDb});
+
+      final update = saved.updates.single;
+      expect(update.customStartAt, at(day1, '12:00'));
+      expect(update.customEndAt, at(day1, '20:00'));
+    });
+
+    test(
+        'a notes-only edit over a slot someone else gave to another member '
+        'never hands that member\'s hours to the staged one', () async {
+      final bloc = await loadWithHours();
+      bloc.add(StageNotesChange(
+        slot: liveSlot(bloc),
+        notes: 'הערה',
+        semanticLabelId: null,
+        alternativePhoneNumber: null,
+      ));
+      await pumpEventQueue();
+
+      // Another admin replaced m1 by m2, with m2's own hours.
+      assignmentStream.add([
+        assignment('a1', 'e1', 'm2',
+            customStartAt: at(day1, '13:00'), customEndAt: at(day1, '15:00')),
+      ]);
+      await pumpEventQueue();
+
+      final saved = await save(bloc,
+          resolutions: {slotKey: ConflictResolution.overrideDb});
+
+      final update = saved.updates.single;
+      expect(update.teamMemberId, 'm1');
+      expect(update.customStartAt, at(day1, '10:00'));
+      expect(update.customEndAt, at(day1, '16:00'));
     });
   });
 }
