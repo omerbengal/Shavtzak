@@ -307,6 +307,7 @@ The V1 system used Excel/Google Sheets. The codebase includes:
 - Check for conflicts: `assignment.hasConflicts`, `assignment.conflictWarnings`
 - Never manually join data - use the repository's population methods
 - Consider team member availability based on isPermanent and constraints
+- **Custom hours** (partial attendance): an assignment may carry `customStartAt`/`customEndAt`, both `yyyy-MM-ddTHH:mm` on the Israel wall clock (`formatWallMoment`), both set or both null, end after start. Its window is those hours when they parse, else the event's stretch (`assignmentWindow` / `Assignment.windowIn` in `core/utils/event_stretch.dart`, twin in `functions/src/event_stretch.ts`); every conflict check, the ICS feed and the "משובץ גם ב…" days judge that window. On the wire the client always sends both keys: on an update an **absent** key keeps the stored hours (old builds) and an explicit `null` clears them; `insert`/`insertBatch` with no hours inherit the member's hours in that event, `saveBatch` never inherits. One set of hours per member per event (`allowMultipleAssignments` members exempt) — the backend refuses a split with 400, so every client path that stages hours stages them on all of the member's roles (`functions/src/assignment_hours.ts`). An `event.update` that moves the event's days or times must carry `customHoursResolutions` for every assignment with hours, else 409.
 
 ### Working with Environments
 - Always use `EnvironmentService.instance` to get current environment
@@ -467,7 +468,7 @@ _subscription = _repository.watchItems().listen(
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (1202 passing as of 2026-10-19; Functions: 255). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
+- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (1907 passing as of 2026-10-28; Functions: 431). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
 
