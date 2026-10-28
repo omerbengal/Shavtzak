@@ -1473,7 +1473,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           ),
         ],
       ),
-      maxLines: 2,
+      // Three lines: a member on a middle day carries both brackets.
+      maxLines: 3,
       overflow: TextOverflow.ellipsis,
     );
   }
