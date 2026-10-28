@@ -347,9 +347,10 @@ class _CustomHoursResolveDialogState extends State<CustomHoursResolveDialog> {
   }
 
   Widget _bulkButton() {
+    final days = _shift.abs() == 1 ? '1 יום' : '${_shift.abs()} ימים';
     final label = _shift > 0
-        ? 'להזיז את כולם עם האירוע (+$_shift ימים)'
-        : 'להזיז את כולם עם האירוע (-${_shift.abs()} ימים)';
+        ? 'להזיז את כולם עם האירוע (+$days)'
+        : 'להזיז את כולם עם האירוע (-$days)';
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: SizedBox(
