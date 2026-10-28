@@ -7,6 +7,7 @@ import '../../../core/constants/role_types.dart';
 import '../../../core/debug/logger.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/custom_hours.dart';
 import '../../../core/utils/event_sorting.dart';
 import '../../../core/utils/event_stretch.dart';
 import '../../../core/utils/filter_persistence.dart';
@@ -1544,8 +1545,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// so do the incoming member's other slots in the event
   /// ([otherSlotsHeldBy]), each keeping its own notes, label and phone.
   /// Otherwise a different occupant (or none) starts without hours of their
-  /// own: they are never inherited from the one before, and re-staging the
-  /// same occupant keeps theirs.
+  /// own: they are never inherited from the one before. Re-staging the same
+  /// occupant keeps theirs, and the slot's stored occupant picked back gets
+  /// their stored hours back when they share hours with no other role in the
+  /// event (with other roles, the screen's hours step decides).
   Future<void> _upsertStagedMember(
     AssignmentSlot slot,
     TeamMember? member, {
@@ -1564,9 +1567,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         desiredCustomEndAt: () => customEndAt,
       );
     } else if (memberId != base.desiredMemberId) {
+      // Picking the slot's stored occupant back, when they share hours with
+      // no other role in the event, puts their stored hours back here.
+      final storedOccupantBack = member != null &&
+          memberId == base.baselineMemberId &&
+          _rolesSharingHours(member, eventId: slot.event.id, ownKey: key)
+              .isEmpty;
       next = next.copyWith(
-        desiredCustomStartAt: () => null,
-        desiredCustomEndAt: () => null,
+        desiredCustomStartAt: () =>
+            storedOccupantBack ? base.baselineCustomStartAt : null,
+        desiredCustomEndAt: () =>
+            storedOccupantBack ? base.baselineCustomEndAt : null,
       );
     }
     // Carry-over (spec §9): filling a previously-empty, annotated gap seeds the
@@ -1701,28 +1712,41 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         knownMember: member,
       );
 
-  /// The hours [member] already holds on another slot of [slot]'s event (see
-  /// [otherSlotsHeldBy]), by [effectiveCustomWindow]: the first usable ones,
-  /// or null when there are none.
+  /// The hours [member] already holds on another role of [slot]'s event once
+  /// the staged changes are saved (see [_rolesSharingHours]): the first usable
+  /// ones, or null when there are none, and for a member flagged
+  /// `allowMultipleAssignments`.
   WallInterval? hoursHeldElsewhere(TeamMember member, AssignmentSlot slot) =>
-      _hoursHeldElsewhere(member, eventId: slot.event.id, ownKey: _slotKey(slot));
+      firstCustomWindow(_rolesSharingHours(member,
+          eventId: slot.event.id, ownKey: _slotKey(slot)));
 
-  WallInterval? _hoursHeldElsewhere(
+  /// The assignments [member] will hold in [eventId] once the staged changes
+  /// are saved, other than the one in the slot keyed [ownKey]: the roles whose
+  /// hours must equal theirs in that slot. Empty for a member flagged
+  /// `allowMultipleAssignments`, whose roles keep hours of their own.
+  ///
+  /// Read from every stored row (not the grid, which the event filter can
+  /// narrow to other events) with the staged changes laid over them.
+  List<Assignment> _rolesSharingHours(
     TeamMember member, {
     required String eventId,
     required String ownKey,
   }) {
-    final others = _otherSlotsHeldBy(
-      member.id,
-      eventId: eventId,
-      ownKey: ownKey,
-      knownMember: member,
-    );
-    for (final other in others) {
-      final window = effectiveCustomWindow(other);
-      if (window != null) return window;
-    }
-    return null;
+    final known = _windowMembersMap[member.id] ?? member;
+    if (known.allowMultipleAssignments) return const [];
+    final effective = _stagedEffectiveAssignments([
+      ..._repository.getCurrentAssignments(),
+      ..._extraPastAssignments,
+    ]);
+    return [
+      for (final assignment in effective)
+        if (assignment.eventId == eventId &&
+            assignment.teamMemberId == member.id &&
+            StagedAssignmentChange.slotKeyFor(assignment.eventId,
+                    assignment.roleType, assignment.slotIndex) !=
+                ownKey)
+          assignment,
+    ];
   }
 
   /// Stage a notes/label/alt-phone edit (member left unchanged). When
@@ -1903,9 +1927,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   }
 
   /// The DB assignments with the in-memory staged changes applied, so cross-event
-  /// availability (same-day booking) reflects the admin's unsaved edits. Used ONLY
-  /// for the same-day availability computation in slot-building — NOT for save/
-  /// conflict logic, which compares staged desired vs the RAW DB.
+  /// availability (same-day booking) reflects the admin's unsaved edits. Used
+  /// for the same-day availability computation in slot-building and for the
+  /// roles a member's custom hours are shared across ([_rolesSharingHours]) —
+  /// NOT for save/conflict logic, which compares staged desired vs the RAW DB.
   List<Assignment> _stagedEffectiveAssignments(List<Assignment> dbAssignments) {
     if (_stagedChanges.isEmpty) return dbAssignments;
     final stagedKeys = _stagedChanges.keys.toSet();
@@ -2250,9 +2275,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // A member holds one set of hours in an event (unless they may hold
     // several roles with hours of their own), and the backend refuses a Save
     // that splits them: the new slot takes the hours the member already holds
-    // there, the same as a direct create inherits them on the backend.
-    final inherited =
-        _hoursHeldElsewhere(event.member, eventId: eventId, ownKey: key);
+    // there, the same as a direct create inherits them on the backend. The
+    // event may be one the screen's filter hides.
+    final inherited = firstCustomWindow(
+        _rolesSharingHours(event.member, eventId: eventId, ownKey: key));
     _stagedChanges[key] = StagedAssignmentChange(
       slotKey: key, eventId: eventId, roleType: role, slotIndex: slotIndex,
       desiredMemberId: event.member.id, desiredNotes: '',
@@ -2368,7 +2394,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// roles they hold in the event: the hours were staged on every one of them
   /// together (see [_upsertStagedNotes], [_upsertStagedMember]) and the
   /// backend refuses a Save that splits them. So when the [discarded] change
-  /// had hours of its own to undo, or put a different member on the slot,
+  /// had hours of its own to undo, put a different member on the slot, or
+  /// deleted it (the member's other roles could take other hours meanwhile),
   /// each other slot of that member goes back to the member's stored hours,
   /// through [_commitStaged]: a slot with no other staged edit stops being
   /// dirty, one with its own notes / label / phone / occupant edit stays dirty
@@ -2387,7 +2414,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// and the one it goes back to ([StagedAssignmentChange.baselineMemberId]).
   /// They differ when the slot was staged as cleared or replaced; a
   /// replacement's chosen hours were staged on the incoming member's other
-  /// roles too, and undoing the slot brings the original member back.
+  /// roles too, and undoing the slot brings the original member back. A
+  /// manual add is the exception: it took the member's hours and changed no
+  /// other role, so the member it leaves is not restored.
   Future<void> _restoreSiblingHoursAfterDiscard(
       StagedAssignmentChange discarded) async {
     final hoursEdited =
@@ -2395,7 +2424,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             discarded.desiredCustomEndAt != discarded.baselineCustomEndAt;
     final occupantChanged =
         discarded.desiredMemberId != discarded.baselineMemberId;
-    if (!hoursEdited && !occupantChanged) return;
+    // A staged deletion changes neither, but while it stood the member did
+    // not hold the slot, so their other roles were free to take other hours.
+    if (!hoursEdited && !occupantChanged && !discarded.markedForDeletion) {
+      return;
+    }
 
     final ownKey = discarded.slotKey;
     TeamMember? knownMember;
@@ -2406,7 +2439,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     }
     final memberIds = <String>{
-      if (discarded.desiredMemberId != null) discarded.desiredMemberId!,
+      // A manual add took the member's hours and pushed none onto their other
+      // roles: taking it away leaves those as the admin staged them.
+      if (discarded.desiredMemberId != null && !discarded.isManualAdd)
+        discarded.desiredMemberId!,
       if (discarded.baselineMemberId != null) discarded.baselineMemberId!,
     };
     for (final memberId in memberIds) {

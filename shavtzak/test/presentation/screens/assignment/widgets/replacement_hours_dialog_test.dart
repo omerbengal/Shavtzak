@@ -327,6 +327,18 @@ void main() {
     });
   });
 
+  testWidgets('a previous occupant without a name is called חבר/ת הצוות',
+      (tester) async {
+    await open(
+      tester,
+      previous: _member('m1', '  '),
+      previousHours: _danaHours,
+    );
+
+    expect(find.text('⏰ לחבר/ת הצוות היו שעות מותאמות'), findsOneWidget);
+    expect(find.text('לשמור את השעות של חבר/ת הצוות'), findsOneWidget);
+  });
+
   group('the other roles line', () {
     const line = 'השעות יחולו על כל התפקידים של יוסי באירוע';
 

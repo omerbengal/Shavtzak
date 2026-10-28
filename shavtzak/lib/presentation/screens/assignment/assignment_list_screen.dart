@@ -1990,7 +1990,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // off and on again.
     final assignedMember = assignment.teamMember;
     final firstName = memberFirstName(assignedMember?.name ?? '');
-    final memberLabel = firstName.isEmpty ? 'חבר/ת הצוות' : firstName;
+    final memberLabel = firstName.isEmpty ? unnamedMemberName : firstName;
     final sharesHoursAcrossRoles = context
         .read<AssignmentBloc>()
         .otherSlotsOfSameMember(slot)
@@ -3286,13 +3286,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Allows admin to force-assign them despite constraints
   Future<void> _showConstrainedMembersDialog(AssignmentSlot slot) async {
     // The list judges the event's hours. When the slot's occupant has hours of
-    // their own, a member free during those hours gets a green note.
+    // their own, a member whose constraint blocks the event but not those
+    // hours gets a green note.
     final previousHours =
         context.read<AssignmentBloc>().effectiveCustomWindow(slot);
     final previousFirstName =
         memberFirstName(_currentMemberOf(slot)?.name ?? '');
     final previousName =
-        previousFirstName.isEmpty ? 'חבר/ת הצוות' : previousFirstName;
+        previousFirstName.isEmpty ? unnamedMemberName : previousFirstName;
 
     // Get all active team members
     final teamRepo = context.read<TeamRepository>();
@@ -3427,7 +3428,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                           event: slot.event,
                           sameDayEvents: sameDayEvents,
                         );
+                        // The note explains a constraint: blocked during the
+                        // event, free during the previous occupant's hours. A
+                        // member listed only for a booking elsewhere gets none.
                         final fitsPreviousHours = previousHours != null &&
+                            !member.isAvailableForEventWithTime(slot.event) &&
                             member.isAvailableForEventWithTime(slot.event,
                                 window: previousHours);
 

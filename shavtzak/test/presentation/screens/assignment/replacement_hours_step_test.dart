@@ -173,6 +173,7 @@ void main() {
     List<AssignmentSlot> incomingOtherSlots = const [],
     WallInterval? incomingHours,
     List<TeamMember> team = const [],
+    Map<TeamMember, String> bookedElsewhere = const {},
   }) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
@@ -189,6 +190,11 @@ void main() {
       slotIndex: 0,
       currentAssignment: occupant,
       availableMembers: [if (occupant != null) dana, yossi],
+      sameDayAssignedMembers: bookedElsewhere.keys.toList(),
+      sameDayEventInfo: {
+        for (final entry in bookedElsewhere.entries)
+          entry.key.id: [entry.value],
+      },
     );
     final assignmentBloc = _MockAssignmentBloc()
       ..slotHours = slotHours
@@ -380,6 +386,27 @@ void main() {
       final hint = tester.widget<Text>(hintIn('רון שלו'));
       expect(hint.style?.color, Colors.green.shade700);
       expect(hint.style?.fontSize, 12);
+    });
+
+    testWidgets(
+        'no hint for a member listed only for a booking elsewhere: the hint '
+        'explains a constraint', (tester) async {
+      // Avi has no constraint at all; he is listed because he is assigned to
+      // another event on these days.
+      final avi = memberNamed('m5', 'אבי לוי');
+      await pumpScreen(
+        tester,
+        occupant: danaAssignment,
+        slotHours: danaHours,
+        team: [ron],
+        bookedElsewhere: {avi: 'אירוע אחר'},
+      );
+
+      await openConstrained(tester);
+
+      expect(find.widgetWithText(ListTile, 'אבי לוי'), findsOneWidget);
+      expect(hintIn('אבי לוי'), findsNothing);
+      expect(hintIn('רון שלו'), findsOneWidget);
     });
 
     testWidgets('no hint when the slot has no hours', (tester) async {

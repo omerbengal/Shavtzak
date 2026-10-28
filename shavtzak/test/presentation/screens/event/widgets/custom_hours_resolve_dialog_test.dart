@@ -744,7 +744,7 @@ void main() {
       );
 
       expect(card('gone'), findsOneWidget);
-      expect(find.text('חבר/ת צוות · חובש/ת'), findsOneWidget);
+      expect(find.text('חבר/ת הצוות · חובש/ת'), findsOneWidget);
       await choose(tester, 'gone', _remove);
       await save(tester);
       expect(await opened.result, [_resolution('a1', null, null)]);

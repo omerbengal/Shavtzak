@@ -18,7 +18,6 @@ const String _keepNoOverlapSuffix = ' ⚠️ לא חופף לאירוע החדש
 const String _editLabel = 'לערוך…';
 const String _removeLabel = 'להסיר שעות מותאמות';
 const String _removeHint = 'יקבל/תקבל את שעות האירוע';
-const String _unknownMember = 'חבר/ת צוות';
 const String _cancelLabel = 'ביטול';
 const String _saveLabel = 'שמור אירוע';
 
@@ -161,7 +160,7 @@ class _CustomHoursResolveDialogState extends State<CustomHoursResolveDialog> {
       byKey[key] = _HoursCard(
         key: key,
         member: member,
-        name: name.isEmpty ? _unknownMember : name,
+        name: name.isEmpty ? unnamedMemberName : name,
         first: assignment,
         current: window,
       );

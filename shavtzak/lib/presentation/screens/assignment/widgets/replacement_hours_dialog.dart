@@ -7,7 +7,6 @@ import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../widgets/custom_hours_fields.dart';
 
-const String _unnamedMember = 'חבר/ת הצוות';
 const String _eventHoursLabel = 'שעות האירוע הרגילות';
 const String _otherHoursLabel = 'שעות אחרות…';
 const String _cancelLabel = 'ביטול';
@@ -119,7 +118,7 @@ class _ReplacementHoursDialogState extends State<ReplacementHoursDialog> {
 
   static String _firstNameOf(TeamMember? member) {
     final first = memberFirstName(member?.name ?? '');
-    return first.isEmpty ? _unnamedMember : first;
+    return first.isEmpty ? unnamedMemberName : first;
   }
 
   // ----- what a choice means -------------------------------------------

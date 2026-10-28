@@ -190,10 +190,11 @@ void main() {
   Future<AssignmentSlotsLoaded> load(
     AssignmentBloc bloc, {
     required List<Assignment> assignments,
+    List<String> eventIds = const ['e1'],
   }) async {
     bloc.add(const LoadAssignmentSlots());
     await pumpEventQueue();
-    eventStream.add([event('e1')]);
+    eventStream.add([for (final id in eventIds) event(id)]);
     roleStream.add(roles);
     teamStream.add(members);
     assignmentStream.add(assignments);
@@ -497,7 +498,204 @@ void main() {
     });
   });
 
+  group('undoing a staged deletion', () {
+    test('the member\'s other role takes their stored hours back, so Save '
+        'never splits them', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      // Yossi is stored on medic with hours, his only role; paramedic is empty.
+      final loaded = await load(
+        bloc,
+        assignments: [
+          assignment('a1', 'e1', 'yossi', 'medic',
+              customStartAt: danaStart, customEndAt: danaEnd),
+        ],
+      );
+
+      // Medic is swiped away, so yossi holds nothing: putting him on
+      // paramedic asks nothing and gives him no hours.
+      bloc.add(StageSlotDeletion(slotOf(loaded, 'medic')));
+      await pumpEventQueue();
+      bloc.add(StageMemberChange(
+          slot: slotOf(current(bloc), 'paramedic'), member: yossi));
+      await pumpEventQueue();
+      expect((await cachedBySlot())['e1_paramedic_0']!['desiredCustomStartAt'],
+          isNull);
+
+      // Undoing the deletion brings medic back with his stored hours.
+      bloc.add(const DiscardStagedSlot('e1_medic_0'));
+      await pumpEventQueue();
+
+      final paramedic = (await cachedBySlot())['e1_paramedic_0']!;
+      expect(paramedic['desiredMemberId'], 'yossi');
+      expect(paramedic['desiredCustomStartAt'], danaStart);
+      expect(paramedic['desiredCustomEndAt'], danaEnd);
+
+      final saved = await save(bloc);
+      expect(saved.updates, isEmpty);
+      final created = saved.creates.single;
+      expect(created.teamMemberId, 'yossi');
+      expect(created.customStartAt, danaStart);
+      expect(created.customEndAt, danaEnd);
+    });
+
+    test('a manual add made while it stood takes the stored hours too',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        assignments: [
+          assignment('a1', 'e1', 'yossi', 'medic',
+              customStartAt: danaStart, customEndAt: danaEnd),
+        ],
+      );
+      bloc.add(StageSlotDeletion(slotOf(loaded, 'medic')));
+      await pumpEventQueue();
+      // With medic gone, yossi holds no hours: the added row takes none.
+      bloc.add(StageManualAdd(
+          event: event('e1'), member: yossi, roleType: 'paramedic'));
+      await pumpEventQueue();
+
+      bloc.add(const DiscardStagedSlot('e1_medic_0'));
+      await pumpEventQueue();
+
+      final saved = await save(bloc);
+      expect(saved.updates, isEmpty);
+      final created = saved.creates.single;
+      expect(created.roleType, 'paramedic');
+      expect(created.customStartAt, danaStart);
+      expect(created.customEndAt, danaEnd);
+    });
+  });
+
+  group('picking the slot\'s stored occupant back', () {
+    test('when she holds no other role, her stored hours come back and the '
+        'slot is clean', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        assignments: [
+          assignment('a1', 'e1', 'dana', 'medic',
+              notes: 'של דנה', customStartAt: danaStart, customEndAt: danaEnd),
+        ],
+      );
+
+      // Yossi replaces her with the event's hours...
+      bloc.add(StageMemberChange(
+        slot: slotOf(loaded, 'medic'),
+        member: yossi,
+        setsCustomHours: true,
+      ));
+      await pumpEventQueue();
+      expect(current(bloc).stagedSlotKeys, {'e1_medic_0'});
+
+      // ...and she is picked again: no hours step runs (nobody has hours).
+      bloc.add(StageMemberChange(
+          slot: slotOf(current(bloc), 'medic'), member: dana));
+      await pumpEventQueue();
+
+      expect(current(bloc).stagedSlotKeys, isEmpty);
+      expect(await cachedBySlot(), isEmpty);
+    });
+
+    test('while she holds another role, the hours are left to the hours step',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        assignments: [
+          assignment('a1', 'e1', 'dana', 'medic',
+              customStartAt: danaStart, customEndAt: danaEnd),
+          assignment('a2', 'e1', 'dana', 'paramedic',
+              customStartAt: danaStart, customEndAt: danaEnd),
+        ],
+      );
+      bloc.add(StageMemberChange(
+        slot: slotOf(loaded, 'medic'),
+        member: yossi,
+        setsCustomHours: true,
+      ));
+      await pumpEventQueue();
+
+      // The screen would ask here (her paramedic role has hours); a plain
+      // change gives no hours back.
+      bloc.add(StageMemberChange(
+          slot: slotOf(current(bloc), 'medic'), member: dana));
+      await pumpEventQueue();
+
+      final medic = (await cachedBySlot())['e1_medic_0']!;
+      expect(medic['desiredMemberId'], 'dana');
+      expect(medic['desiredCustomStartAt'], isNull);
+    });
+  });
+
   group('a manual add', () {
+    test('into an event the screen\'s filter hides still takes the member\'s '
+        'hours there, so Save never splits them', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final stored = [
+        assignment('b2', 'e2', 'yossi', 'paramedic',
+            customStartAt: danaStart, customEndAt: danaEnd),
+      ];
+      await load(bloc, eventIds: ['e1', 'e2'], assignments: stored);
+      // The screen is filtered to e1; the next stream update builds the grid
+      // with e1's slots only.
+      bloc.add(const ApplyEventFilter({'e1'}));
+      await pumpEventQueue();
+      assignmentStream.add([...stored]);
+      await pumpEventQueue();
+      expect(current(bloc).slots, isNotEmpty);
+      expect(current(bloc).slots.every((s) => s.event.id == 'e1'), isTrue);
+
+      bloc.add(StageManualAdd(
+          event: event('e2'), member: yossi, roleType: 'medic'));
+      await pumpEventQueue();
+
+      final saved = await save(bloc);
+      final created = saved.creates.single;
+      expect(created.eventId, 'e2');
+      expect(created.teamMemberId, 'yossi');
+      expect(created.customStartAt, danaStart);
+      expect(created.customEndAt, danaEnd);
+    });
+
+    test('undone, it leaves a staged hours edit on the member\'s other role '
+        'alone', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        assignments: [assignment('a2', 'e1', 'yossi', 'paramedic')],
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'paramedic'),
+        notes: '',
+        customStartAt: at(day2, '08:00'),
+        customEndAt: at(day2, '12:00'),
+      ));
+      await pumpEventQueue();
+      bloc.add(StageManualAdd(
+          event: event('e1'), member: yossi, roleType: 'medic'));
+      await pumpEventQueue();
+      final addedKey = (await cachedBySlot())
+          .values
+          .singleWhere((c) => c['isManualAdd'] == true)['slotKey'] as String;
+
+      bloc.add(DiscardStagedSlot(addedKey));
+      await pumpEventQueue();
+
+      final staged = await cachedBySlot();
+      expect(staged.keys, ['e1_paramedic_0']);
+      expect(staged['e1_paramedic_0']!['desiredCustomStartAt'],
+          at(day2, '08:00'));
+      expect(staged['e1_paramedic_0']!['desiredCustomEndAt'],
+          at(day2, '12:00'));
+    });
+
     test('takes the hours the member holds in the event', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());

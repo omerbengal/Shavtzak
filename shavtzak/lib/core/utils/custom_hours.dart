@@ -87,6 +87,10 @@ bool _sameCalendarDay(DateTime a, DateTime b) =>
 
 bool _differsTrimmed(String a, String b) => a.trim() != b.trim();
 
+/// What the custom-hours dialogs call a member whose name is blank or not
+/// loaded, in place of the name ('שעות מותאמות לחבר/ת הצוות').
+const String unnamedMemberName = 'חבר/ת הצוות';
+
 /// The first whitespace-separated word of [name]; empty for a blank name.
 String memberFirstName(String name) {
   final trimmed = name.trim();
