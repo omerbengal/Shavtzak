@@ -7,6 +7,7 @@ import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
+import 'package:shavtzak/presentation/bloc/event/duplication_availability.dart';
 import 'package:shavtzak/presentation/bloc/event/event_bloc.dart';
 import 'package:shavtzak/presentation/bloc/event/event_event.dart';
 import 'package:shavtzak/presentation/bloc/event/event_state.dart';
@@ -230,9 +231,414 @@ void main() {
       expect(state.message, contains('(3 הוסרו)'));
     });
   });
+
+  // Custom hours: the source is on 1.12 and the copy on 8.12, a shift of seven
+  // days. The copy's own stretch is 8.12 18:30-22:00.
+  group('custom hours', () {
+    final source = _event('hours-source', DateTime(2026, 12, 1), now);
+    final copyDay = DateTime(2026, 12, 8);
+    const sourceStart = '2026-12-01T14:00';
+    const sourceEnd = '2026-12-01T20:00';
+    const movedStart = '2026-12-08T14:00';
+    const movedEnd = '2026-12-08T20:00';
+
+    setUp(() {
+      when(eventRepository.getEventById(source.id))
+          .thenAnswer((_) async => source);
+      when(eventRepository.duplicateEvent(
+        any,
+        any,
+        any,
+        hoursByAssignmentId: anyNamed('hoursByAssignmentId'),
+      )).thenAnswer((_) async {});
+    });
+
+    DuplicateEvent request({bool customHours = true}) => DuplicateEvent(
+          eventId: source.id,
+          newName: 'אירוע חדש',
+          newLocation: '',
+          newComments: '',
+          newStartDate: copyDay,
+          newEndDate: copyDay,
+          newStartTime: '19:00',
+          newEndTime: '22:00',
+          newAssemblyTime: '18:30',
+          newRequiresArmed: false,
+          newRoleRequirements: const {'medic': 3},
+          duplicateAssignments: true,
+          duplicateCustomHours: customHours,
+        );
+
+    void givenAssignments(List<Assignment> assignments) {
+      when(assignmentRepository.getAssignmentsByEvent(source.id))
+          .thenAnswer((_) async => assignments);
+    }
+
+    /// The hours handed to the repository by the one duplicateEvent call.
+    Map<String, ({String? start, String? end})> copiedHours() {
+      return verify(eventRepository.duplicateEvent(
+        any,
+        any,
+        any,
+        hoursByAssignmentId: captureAnyNamed('hoursByAssignmentId'),
+      )).captured.single as Map<String, ({String? start, String? end})>;
+    }
+
+    ConfirmDuplicationWithExclusions confirm(
+      DuplicationRequiresConflictResolution state, {
+      Set<String> excluded = const {},
+      Set<String> hoursDropped = const {},
+      bool customHours = true,
+    }) {
+      return ConfirmDuplicationWithExclusions(
+        originalEvent: source,
+        proposedEvent: state.proposedEvent,
+        assignmentIdsToExclude: excluded,
+        originalAssignmentIds:
+            state.assignmentInfos.map((info) => info.assignment.id).toList(),
+        duplicateCustomHours: customHours,
+        customHoursDropped: hoursDropped,
+      );
+    }
+
+    group('DuplicateEvent', () {
+      test('hours to confirm open the dialog even with no conflict, showing '
+          'the hours moved by the shift', () async {
+        givenAssignments([
+          _assignment('a1', _member('m1', now), now,
+              start: sourceStart, end: sourceEnd),
+          _assignment('a2', _member('m2', now), now),
+        ]);
+
+        final state =
+            await nextState<DuplicationRequiresConflictResolution>(request());
+
+        final withHours =
+            state.assignmentInfos.singleWhere((i) => i.assignment.id == 'a1');
+        expect(withHours.movedCustomStartAt, movedStart);
+        expect(withHours.movedCustomEndAt, movedEnd);
+        expect(withHours.hasAvailabilityConflict, isFalse);
+        expect(withHours.availabilityWithEventHours,
+            DuplicationAvailability.clear);
+        final without =
+            state.assignmentInfos.singleWhere((i) => i.assignment.id == 'a2');
+        expect(without.movedCustomStartAt, isNull);
+        expect(without.movedCustomEndAt, isNull);
+        expect(without.availabilityWithEventHours, isNull);
+        expect(state.copiesCustomHours, isTrue);
+        verifyNever(eventRepository.duplicateEvent(
+          any,
+          any,
+          any,
+          hoursByAssignmentId: anyNamed('hoursByAssignmentId'),
+        ));
+      });
+
+      test('with the sub-switch off nothing opens and the copies carry no '
+          'hours', () async {
+        givenAssignments([
+          _assignment('a1', _member('m1', now), now,
+              start: sourceStart, end: sourceEnd),
+        ]);
+
+        final state = await nextState<EventOperationSuccess>(
+            request(customHours: false));
+
+        expect(state.message, contains('עם כל השיבוצים'));
+        expect(copiedHours(), isEmpty);
+      });
+
+      test('a source with no hours behaves as it did before, switch on or '
+          'off', () async {
+        givenAssignments([_assignment('a1', _member('m1', now), now)]);
+
+        final state = await nextState<EventOperationSuccess>(request());
+
+        expect(state.message, contains('עם כל השיבוצים'));
+        expect(copiedHours(), isEmpty);
+      });
+
+      test('hours that cannot be read are no reason to open the dialog',
+          () async {
+        givenAssignments([
+          _assignment('a1', _member('m1', now), now,
+              start: 'soon', end: sourceEnd),
+        ]);
+
+        await nextState<EventOperationSuccess>(request());
+
+        expect(copiedHours(), isEmpty);
+      });
+
+      test('the dialog still opens for a conflict alone, and then lists no '
+          'hours', () async {
+        givenAssignments([
+          _assignment(
+              'a1',
+              _member('m1', now, constraints: [
+                _unavailability(copyDay, ConstraintStatus.approved),
+              ]),
+              now),
+        ]);
+
+        final state =
+            await nextState<DuplicationRequiresConflictResolution>(request());
+
+        expect(state.copiesCustomHours, isFalse);
+        expect(state.suggestedExclusions, {'a1'});
+      });
+
+      test('availability is judged with the moved hours, and again with the '
+          "event's own", () async {
+        // 9-12 moves to 8.12 09:00-12:00, where the member is busy 08:00-10:00;
+        // the copy's own stretch (18:30-22:00) is free of it.
+        final busyInTheMorning = _member('m-morning', now, constraints: [
+          _unavailability(copyDay, ConstraintStatus.approved,
+              startTime: '08:00', endTime: '10:00'),
+        ]);
+        // 14-20 moves to 8.12 14:00-20:00, free of a 21:00-22:00 constraint
+        // that does block the copy's own stretch.
+        final busyInTheEvening = _member('m-evening', now, constraints: [
+          _unavailability(copyDay, ConstraintStatus.pending,
+              id: 'c2', startTime: '21:00', endTime: '22:00'),
+        ]);
+        givenAssignments([
+          _assignment('a-morning', busyInTheMorning, now,
+              start: '2026-12-01T09:00', end: '2026-12-01T12:00'),
+          _assignment('a-evening', busyInTheEvening, now,
+              start: sourceStart, end: sourceEnd),
+        ]);
+
+        final state =
+            await nextState<DuplicationRequiresConflictResolution>(request());
+
+        final morning = state.assignmentInfos
+            .singleWhere((i) => i.assignment.id == 'a-morning');
+        expect(morning.hasAvailabilityConflict, isTrue);
+        expect(morning.availabilityReason, 'אילוץ מאושר: 8.12 08:00–10:00');
+        expect(
+            morning.availabilityWithEventHours, DuplicationAvailability.clear);
+
+        final evening = state.assignmentInfos
+            .singleWhere((i) => i.assignment.id == 'a-evening');
+        expect(evening.hasAvailabilityConflict, isFalse);
+        expect(evening.availabilityReason, isNull);
+        expect(evening.availabilityWithEventHours!.flagged, isTrue);
+        expect(evening.availabilityWithEventHours!.canKeep, isTrue);
+        expect(evening.availabilityWithEventHours!.reasons,
+            ['אילוץ ממתין לאישור: 8.12 21:00–22:00']);
+        expect(state.suggestedExclusions, {'a-morning'});
+      });
+
+      test('every copy of one member shows the same hours, also the one whose '
+          'row had none', () async {
+        final member = _member('m1', now);
+        givenAssignments([
+          _assignment('a1', member, now),
+          _assignment('a2', member, now, start: sourceStart, end: sourceEnd),
+        ]);
+
+        final state =
+            await nextState<DuplicationRequiresConflictResolution>(request());
+
+        expect(state.assignmentInfos.map((i) => i.movedCustomStartAt),
+            [movedStart, movedStart]);
+        expect(state.assignmentInfos.map((i) => i.movedCustomEndAt),
+            [movedEnd, movedEnd]);
+      });
+
+      test('a member flagged allowMultipleAssignments keeps the hours of each '
+          'row', () async {
+        final pool = _member('pool', now, allowMultipleAssignments: true);
+        givenAssignments([
+          _assignment('a1', pool, now, start: sourceStart, end: sourceEnd),
+          _assignment('a2', pool, now,
+              start: '2026-12-01T09:00', end: '2026-12-01T12:00'),
+          _assignment('a3', pool, now),
+        ]);
+
+        final state =
+            await nextState<DuplicationRequiresConflictResolution>(request());
+
+        expect(state.assignmentInfos.map((i) => i.movedCustomStartAt),
+            [movedStart, '2026-12-08T09:00', null]);
+        expect(state.assignmentInfos.map((i) => i.movedCustomEndAt),
+            [movedEnd, '2026-12-08T12:00', null]);
+      });
+
+      test('moving to an earlier date moves the hours back', () async {
+        givenAssignments([
+          _assignment('a1', _member('m1', now), now,
+              start: sourceStart, end: sourceEnd),
+        ]);
+
+        final state =
+            await nextState<DuplicationRequiresConflictResolution>(
+                DuplicateEvent(
+          eventId: source.id,
+          newName: 'אירוע חדש',
+          newLocation: '',
+          newComments: '',
+          newStartDate: DateTime(2026, 11, 24),
+          newEndDate: DateTime(2026, 11, 24),
+          newStartTime: '19:00',
+          newEndTime: '22:00',
+          newAssemblyTime: '18:30',
+          newRequiresArmed: false,
+          newRoleRequirements: const {'medic': 3},
+          duplicateAssignments: true,
+          duplicateCustomHours: true,
+        ));
+
+        expect(state.assignmentInfos.single.movedCustomStartAt,
+            '2026-11-24T14:00');
+        expect(
+            state.assignmentInfos.single.movedCustomEndAt, '2026-11-24T20:00');
+      });
+    });
+
+    group('ConfirmDuplicationWithExclusions', () {
+      late DuplicationRequiresConflictResolution state;
+
+      Future<void> open(List<Assignment> assignments) async {
+        givenAssignments(assignments);
+        state =
+            await nextState<DuplicationRequiresConflictResolution>(request());
+      }
+
+      test('with nothing dropped the copies carry the moved hours', () async {
+        final assignments = [
+          _assignment('a1', _member('m1', now), now,
+              start: sourceStart, end: sourceEnd),
+          _assignment('a2', _member('m2', now), now),
+        ];
+        await open(assignments);
+
+        await nextState<EventOperationSuccess>(confirm(state));
+
+        expect(copiedHours(), {
+          'a1': (start: movedStart, end: movedEnd),
+        });
+      });
+
+      test('a dropped id leaves its copy with no hours', () async {
+        final assignments = [
+          _assignment('a1', _member('m1', now), now,
+              start: sourceStart, end: sourceEnd),
+          _assignment('a2', _member('m2', now), now,
+              start: '2026-12-01T09:00', end: '2026-12-01T12:00'),
+        ];
+        await open(assignments);
+
+        await nextState<EventOperationSuccess>(
+            confirm(state, hoursDropped: {'a1'}));
+
+        final call = verify(eventRepository.duplicateEvent(
+          any,
+          any,
+          captureAny,
+          hoursByAssignmentId: captureAnyNamed('hoursByAssignmentId'),
+        )).captured;
+        // Dropping the hours does not drop the member.
+        expect((call[0] as List<Assignment>).map((a) => a.id), ['a1', 'a2']);
+        expect(call[1], {
+          'a2': (start: '2026-12-08T09:00', end: '2026-12-08T12:00'),
+        });
+      });
+
+      test('one dropped id of a member with two copies drops the hours of '
+          'both', () async {
+        final member = _member('m1', now);
+        final assignments = [
+          _assignment('a1', member, now, start: sourceStart, end: sourceEnd),
+          _assignment('a2', member, now, start: sourceStart, end: sourceEnd),
+        ];
+        await open(assignments);
+
+        await nextState<EventOperationSuccess>(
+            confirm(state, hoursDropped: {'a2'}));
+
+        expect(copiedHours(), isEmpty);
+      });
+
+      test('a removed assignment takes its hours with it', () async {
+        final assignments = [
+          _assignment('a1', _member('m1', now), now,
+              start: sourceStart, end: sourceEnd),
+          _assignment('a2', _member('m2', now), now,
+              start: sourceStart, end: sourceEnd),
+        ];
+        await open(assignments);
+
+        await nextState<EventOperationSuccess>(
+            confirm(state, excluded: {'a1'}));
+
+        expect(copiedHours().keys, ['a2']);
+      });
+
+      test('a request that did not ask for hours copies none, whatever the '
+          'source holds', () async {
+        final assignments = [
+          _assignment(
+              'a1',
+              _member('m1', now, constraints: [
+                _unavailability(copyDay, ConstraintStatus.pending),
+              ]),
+              now,
+              start: sourceStart,
+              end: sourceEnd),
+        ];
+        await open(assignments);
+
+        await nextState<EventOperationSuccess>(
+            confirm(state, customHours: false));
+
+        expect(copiedHours(), isEmpty);
+      });
+
+      test('a member who cannot be kept is dropped, with their hours',
+          () async {
+        final assignments = [
+          _assignment('a-off', _member('m-off', now, isActive: false), now,
+              start: sourceStart, end: sourceEnd),
+          _assignment('a-fine', _member('m-fine', now), now,
+              start: sourceStart, end: sourceEnd),
+        ];
+        await open(assignments);
+
+        await nextState<EventOperationSuccess>(confirm(state));
+
+        expect(copiedHours().keys, ['a-fine']);
+      });
+
+      test('a member flagged allowMultipleAssignments loses only the dropped '
+          "copy's hours", () async {
+        final pool = _member('pool', now, allowMultipleAssignments: true);
+        final assignments = [
+          _assignment('a1', pool, now, start: sourceStart, end: sourceEnd),
+          _assignment('a2', pool, now,
+              start: '2026-12-01T09:00', end: '2026-12-01T12:00'),
+        ];
+        await open(assignments);
+
+        await nextState<EventOperationSuccess>(
+            confirm(state, hoursDropped: {'a1'}));
+
+        expect(copiedHours(), {
+          'a2': (start: '2026-12-08T09:00', end: '2026-12-08T12:00'),
+        });
+      });
+    });
+  });
 }
 
-Assignment _assignment(String id, TeamMember? member, DateTime now) {
+Assignment _assignment(
+  String id,
+  TeamMember? member,
+  DateTime now, {
+  String? start,
+  String? end,
+}) {
   return Assignment(
     id: id,
     eventId: 'original',
@@ -241,6 +647,8 @@ Assignment _assignment(String id, TeamMember? member, DateTime now) {
     slotIndex: 0,
     status: AssignmentStatus.confirmed,
     notes: '',
+    customStartAt: start,
+    customEndAt: end,
     createdAt: now,
     updatedAt: now,
     teamMember: member,
@@ -253,6 +661,7 @@ TeamMember _member(
   bool isActive = true,
   Map<String, bool> roleCapabilities = const {'medic': true},
   List<DateConstraint> constraints = const [],
+  bool allowMultipleAssignments = false,
 }) {
   return TeamMember(
     id: id,
@@ -261,6 +670,7 @@ TeamMember _member(
     isPermanent: true,
     constraints: constraints,
     roleCapabilities: roleCapabilities,
+    allowMultipleAssignments: allowMultipleAssignments,
     createdAt: now,
     updatedAt: now,
     uniqueKey: 'key-$id',

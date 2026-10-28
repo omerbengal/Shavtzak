@@ -19,6 +19,7 @@ import 'package:shavtzak/domain/entities/assignment.dart' as _i11;
 import 'package:shavtzak/domain/entities/assignment_label.dart' as _i12;
 import 'package:shavtzak/domain/entities/category.dart' as _i18;
 import 'package:shavtzak/domain/entities/checklist_item.dart' as _i15;
+import 'package:shavtzak/domain/entities/custom_hours_resolution.dart' as _i23;
 import 'package:shavtzak/domain/entities/event.dart' as _i9;
 import 'package:shavtzak/domain/entities/imported_stage.dart' as _i21;
 import 'package:shavtzak/domain/entities/preset.dart' as _i16;
@@ -1203,10 +1204,15 @@ class MockDatabaseInterface extends _i1.Mock implements _i7.DatabaseInterface {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<void> updateEvent(_i9.Event? event) => (super.noSuchMethod(
+  _i5.Future<void> updateEvent(
+    _i9.Event? event, {
+    List<_i23.CustomHoursResolution>? customHoursResolutions = const [],
+  }) =>
+      (super.noSuchMethod(
         Invocation.method(
           #updateEvent,
           [event],
+          {#customHoursResolutions: customHoursResolutions},
         ),
         returnValue: _i5.Future<void>.value(),
         returnValueForMissingStub: _i5.Future<void>.value(),

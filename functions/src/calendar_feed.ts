@@ -7,6 +7,7 @@ import {
   buildDesiredAppEventState,
   type BackendEnvironmentMode,
 } from './calendar_sync_backend';
+import {customHoursInterval, formatWallMinutes, type WallInterval} from './event_stretch';
 
 /** Escapes a value for an RFC 5545 TEXT property (section 3.3.11). */
 export function escapeIcsText(value: string): string {
@@ -183,7 +184,14 @@ export function renderIcsFeed(params: {
   return lines.map(foldIcsLine).join(CRLF) + CRLF;
 }
 
-type FeedAssignment = {eventId: string; roleType: string; notes?: string};
+type FeedAssignment = {
+  eventId: string;
+  roleType: string;
+  notes?: string;
+  // Custom hours: 'yyyy-MM-ddTHH:mm' on the Israel wall clock, or null/absent.
+  customStartAt?: string | null;
+  customEndAt?: string | null;
+};
 
 /**
  * Rolls the date portion of a 'YYYY-MM-DDTHH:MM' prefix forward by one day,
@@ -228,6 +236,12 @@ function rollEndPrefixForward(startPrefix: string, endPrefix: string): string {
  * The grouping key is (member, event), NOT (member, assignment): a member can
  * hold several roles in one event, and emitting a pair per assignment would
  * produce duplicate UIDs and stacked identical blocks in their calendar.
+ *
+ * An event in which any of the member's assignments carries usable custom
+ * hours (customHoursInterval) renders as ONE timed part instead, from the
+ * earliest custom start to the latest custom end, even when the event itself
+ * would be all-day. It keeps the `-main-` UID, so a calendar app updates the
+ * existing entry in place and the `-assembly-` UID just stops appearing.
  */
 export function buildMemberFeedParts(params: {
   memberId: string;
@@ -238,7 +252,15 @@ export function buildMemberFeedParts(params: {
 }): FeedEventPart[] {
   const rolesByEventId = new Map<string, string[]>();
   const notesByEventId = new Map<string, string[]>();
+  const customHoursByEventId = new Map<string, WallInterval[]>();
   for (const assignment of params.assignments) {
+    const customHours = customHoursInterval(assignment.customStartAt, assignment.customEndAt);
+    if (customHours != null) {
+      const intervals = customHoursByEventId.get(assignment.eventId) ?? [];
+      intervals.push(customHours);
+      customHoursByEventId.set(assignment.eventId, intervals);
+    }
+
     const roleName = params.roleHebrewNames[assignment.roleType] ??
       assignment.roleType;
     const roles = rolesByEventId.get(assignment.eventId) ?? [];
@@ -285,6 +307,18 @@ export function buildMemberFeedParts(params: {
       allDayStart: null,
       allDayEnd: null,
     };
+
+    const customIntervals = customHoursByEventId.get(eventId);
+    if (customIntervals != null && customIntervals.length > 0) {
+      parts.push({
+        ...base,
+        uid: `${eventId}-main-${params.memberId}@shavtzak`,
+        title: desired.mainTitle,
+        start: formatWallMinutes(Math.min(...customIntervals.map((interval) => interval.start))),
+        end: formatWallMinutes(Math.max(...customIntervals.map((interval) => interval.end))),
+      });
+      continue;
+    }
 
     if (desired.useAllDay) {
       parts.push({

@@ -9,6 +9,11 @@
 // A moment is a `DateTime.utc` holding the Israel wall-clock fields (the
 // calendar day of the entity's date, plus hours and minutes). UTC has no DST,
 // so a DST change never shifts a comparison or a duration.
+//
+// An assignment can carry hours of its own (custom hours, stored as two
+// `yyyy-MM-ddTHH:mm` strings). Its window is those hours when they are usable
+// and the event's stretch otherwise ([assignmentWindow]); the same overlap rule
+// then judges the member against that window.
 import 'package:equatable/equatable.dart';
 
 import '../../domain/entities/event.dart';
@@ -19,7 +24,13 @@ const int _minutesPerDay = 24 * 60;
 /// A stretch of the Israel wall clock, half-open: [start, end). Both ends are
 /// `DateTime.utc` values holding wall-clock fields.
 class WallInterval extends Equatable {
-  const WallInterval(this.start, this.end);
+  // Not const: the assert reads `isUtc`. A local `DateTime` here would be
+  // shifted by the machine's zone and silently break every comparison.
+  WallInterval(this.start, this.end)
+      : assert(
+          start.isUtc && end.isUtc,
+          'a WallInterval holds DateTime.utc wall-clock values',
+        );
 
   final DateTime start;
   final DateTime end;
@@ -170,4 +181,57 @@ String formatWallMoment(DateTime moment) {
   String two(int value) => value.toString().padLeft(2, '0');
   return '${moment.year.toString().padLeft(4, '0')}-${two(moment.month)}-'
       '${two(moment.day)}T${two(moment.hour)}:${two(moment.minute)}';
+}
+
+final RegExp _wallMomentPattern =
+    RegExp(r'^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})$');
+
+/// A stored `yyyy-MM-ddTHH:mm` as a `DateTime.utc` holding the wall-clock
+/// fields. Strict: a real calendar date, hours 0–23, minutes 0–59. Anything
+/// else ('2026-02-30T10:00', '…T24:00', '…T9:00', a space for the T, '',
+/// null) is null, never a throw. The backend's `parseWallMoment` reads the
+/// same way.
+DateTime? parseWallMoment(String? value) {
+  if (value == null) return null;
+  final match = _wallMomentPattern.firstMatch(value);
+  if (match == null) return null;
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  final hours = int.parse(match.group(4)!);
+  final minutes = int.parse(match.group(5)!);
+  if (hours > 23 || minutes > 59) return null;
+  final moment = DateTime.utc(year, month, day, hours, minutes);
+  // DateTime.utc rolls 30 February into March; a real date round-trips.
+  if (moment.year != year || moment.month != month || moment.day != day) {
+    return null;
+  }
+  return moment;
+}
+
+/// An assignment's own hours as an interval: non-null only when both values
+/// parse ([parseWallMoment]) and the end is after the start.
+WallInterval? customHoursInterval(String? customStartAt, String? customEndAt) {
+  final start = parseWallMoment(customStartAt);
+  final end = parseWallMoment(customEndAt);
+  if (start == null || end == null || !end.isAfter(start)) return null;
+  return WallInterval(start, end);
+}
+
+/// The window an assignment holds the member for: its custom hours when they
+/// are set and usable, else [eventStretch]. Hours that cannot be read, or end
+/// before they start, fall back to the stretch; they never throw.
+WallInterval assignmentWindow(
+  Event event, {
+  String? customStartAt,
+  String? customEndAt,
+}) =>
+    customHoursInterval(customStartAt, customEndAt) ?? eventStretch(event);
+
+/// [value] moved by [days] whole calendar days, the clock unchanged (the wall
+/// clock has no DST here), or null when [value] is unreadable.
+String? shiftWallMoment(String? value, int days) {
+  final moment = parseWallMoment(value);
+  if (moment == null) return null;
+  return formatWallMoment(moment.add(Duration(days: days)));
 }

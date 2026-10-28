@@ -1,0 +1,76 @@
+<style>
+  .phone { width:360px; margin:0 auto; direction:rtl; font-family:system-ui, Arial, sans-serif; background:#fff; color:#222; border:1px solid #ccc; border-radius:14px; padding:16px; box-shadow:0 4px 18px rgba(0,0,0,.15); font-size:13px; }
+  .phone h4 { margin:0 0 4px; font-size:17px; }
+  .muted { color:#666; font-size:12px; }
+  .stats { display:flex; gap:8px; margin:8px 0 12px; font-size:12px; }
+  .stats span { background:#eef2f7; border-radius:10px; padding:2px 8px; }
+  .sec { border:1px solid #ddd; border-radius:10px; margin-bottom:10px; }
+  .sec .hd { padding:9px 10px; font-weight:700; display:flex; justify-content:space-between; align-items:center; }
+  .sec.collapsed .hd { color:#666; font-weight:600; }
+  .sec.new { border-color:#1976d2; }
+  .sec.new .hd { background:#e8f1fc; border-radius:10px 10px 0 0; }
+  .sec .body { padding:8px 10px; }
+  .link { color:#1976d2; font-size:12px; font-weight:600; }
+  .r { display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-top:1px solid #eee; }
+  .r:first-child { border-top:none; }
+  .cb { width:16px; height:16px; border:2px solid #1976d2; border-radius:3px; flex:none; margin-top:2px; }
+  .cb.on { background:#1976d2; position:relative; }
+  .cb.on::after { content:'✓'; color:#fff; font-size:12px; position:absolute; top:-2px; left:2px; }
+  .nm { font-weight:700; }
+  .old { color:#999; text-decoration:line-through; font-size:12px; }
+  .nw { font-size:12px; }
+  .warn { color:#b26a00; font-size:12px; margin-top:3px; }
+  .btns { display:flex; justify-content:center; gap:24px; margin-top:12px; font-size:14px; }
+  .btns .save { background:#1976d2; color:#fff; padding:6px 14px; border-radius:6px; }
+  .btns .cancel { color:#1976d2; padding:6px 4px; }
+</style>
+
+<h2>Duplicating an event: copying custom hours</h2>
+<p class="subtitle">A new section in the duplication window that already exists ("בחירת שיבוצים לאירוע המשוכפל"). Nothing is copied unless the admin ticks it. Each copied hour moves by the same number of days as the new event.</p>
+
+<div class="phone">
+  <h4>בחירת שיבוצים לאירוע המשוכפל</h4>
+  <div class="muted">תאריך חדש: יום חמישי, 05/11/2026 (+9 ימים)</div>
+  <div class="stats"><span>14 שיבוצים</span><span>1 עם קונפליקטים</span></div>
+
+  <div class="sec collapsed"><div class="hd"><span>⚠️ קונפליקטי זמינות (1)</span><span>▾</span></div></div>
+  <div class="sec collapsed"><div class="hd"><span>חריגות מכסה (0)</span><span>▾</span></div></div>
+
+  <div class="sec new">
+    <div class="hd"><span>⏰ שעות מותאמות (3)</span><span class="link">סמן הכל</span></div>
+    <div class="body">
+      <div class="muted" style="margin-bottom:4px">סמן/י את מי שהשעות שלו/ה יועתקו לאירוע החדש. מי שלא סומן יקבל/תקבל את שעות האירוע.</div>
+      <div class="r">
+        <span class="cb on"></span>
+        <div>
+          <div class="nm">דנה כהן · חובש/ת</div>
+          <div class="old">27.10 14:00 – 27.10 23:00</div>
+          <div class="nw">← 05.11 14:00 – 05.11 23:00</div>
+        </div>
+      </div>
+      <div class="r">
+        <span class="cb on"></span>
+        <div>
+          <div class="nm">אבי לוי · מפקד/ת אירוע</div>
+          <div class="old">26.10 20:00 – 28.10 23:30</div>
+          <div class="nw">← 04.11 20:00 – 06.11 23:30</div>
+          <div class="warn">⚠️ מתנגש עם אילוץ ממתין לאישור של אבי: 04.11 (כל היום)</div>
+        </div>
+      </div>
+      <div class="r">
+        <span class="cb"></span>
+        <div>
+          <div class="nm">נועה ברק · צלם/ת</div>
+          <div class="old">28.10 08:00 – 28.10 23:30</div>
+          <div class="nw" style="color:#888">לא יועתק — תקבל את שעות האירוע</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="btns"><span class="cancel">ביטול</span><span class="save">צור אירוע משוכפל</span></div>
+</div>
+
+<div class="section" style="margin-top:22px">
+  <p class="subtitle"><b>My calls, shown above:</b> the boxes start unticked, so copying is opt-in, with "סמן הכל" for speed. If a member is removed in the "קונפליקטי זמינות" section, their row here disappears. The availability-conflict section is worked out from each member's real hours: copied hours if ticked, the event's hours if not. The window also opens when the only reason is custom hours, with no conflicts at all.</p>
+</div>

@@ -6,10 +6,13 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
+import '../../../../core/utils/custom_hours.dart';
 import '../../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/slot_annotations.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../domain/entities/assignment.dart';
+import '../../../../domain/entities/custom_hours_resolution.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/participant_group.dart';
 import 'participant_group_rows.dart';
@@ -33,6 +36,7 @@ import '../../../widgets/parking_location_picker_dialog.dart';
 import '../../../widgets/loading_overlay.dart';
 import '../quota_reduction_analyzer.dart';
 import '../quota_reduction_planner.dart';
+import 'custom_hours_resolve_dialog.dart';
 import 'empty_note_removal_dialog.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
@@ -94,6 +98,14 @@ class _EventFormModalState extends State<EventFormModal> {
   late final FocusNode _parkingLocationFocusNode;
   late final FocusNode _commentsFocusNode;
   bool _duplicateAssignments = false; // For duplication mode checkbox
+  // Duplication mode: also copy the members' custom hours, moved to the new
+  // dates. Offered only while [_sourceHasCustomHours] is true.
+  bool _duplicateCustomHours = true;
+  // Whether the event being duplicated has an assignment with custom hours.
+  // Unknown (false) until the first value of its assignments arrives, and
+  // false for good when that cannot be read: the duplication then behaves as
+  // it does without custom hours.
+  bool _sourceHasCustomHours = false;
   String?
       _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
   String?
@@ -184,6 +196,8 @@ class _EventFormModalState extends State<EventFormModal> {
       }
     }
 
+    if (widget.isDuplication) unawaited(_loadSourceHasCustomHours());
+
     _nameController.addListener(() => _isDirty = true);
     _locationController.addListener(() => _isDirty = true);
     _parkingLocationController.addListener(() => _isDirty = true);
@@ -214,6 +228,26 @@ class _EventFormModalState extends State<EventFormModal> {
           _scrollToRole(roleType);
         });
       }
+    }
+  }
+
+  /// Whether the event being duplicated has custom hours, from the first value
+  /// of its assignments stream (never an awaited one-shot get, which can park
+  /// for tens of seconds). Anything that goes wrong leaves the sub-switch
+  /// hidden, so the duplication carries no hours.
+  Future<void> _loadSourceHasCustomHours() async {
+    try {
+      final assignments = await context
+          .read<AssignmentRepository>()
+          .watchAssignmentsByEvent(widget.event!.id)
+          .first
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      if (assignments.any((assignment) => assignment.hasCustomHours)) {
+        setState(() => _sourceHasCustomHours = true);
+      }
+    } catch (_) {
+      Logger.action('duplicate:hoursLoadFailed', {'event': widget.event!.id});
     }
   }
 
@@ -434,6 +468,9 @@ class _EventFormModalState extends State<EventFormModal> {
             newRequiresArmed: _requiresArmed,
             newRoleRequirements: Map.from(_roleRequirements),
             duplicateAssignments: _duplicateAssignments,
+            duplicateCustomHours: _duplicateAssignments &&
+                _sourceHasCustomHours &&
+                _duplicateCustomHours,
             categoryId: _selectedCategoryId,
             newRelevantForExtendedTeam:
                 !_relevantForExtendedTeam, // Invert back for database
@@ -442,36 +479,6 @@ class _EventFormModalState extends State<EventFormModal> {
       // Don't close here. Duplication completion (or conflict handling) is
       // managed by the BlocListener to avoid double-pop race conditions.
       return;
-    }
-
-    // Quota reduction: decide and apply which ROWS go, before the event write
-    // (edit mode only). See _resolveQuotaReductions.
-    if (_isEditMode) {
-      try {
-        final proceed = await _resolveQuotaReductions();
-        if (!proceed) return; // cancelled — quotas already reverted
-      } catch (e) {
-        // Show error and don't proceed with save
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(
-              SnackBar(
-                content: Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Text('שגיאה בניתוח שיבוצים: $e'),
-                ),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 2),
-              ),
-            );
-        }
-        setState(() {
-          _isSaving = false;
-          _loadingMessage = '';
-        });
-        return;
-      }
     }
 
     final now = DateTime.now();
@@ -515,6 +522,47 @@ class _EventFormModalState extends State<EventFormModal> {
       inviteAllPermanentWhenUnassigned: _inviteAllPermanentWhenUnassigned,
     );
 
+    // Members' custom hours: when the save moves the event in time, the admin
+    // decides what happens to each member's hours (edit mode only). This runs
+    // BEFORE the quota step, so cancelling here writes nothing at all. See
+    // _resolveCustomHours.
+    var hoursResolutions = const <CustomHoursResolution>[];
+    if (_isEditMode) {
+      final chosen = await _resolveCustomHours(event);
+      if (chosen == null) return; // cancelled, or the check failed
+      hoursResolutions = chosen;
+    }
+
+    // Quota reduction: decide and apply which ROWS go, before the event write
+    // (edit mode only). See _resolveQuotaReductions.
+    if (_isEditMode) {
+      try {
+        final proceed = await _resolveQuotaReductions();
+        if (!proceed) return; // cancelled — quotas already reverted
+      } catch (e) {
+        // Show error and don't proceed with save
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              SnackBar(
+                content: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Text('שגיאה בניתוח שיבוצים: $e'),
+                ),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+        }
+        setState(() {
+          _isSaving = false;
+          _loadingMessage = '';
+        });
+        return;
+      }
+    }
+
     if (!mounted) return;
     final bloc = context.read<EventBloc>();
     final completion = Completer<CrudActionResult>();
@@ -522,7 +570,9 @@ class _EventFormModalState extends State<EventFormModal> {
       // Pass the pre-edit event so the save doesn't await a one-shot
       // getEventById() that can park for tens of seconds on a flaky connection.
       bloc.add(UpdateEvent(event,
-          originalEvent: widget.event, completion: completion));
+          originalEvent: widget.event,
+          customHoursResolutions: hoursResolutions,
+          completion: completion));
     } else {
       bloc.add(CreateEvent(event, completion: completion));
     }
@@ -546,6 +596,80 @@ class _EventFormModalState extends State<EventFormModal> {
         ?.call(event.id, Map<String, int>.from(event.roleRequirements));
 
     widget.onSuccess();
+  }
+
+  /// Ask what to do with members' custom hours when this save moves the event
+  /// in time, BEFORE the event write. [newEvent] is exactly what the form is
+  /// about to send, and the event as opened ([EventFormModal.event]) is what is
+  /// stored, so [eventTimesChanged] judges what the backend will judge; a
+  /// mismatch would come back as a refusal.
+  ///
+  /// Returns the resolutions to send with the event (empty when none are
+  /// needed), or null when the save must stop: the admin cancelled, or the
+  /// assignments could not be read in time. Either way nothing was written and
+  /// the form is ready for another try.
+  Future<List<CustomHoursResolution>?> _resolveCustomHours(
+      Event newEvent) async {
+    final original = widget.event!;
+    if (!eventTimesChanged(original, newEvent)) return const [];
+
+    // Every context.read happens up front, before the first await.
+    final assignmentRepo = context.read<AssignmentRepository>();
+    final roleNames = _roleHebrewNames();
+
+    final List<Assignment> assignments;
+    try {
+      // The live stream's first value, never a one-shot get (see
+      // firestore-stream-first): a fresh get can park for tens of seconds.
+      assignments = await assignmentRepo
+          .watchAssignmentsByEvent(original.id)
+          .first
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      Logger.action('hours:loadFailed', {'event': original.id});
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: const Text('לא ניתן לבדוק שעות מותאמות כרגע — נסו שוב'),
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        setState(() {
+          _isSaving = false;
+          _loadingMessage = '';
+        });
+      }
+      return null;
+    }
+    if (!mounted) return null;
+
+    final withHours =
+        assignments.where((assignment) => assignment.hasCustomHours).toList();
+    if (withHours.isEmpty) return const [];
+
+    final resolutions = await CustomHoursResolveDialog.show(
+      context,
+      oldEvent: original,
+      newEvent: newEvent,
+      withHours: withHours,
+      roleNames: roleNames,
+    );
+    if (resolutions == null) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _loadingMessage = '';
+        });
+      }
+      return null;
+    }
+    return resolutions;
   }
 
   /// Resolve every role whose quota is being reduced, BEFORE the event write.
@@ -1141,14 +1265,14 @@ class _EventFormModalState extends State<EventFormModal> {
                                     });
                                   }
                                   // Show the unified conflict resolution dialog
-                                  final excludedIds =
+                                  final choice =
                                       await DuplicationConflictResolutionDialog
                                           .show(
                                     context,
                                     state,
                                   );
 
-                                  if (excludedIds != null) {
+                                  if (choice != null) {
                                     // User confirmed - dispatch confirmation event with exclusions
                                     if (context.mounted) {
                                       setState(() {
@@ -1160,12 +1284,17 @@ class _EventFormModalState extends State<EventFormModal> {
                                           .add(ConfirmDuplicationWithExclusions(
                                             originalEvent: state.originalEvent,
                                             proposedEvent: state.proposedEvent,
-                                            assignmentIdsToExclude: excludedIds,
+                                            assignmentIdsToExclude:
+                                                choice.excluded,
                                             originalAssignmentIds: state
                                                 .assignmentInfos
                                                 .map((info) =>
                                                     info.assignment.id)
                                                 .toList(),
+                                            duplicateCustomHours:
+                                                state.copiesCustomHours,
+                                            customHoursDropped:
+                                                choice.hoursDropped,
                                           ));
                                     }
                                   } else {
@@ -2246,6 +2375,34 @@ class _EventFormModalState extends State<EventFormModal> {
                                               });
                                             },
                                           ),
+                                          // Custom hours: only when there are
+                                          // assignments to copy and some of
+                                          // them have hours.
+                                          if (_duplicateAssignments &&
+                                              _sourceHasCustomHours)
+                                            Padding(
+                                              padding: const EdgeInsetsDirectional
+                                                  .only(start: 24),
+                                              child: SwitchListTile(
+                                                title: const Text(
+                                                    'שכפל שעות מותאמות'),
+                                                subtitle: Text(
+                                                  _duplicateCustomHours
+                                                      ? 'השעות יוזזו לימי האירוע החדש'
+                                                      : 'כולם יקבלו את שעות האירוע',
+                                                ),
+                                                value: _duplicateCustomHours,
+                                                onChanged: (v) {
+                                                  Logger.action(
+                                                      'toggle:duplicateCustomHours',
+                                                      {'on': v});
+                                                  setState(() {
+                                                    _duplicateCustomHours = v;
+                                                    _isDirty = true;
+                                                  });
+                                                },
+                                              ),
+                                            ),
                                           const SizedBox(height: 8),
                                         ],
 

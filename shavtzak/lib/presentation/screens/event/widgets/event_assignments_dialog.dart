@@ -15,6 +15,7 @@ import '../../../bloc/assignment/assignment_event.dart';
 import '../../../bloc/assignment/assignment_state.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_state.dart';
+import '../../../widgets/assignment_hours_line.dart';
 import '../../../widgets/assignment_label_chip.dart';
 import '../../../widgets/same_day_assignment_mark.dart';
 import 'event_assignments_share_data_builder.dart';
@@ -810,6 +811,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                 ),
               ),
             ),
+          AssignmentHoursLine(assignment: assignment),
           if (assignment.notes.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(right: 26, top: 4),

@@ -425,6 +425,139 @@ void main() {
 
       expect(result.map((a) => a.id), ['a1']);
     });
+
+    group('an assignment with custom hours is judged by those hours', () {
+      // A two-day event, 29-30/09, whole days: its stretch runs 29/09 00:00 to
+      // 30/09 24:00 (no times given).
+      final twoDays = _event(
+        id: 'e1',
+        start: DateTime(2026, 9, 29),
+        end: DateTime(2026, 9, 30),
+        assemblyTime: '',
+        startTime: '',
+        endTime: '',
+      );
+      final day2Constraint = _constraint(
+        id: 'day2',
+        date: DateTime(2026, 9, 30),
+        status: ConstraintStatus.approved,
+      );
+
+      test('a new constraint on day 2 does not hit hours that skip day 2', () {
+        final result = findNewlyConflictingAssignments(
+          originalConstraints: const [],
+          updatedConstraints: [day2Constraint],
+          assignments: [
+            _assignment(
+              id: 'day1-only',
+              event: twoDays,
+              customStartAt: '2026-09-29T09:00',
+              customEndAt: '2026-09-29T17:00',
+            ),
+          ],
+          now: _now,
+        );
+
+        expect(result, isEmpty);
+      });
+
+      test('the same constraint hits the same event without hours', () {
+        final result = findNewlyConflictingAssignments(
+          originalConstraints: const [],
+          updatedConstraints: [day2Constraint],
+          assignments: [_assignment(id: 'whole-event', event: twoDays)],
+          now: _now,
+        );
+
+        expect(result.map((a) => a.id), ['whole-event']);
+      });
+
+      test('hours that reach day 2 are hit by it', () {
+        final result = findNewlyConflictingAssignments(
+          originalConstraints: const [],
+          updatedConstraints: [day2Constraint],
+          assignments: [
+            _assignment(
+              id: 'overnight',
+              event: twoDays,
+              customStartAt: '2026-09-29T20:00',
+              customEndAt: '2026-09-30T06:00',
+            ),
+          ],
+          now: _now,
+        );
+
+        expect(result.map((a) => a.id), ['overnight']);
+      });
+
+      test('a pending constraint inside the hours is reported', () {
+        final result = findNewlyConflictingAssignments(
+          originalConstraints: const [],
+          updatedConstraints: [
+            _constraint(
+              id: 'pending-day2',
+              date: DateTime(2026, 9, 30),
+              status: ConstraintStatus.pending,
+            ),
+          ],
+          assignments: [
+            _assignment(
+              id: 'day2-only',
+              event: twoDays,
+              customStartAt: '2026-09-30T09:00',
+              customEndAt: '2026-09-30T12:00',
+            ),
+          ],
+          now: _now,
+        );
+
+        expect(result.map((a) => a.id), ['day2-only']);
+      });
+
+      test('unreadable hours fall back to the whole event', () {
+        final result = findNewlyConflictingAssignments(
+          originalConstraints: const [],
+          updatedConstraints: [day2Constraint],
+          assignments: [
+            _assignment(
+              id: 'broken',
+              event: twoDays,
+              customStartAt: 'garbage',
+              customEndAt: '2026-09-29T17:00',
+            ),
+          ],
+          now: _now,
+        );
+
+        expect(result.map((a) => a.id), ['broken']);
+      });
+
+      test('each assignment is judged on its own: only the one it hits is '
+          'reported', () {
+        final result = findNewlyConflictingAssignments(
+          originalConstraints: const [],
+          updatedConstraints: [day2Constraint],
+          assignments: [
+            _assignment(
+              id: 'day1',
+              event: twoDays,
+              customStartAt: '2026-09-29T09:00',
+              customEndAt: '2026-09-29T17:00',
+            ),
+            _assignment(
+              id: 'day2',
+              event: twoDays,
+              slotIndex: 1,
+              customStartAt: '2026-09-30T09:00',
+              customEndAt: '2026-09-30T17:00',
+            ),
+          ],
+          now: _now,
+        );
+
+        expect(result.map((a) => a.id), ['day2']);
+      });
+    });
   });
 }
 
@@ -478,6 +611,9 @@ Assignment _assignment({
   required Event? event,
   String memberId = 'm1',
   String roleType = 'medic',
+  int slotIndex = 0,
+  String? customStartAt,
+  String? customEndAt,
 }) {
   final now = DateTime(2026, 7, 1);
   return Assignment(
@@ -485,9 +621,11 @@ Assignment _assignment({
     eventId: event?.id ?? 'missing',
     teamMemberId: memberId,
     roleType: roleType,
-    slotIndex: 0,
+    slotIndex: slotIndex,
     status: AssignmentStatus.confirmed,
     notes: '',
+    customStartAt: customStartAt,
+    customEndAt: customEndAt,
     createdAt: now,
     updatedAt: now,
     event: event,

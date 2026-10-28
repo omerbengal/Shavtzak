@@ -221,4 +221,59 @@ void main() {
     await tester.pump();
     expect(find.text('לא נמצאו אנשים בשם הזה'), findsOneWidget);
   });
+
+  group('custom hours', () {
+    testWidgets('a member with hours shows them above the notes box',
+        (tester) async {
+      await pumpDialog(tester);
+      await tester.pump();
+
+      await emitAssignments(tester, [
+        assignmentFor('a1', memberFor('tm1', 'דני')).copyWith(
+          notes: 'מביא ציוד',
+          customStartAt: () => '2026-10-27T14:00',
+          customEndAt: () => '2026-10-27T23:00',
+        ),
+      ]);
+
+      final hours = find.text('שעות: 27.10 14:00–23:00');
+      final notes = find.textContaining('הערות לשיבוץ');
+      expect(hours, findsOneWidget);
+      expect(notes, findsOneWidget);
+      expect(tester.getTopLeft(hours).dy,
+          lessThan(tester.getTopLeft(notes).dy));
+    });
+
+    testWidgets('hours spanning two days name both days', (tester) async {
+      await pumpDialog(tester);
+      await tester.pump();
+
+      await emitAssignments(tester, [
+        assignmentFor('a1', memberFor('tm1', 'דני')).copyWith(
+          customStartAt: () => '2026-10-27T14:00',
+          customEndAt: () => '2026-10-28T02:00',
+        ),
+      ]);
+
+      expect(find.text('שעות: 27.10 14:00 – 28.10 02:00'), findsOneWidget);
+    });
+
+    testWidgets('members without hours, or with hours that cannot be read, '
+        'get no hours line', (tester) async {
+      await pumpDialog(tester);
+      await tester.pump();
+
+      await emitAssignments(tester, [
+        assignmentFor('a1', memberFor('tm1', 'דני')),
+        assignmentFor('a2', memberFor('tm2', 'רותי')).copyWith(
+          customStartAt: () => '2026-10-27T23:00',
+          customEndAt: () => '2026-10-27T14:00',
+        ),
+      ]);
+
+      expect(find.text('דני'), findsOneWidget);
+      expect(find.text('רותי'), findsOneWidget);
+      expect(find.textContaining('שעות:'), findsNothing);
+    });
+  });
 }

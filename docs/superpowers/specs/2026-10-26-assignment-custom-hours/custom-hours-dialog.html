@@ -1,0 +1,107 @@
+<style>
+  .phone { width: 340px; margin: 0 auto; direction: rtl; font-family: system-ui, Arial, sans-serif; background:#fff; color:#222; border:1px solid #ccc; border-radius:14px; padding:16px; box-shadow:0 4px 18px rgba(0,0,0,.15); }
+  .phone h4 { margin:0 0 2px; font-size:17px; display:flex; gap:6px; align-items:center; }
+  .muted { color:#777; font-size:12px; }
+  .bold { font-weight:700; font-size:14px; }
+  .field { border:1px solid #bbb; border-radius:6px; padding:9px 10px; font-size:13px; margin-top:10px; color:#555; }
+  .field small { display:block; color:#1565c0; font-size:11px; margin-bottom:2px; }
+  .toggle-row { display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding:10px; border-radius:8px; background:#f3f7fc; border:1px solid #d6e3f3; font-size:14px; font-weight:600; }
+  .switch { width:38px; height:20px; border-radius:10px; background:#1976d2; position:relative; }
+  .switch::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; }
+  .pair { display:flex; gap:8px; }
+  .pair .field { flex:1; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .chip { border:1px solid #bbb; border-radius:14px; padding:4px 10px; font-size:12px; color:#444; }
+  .chip.on { background:#1976d2; border-color:#1976d2; color:#fff; }
+  .sub { font-size:12px; font-weight:700; margin-top:12px; color:#333; }
+  .hint { font-size:11px; color:#777; margin-top:6px; }
+  .btns { display:flex; justify-content:center; gap:24px; margin-top:16px; font-size:14px; }
+  .btns .save { background:#1976d2; color:#fff; padding:6px 18px; border-radius:6px; }
+  .btns .cancel { color:#1976d2; padding:6px 4px; }
+  .row { width:340px; margin:0 auto; direction:rtl; font-family:system-ui, Arial, sans-serif; background:#fff; color:#222; border:1px solid #ccc; border-radius:8px; font-size:12px; }
+  .row .main { display:flex; border-bottom:1px solid #eee; }
+  .row .col { padding:8px; }
+  .row .ev { flex:1.3; border-left:1px solid #eee; }
+  .row .role { flex:.8; border-left:1px solid #eee; text-align:center; font-weight:600; }
+  .row .mem { flex:1; text-align:center; }
+  .row .notes { padding:6px 8px; background:#fafafa; line-height:1.6; }
+  .new { background:#fff3c4; border-radius:3px; padding:0 2px; }
+  .wrap { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; }
+  .cap { text-align:center; font-size:13px; margin:10px 0 4px; font-weight:600; }
+</style>
+
+<h2>Where the admin sets a member's custom hours</h2>
+<p class="subtitle">Both options sit inside the existing "הערות לשיבוץ" dialog (right swipe on the row), so the row gets no new icon. The only difference is how the date is picked.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Plain date + time fields</h3>
+      <p>Turn on "שעות מותאמות", get a "from" and a "to" field, each with a date and a time. They start filled with the event's normal assembly and end times, so you only change what's different.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Day chips + time fields</h3>
+      <p>Same switch, but the date is chosen from chips: the day before, each event day and the day after (with "תאריך אחר…" for anything else). Faster for "only day 1", and harder to pick a wrong date by mistake.</p>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div>
+    <div class="cap">A — plain fields</div>
+    <div class="phone">
+      <h4>📝 הערות לשיבוץ</h4>
+      <div class="bold">דנה כהן - חובש/ת</div>
+      <div class="muted">כנס חורף — 27–28.10</div>
+      <div class="field"><small>לייבל</small>ללא לייבל</div>
+      <div class="field">הכנס הערות...</div>
+      <div class="field"><small>טלפון חד פעמי לשיבוץ</small>&nbsp;</div>
+      <div class="toggle-row"><span>שעות מותאמות לדנה</span><span class="switch"></span></div>
+      <div class="sub">מגיעה</div>
+      <div class="pair"><div class="field"><small>תאריך</small>ג׳ 27.10</div><div class="field"><small>שעה</small>14:00</div></div>
+      <div class="sub">עוזבת</div>
+      <div class="pair"><div class="field"><small>תאריך</small>ג׳ 27.10</div><div class="field"><small>שעה</small>23:00</div></div>
+      <div class="hint">שעות האירוע: 27.10 12:00 (התייצבות) – 28.10 23:30</div>
+      <div class="btns"><span class="cancel">ביטול</span><span class="save">שמור</span></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cap">B — day chips</div>
+    <div class="phone">
+      <h4>📝 הערות לשיבוץ</h4>
+      <div class="bold">דנה כהן - חובש/ת</div>
+      <div class="muted">כנס חורף — 27–28.10</div>
+      <div class="field"><small>לייבל</small>ללא לייבל</div>
+      <div class="field">הכנס הערות...</div>
+      <div class="field"><small>טלפון חד פעמי לשיבוץ</small>&nbsp;</div>
+      <div class="toggle-row"><span>שעות מותאמות לדנה</span><span class="switch"></span></div>
+      <div class="sub">מגיעה</div>
+      <div class="chips"><span class="chip">יום לפני</span><span class="chip on">ג׳ 27.10</span><span class="chip">ד׳ 28.10</span><span class="chip">תאריך אחר…</span></div>
+      <div class="field" style="width:45%"><small>שעה</small>14:00</div>
+      <div class="sub">עוזבת</div>
+      <div class="chips"><span class="chip on">ג׳ 27.10</span><span class="chip">ד׳ 28.10</span><span class="chip">יום אחרי</span><span class="chip">תאריך אחר…</span></div>
+      <div class="field" style="width:45%"><small>שעה</small>23:00</div>
+      <div class="hint">שעות האירוע: 27.10 12:00 (התייצבות) – 28.10 23:30</div>
+      <div class="btns"><span class="cancel">ביטול</span><span class="save">שמור</span></div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:34px">And how it shows on the assignment row (both options)</h3>
+<p class="subtitle">No icon: one extra text line in the notes area under the row, the same place "הערות לשיבוץ" already appears (new line highlighted).</p>
+<div class="row">
+  <div class="main">
+    <div class="col ev"><b>כנס חורף</b><br>27–28.10<br>התייצבות 12:00 · סיום 23:30</div>
+    <div class="col role">חובש/ת</div>
+    <div class="col mem">דנה כהן</div>
+  </div>
+  <div class="notes">
+    <span class="new"><b>שעות מותאמות:</b> 27.10 14:00 – 27.10 23:00</span><br>
+    <b>הערות לשיבוץ:</b> מגיעה מהעבודה
+  </div>
+</div>

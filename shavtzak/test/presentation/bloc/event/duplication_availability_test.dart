@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/constants/constraint_status.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
+import 'package:shavtzak/core/utils/event_stretch.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
@@ -216,6 +217,93 @@ void main() {
     });
   });
 
+  group('a custom window', () {
+    // The event's own stretch is 3.11 19:00-22:00.
+    final window = WallInterval(
+      DateTime.utc(2026, 11, 3, 9),
+      DateTime.utc(2026, 11, 3, 12),
+    );
+
+    test('replaces the event stretch: a morning constraint flags the morning '
+        'hours', () {
+      final member = _member(constraints: [
+        _unavailability(day, ConstraintStatus.approved,
+            startTime: '08:00', endTime: '10:00'),
+      ]);
+
+      final withHours = duplicationAvailability(
+        assignment: _assignment(member),
+        proposedEvent: proposed,
+        window: window,
+      );
+      final withEventHours = duplicationAvailability(
+        assignment: _assignment(member),
+        proposedEvent: proposed,
+      );
+
+      expect(withHours.flagged, isTrue);
+      expect(withHours.canKeep, isTrue);
+      expect(withHours.reasons, ['אילוץ מאושר: 3.11 08:00–10:00']);
+      expect(withEventHours.flagged, isFalse);
+    });
+
+    test('replaces the event stretch: an evening constraint no longer flags',
+        () {
+      final member = _member(constraints: [
+        _unavailability(day, ConstraintStatus.pending,
+            startTime: '20:00', endTime: '22:00'),
+      ]);
+
+      final withHours = duplicationAvailability(
+        assignment: _assignment(member),
+        proposedEvent: proposed,
+        window: window,
+      );
+      final withEventHours = duplicationAvailability(
+        assignment: _assignment(member),
+        proposedEvent: proposed,
+      );
+
+      expect(withHours.flagged, isFalse);
+      expect(withEventHours.flagged, isTrue);
+      expect(withEventHours.reasons, ['אילוץ ממתין לאישור: 3.11 20:00–22:00']);
+    });
+
+    test('does not lift a lock: an inactive member stays locked', () {
+      final result = duplicationAvailability(
+        assignment: _assignment(_member(isActive: false)),
+        proposedEvent: proposed,
+        window: window,
+      );
+
+      expect(result.flagged, isTrue);
+      expect(result.canKeep, isFalse);
+    });
+
+    test('is ignored for a pool member and for a non-permanent one', () {
+      final pool = duplicationAvailability(
+        assignment: _assignment(_member(
+          allowMultipleAssignments: true,
+          constraints: [
+            _unavailability(day, ConstraintStatus.approved,
+                startTime: '08:00', endTime: '10:00'),
+          ],
+        )),
+        proposedEvent: proposed,
+        window: window,
+      );
+      final nonPermanent = duplicationAvailability(
+        assignment: _assignment(_member(isPermanent: false)),
+        proposedEvent: proposed,
+        window: window,
+      );
+
+      expect(pool.flagged, isFalse);
+      expect(nonPermanent.flagged, isTrue);
+      expect(nonPermanent.reasons, ['לא ציין/ה זמינות לאירוע']);
+    });
+  });
+
   group('non-permanent members', () {
     test('a non-permanent member is flagged, keepable, for a new event', () {
       final result = duplicationAvailability(
@@ -273,6 +361,52 @@ void main() {
       expect(keepable.canKeep, isTrue);
       expect(locked.canKeep, isFalse);
       expect(keepable, isNot(equals(locked)));
+    });
+
+    test('the moved hours and the verdict for the event hours take part in '
+        'equality', () {
+      final assignment = _assignment(_member());
+      AssignmentDuplicationInfo info({
+        String? start = '2026-11-10T14:00',
+        String? end = '2026-11-10T20:00',
+        DuplicationAvailability? withEventHours,
+      }) =>
+          AssignmentDuplicationInfo(
+            assignment: assignment,
+            hasAvailabilityConflict: false,
+            isInOverQuotaRole: false,
+            movedCustomStartAt: start,
+            movedCustomEndAt: end,
+            availabilityWithEventHours: withEventHours,
+          );
+
+      expect(info(), equals(info()));
+      expect(info(start: '2026-11-10T15:00'), isNot(equals(info())));
+      expect(info(end: '2026-11-10T21:00'), isNot(equals(info())));
+      expect(
+        info(withEventHours: DuplicationAvailability.clear),
+        isNot(equals(info())),
+      );
+    });
+
+    test('hasMovedCustomHours needs both ends, readable and in order', () {
+      final assignment = _assignment(_member());
+      AssignmentDuplicationInfo info(String? start, String? end) =>
+          AssignmentDuplicationInfo(
+            assignment: assignment,
+            hasAvailabilityConflict: false,
+            isInOverQuotaRole: false,
+            movedCustomStartAt: start,
+            movedCustomEndAt: end,
+          );
+
+      expect(info('2026-11-10T14:00', '2026-11-10T20:00').hasMovedCustomHours,
+          isTrue);
+      expect(info(null, null).hasMovedCustomHours, isFalse);
+      expect(info('2026-11-10T14:00', null).hasMovedCustomHours, isFalse);
+      expect(info('2026-11-10T20:00', '2026-11-10T14:00').hasMovedCustomHours,
+          isFalse);
+      expect(info('soon', '2026-11-10T14:00').hasMovedCustomHours, isFalse);
     });
   });
 }

@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../domain/entities/custom_hours_resolution.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/participant_group.dart';
 import '../../../core/utils/crud_action_result.dart';
@@ -63,10 +64,19 @@ class UpdateEvent extends EventEvent {
   final Event? originalEvent;
   final CrudActionCompleter? completion;
 
-  const UpdateEvent(this.event, {this.originalEvent, this.completion});
+  /// The hours the admin chose for members with custom hours when this save
+  /// moves the event's dates or times. Empty when it moves nothing.
+  final List<CustomHoursResolution> customHoursResolutions;
+
+  const UpdateEvent(
+    this.event, {
+    this.originalEvent,
+    this.completion,
+    this.customHoursResolutions = const [],
+  });
 
   @override
-  List<Object?> get props => [event];
+  List<Object?> get props => [event, customHoursResolutions];
 }
 
 /// Delete event
@@ -126,6 +136,10 @@ class DuplicateEvent extends EventEvent {
   final bool newRequiresArmed;
   final Map<String, int> newRoleRequirements;
   final bool duplicateAssignments;
+
+  /// Also copy the members' custom hours, moved by the number of days between
+  /// the two events' first days. Only read when [duplicateAssignments] is on.
+  final bool duplicateCustomHours;
   final String? categoryId;
   final bool newRelevantForExtendedTeam;
 
@@ -145,6 +159,7 @@ class DuplicateEvent extends EventEvent {
     required this.newRequiresArmed,
     required this.newRoleRequirements,
     this.duplicateAssignments = false,
+    this.duplicateCustomHours = false,
     this.categoryId,
     this.newRelevantForExtendedTeam = false,
   });
@@ -166,6 +181,7 @@ class DuplicateEvent extends EventEvent {
         newRequiresArmed,
         newRoleRequirements,
         duplicateAssignments,
+        duplicateCustomHours,
         categoryId,
         newRelevantForExtendedTeam,
       ];
@@ -179,11 +195,22 @@ class ConfirmDuplicationWithExclusions extends EventEvent {
   final Set<String> assignmentIdsToExclude;
   final List<String> originalAssignmentIds; // All original assignment IDs
 
+  /// Whether the [DuplicateEvent] that opened the dialog asked for the custom
+  /// hours to be copied. Only then does a copy carry hours; the dialog lists
+  /// the hours (and the admin may untick some) only in that case.
+  final bool duplicateCustomHours;
+
+  /// Assignment ids whose hours the admin chose not to copy: their copies get
+  /// the new event's own hours. Read only when [duplicateCustomHours] is on.
+  final Set<String> customHoursDropped;
+
   const ConfirmDuplicationWithExclusions({
     required this.originalEvent,
     required this.proposedEvent,
     required this.assignmentIdsToExclude,
     required this.originalAssignmentIds,
+    this.duplicateCustomHours = false,
+    this.customHoursDropped = const {},
   });
 
   @override
@@ -192,5 +219,7 @@ class ConfirmDuplicationWithExclusions extends EventEvent {
         proposedEvent,
         assignmentIdsToExclude,
         originalAssignmentIds,
+        duplicateCustomHours,
+        customHoursDropped,
       ];
 }

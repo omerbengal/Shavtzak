@@ -363,29 +363,92 @@ class OptimisticDeleteAssignment extends AssignmentEvent {
 // the database. See AssignmentBloc's staging helpers.
 
 /// Stage a member fill/swap/clear on [slot] (member == null => clear).
+///
+/// Custom hours belong to the occupant: a new occupant (or none) starts
+/// without hours of their own, never with the previous occupant's. When the
+/// admin chose the incoming member's hours (the screen's replacement-hours
+/// step), [setsCustomHours] is true and [customStartAt] / [customEndAt] are
+/// those hours as `yyyy-MM-ddTHH:mm` wall moments, both null for the event's
+/// own hours. They are then staged on every other slot the incoming member
+/// holds in the event as well (unless the member is flagged
+/// `allowMultipleAssignments`): the backend refuses a Save that leaves one
+/// member with different hours in two roles of one event.
 class StageMemberChange extends AssignmentEvent {
   final AssignmentSlot slot;
   final TeamMember? member;
-  const StageMemberChange({required this.slot, required this.member});
+  final String? customStartAt;
+  final String? customEndAt;
+  final bool setsCustomHours;
+  const StageMemberChange({
+    required this.slot,
+    required this.member,
+    this.customStartAt,
+    this.customEndAt,
+    this.setsCustomHours = false,
+  })  : assert(
+          (customStartAt == null) == (customEndAt == null),
+          'custom hours are both set or both null',
+        ),
+        assert(
+          setsCustomHours || customStartAt == null,
+          'hours are only read when setsCustomHours is true',
+        ),
+        assert(
+          !setsCustomHours || member != null,
+          'only an incoming member gets hours',
+        );
   @override
-  List<Object?> get props => [slot, member];
+  List<Object?> get props =>
+      [slot, member, customStartAt, customEndAt, setsCustomHours];
 }
 
-/// Stage a notes/label/alt-phone edit on [slot].
+/// Stage a notes/label/alt-phone edit on [slot], and optionally the member's
+/// own hours (custom hours).
+///
+/// The hours are `yyyy-MM-ddTHH:mm` wall moments, both set or both null. They
+/// are only read when [setsCustomHours] is true: then both null means "no
+/// hours of their own" (the dialog's switch is off) and the slot's hours are
+/// cleared. An edit that leaves [setsCustomHours] false keeps whatever hours
+/// the slot holds, so a caller that only touches the notes can never wipe them
+/// by leaving the hours out. [setsCustomHours] defaults to true exactly when an
+/// hour is given.
+///
+/// Setting the hours also stages them on every other slot the same member
+/// holds in this event (see `AssignmentBloc.otherSlotsOfSameMember`): the
+/// backend refuses a Save that leaves one member with different hours in two
+/// roles of one event.
 class StageNotesChange extends AssignmentEvent {
   final AssignmentSlot slot;
   final String notes;
   final String? semanticLabelId;
   final String? alternativePhoneNumber;
+  final String? customStartAt;
+  final String? customEndAt;
+  final bool setsCustomHours;
   const StageNotesChange({
     required this.slot,
     required this.notes,
     this.semanticLabelId,
     this.alternativePhoneNumber,
-  });
+    this.customStartAt,
+    this.customEndAt,
+    bool? setsCustomHours,
+  })  : assert(
+          (customStartAt == null) == (customEndAt == null),
+          'custom hours are both set or both null',
+        ),
+        setsCustomHours =
+            setsCustomHours ?? (customStartAt != null || customEndAt != null);
   @override
-  List<Object?> get props =>
-      [slot, notes, semanticLabelId, alternativePhoneNumber];
+  List<Object?> get props => [
+        slot,
+        notes,
+        semanticLabelId,
+        alternativePhoneNumber,
+        customStartAt,
+        customEndAt,
+        setsCustomHours,
+      ];
 }
 
 /// Stage a gap-annotation (note/label) edit on an EMPTY slot — the annotation

@@ -424,17 +424,20 @@ class TeamMember extends Equatable {
   ///
   /// - Inactive or archived: never.
   /// - Permanent: available unless an approved or pending unavailability
-  ///   overlaps the event's continuous stretch ([constraintsBlockingEvent]).
+  ///   overlaps the window ([constraintsBlockingWindow]). The window is the
+  ///   assignment's custom hours when set (see `assignmentWindow`); a null
+  ///   [window] means the event's continuous stretch.
   /// - Non-permanent: only when the event is in [availableEventIds], or
   ///   through the legacy date-based availability covering every event day.
+  ///   [window] is ignored here: custom hours do not change this path.
   ///
   /// The backend's `memberAvailableForEvent` applies the same rule; both run
   /// shared/test-fixtures/event_conflict_cases.json.
-  bool isAvailableForEventWithTime(Event event) {
+  bool isAvailableForEventWithTime(Event event, {WallInterval? window}) {
     if (isArchived || !isActive) return false;
 
     if (isPermanent) {
-      return constraintsBlockingEvent(event).isEmpty;
+      return constraintsBlockingWindow(window ?? eventStretch(event)).isEmpty;
     } else {
       // Non-permanent members: unavailable by default
       // Check event-based availability first (new system used by AvailabilityScreen)
@@ -471,18 +474,24 @@ class TeamMember extends Equatable {
   }
 
   /// The approved or pending unavailability constraints that overlap
-  /// [event]'s continuous stretch — the rule [isAvailableForEventWithTime]
-  /// applies to permanent members. Lets callers name the blockers and tell
-  /// pending from approved.
-  List<DateConstraint> constraintsBlockingEvent(Event event) {
+  /// [window] — the rule [isAvailableForEventWithTime] applies to permanent
+  /// members. The window is the assignment's custom hours when set (see
+  /// `assignmentWindow`), else the event's stretch. Lets callers name the
+  /// blockers and tell pending from approved. Empty for a non-permanent
+  /// member.
+  List<DateConstraint> constraintsBlockingWindow(WallInterval window) {
     if (!isPermanent) return const [];
-    final stretch = eventStretch(event);
     return constraints
         .where((constraint) =>
             constraint.blocksAssignments &&
-            constraintOverlapsStretch(constraint, stretch))
+            constraintOverlapsStretch(constraint, window))
         .toList();
   }
+
+  /// The constraints that block [event] as a whole: [constraintsBlockingWindow]
+  /// over the event's continuous stretch.
+  List<DateConstraint> constraintsBlockingEvent(Event event) =>
+      constraintsBlockingWindow(eventStretch(event));
 
   /// Get list of all role keys this team member can perform
   List<String> get availableRoleKeys {

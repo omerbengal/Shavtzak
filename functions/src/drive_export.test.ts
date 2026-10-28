@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DriveExportValidationError,
+  __testSerializeAssignments,
   __testSerializeAssignmentsOnly,
 } from './drive_export';
 
@@ -639,4 +640,228 @@ test('neither row is marked when a past and future event genuinely overlap on a 
   // pool is still future-only, so this real overlap must not produce a
   // "(משובץ גם ב…)" mark on either row.
   assert.deepEqual(sheet.rows.map((row) => row[0]), ['אדם אחד', 'אדם אחד']);
+});
+
+test('full export assignments sheet ends with the custom hours columns', () => {
+  const sheet = __testSerializeAssignments({
+    assignments: [
+      {
+        id: 'with-hours',
+        data: {
+          eventId: 'e1',
+          teamMemberId: 'm1',
+          roleType: 'medic',
+          customStartAt: '2026-12-01T17:00',
+          customEndAt: '2026-12-02T01:00',
+        },
+      },
+      {id: 'without-hours', data: {eventId: 'e1', teamMemberId: 'm1', roleType: 'medic'}},
+      {
+        id: 'null-hours',
+        data: {eventId: 'e1', teamMemberId: 'm1', roleType: 'medic', customStartAt: null, customEndAt: null},
+      },
+    ],
+    eventsData: {e1: {name: 'Event'}},
+    memberNames: {m1: 'אדם אחד'},
+    roleHebrewNames: {medic: 'חובש'},
+  });
+
+  assert.deepEqual(sheet.headers.slice(-4), ['createdAt', 'updatedAt', 'customStartAt', 'customEndAt']);
+  assert.deepEqual(sheet.rows.map((row) => row.slice(-2)), [
+    ['2026-12-01T17:00', '2026-12-02T01:00'],
+    ['', ''],
+    ['', ''],
+  ]);
+  // Every row is as long as the header row.
+  for (const row of sheet.rows) assert.equal(row.length, sheet.headers.length);
+});
+
+// Same-day marks follow the days a member's own hours touch, not the whole
+// event. Events below are stored at UTC midnight (the Israel date is the same).
+function sameDayRowNames(args: {
+  assignments: Array<{id: string; data: Record<string, unknown>}>;
+  eventsData: Record<string, Record<string, unknown>>;
+  selectedEventIds: string[];
+}): unknown[] {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: args.assignments,
+    eventsData: args.eventsData,
+    memberNames: {m: 'דנה כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: args.selectedEventIds,
+    now: new Date('2026-11-01T12:00:00.000Z'),
+  });
+  return sheet.rows.map((row) => `${row[2]}: ${row[0]}`);
+}
+
+function dayEvent(name: string, startDay: string, endDay: string): Record<string, unknown> {
+  return {
+    name,
+    startDate: new Date(`${startDay}T00:00:00.000Z`),
+    endDate: new Date(`${endDay}T00:00:00.000Z`),
+  };
+}
+
+test('per-event export: hours on day 1 only leave a day-2 event unmarked', () => {
+  const rows = sameDayRowNames({
+    assignments: [
+      {
+        id: 'a1',
+        data: {
+          eventId: 'A',
+          teamMemberId: 'm',
+          roleType: 'medic',
+          customStartAt: '2026-12-01T17:00',
+          customEndAt: '2026-12-01T23:00',
+        },
+      },
+      {id: 'a2', data: {eventId: 'B', teamMemberId: 'm', roleType: 'medic'}},
+    ],
+    eventsData: {
+      A: dayEvent('A', '2026-12-01', '2026-12-02'),
+      B: dayEvent('B', '2026-12-02', '2026-12-02'),
+    },
+    selectedEventIds: ['A', 'B'],
+  });
+
+  assert.deepEqual(rows, ['A: דנה כהן', 'B: דנה כהן']);
+});
+
+test('per-event export: without hours the same two events mark each other', () => {
+  const rows = sameDayRowNames({
+    assignments: [
+      {id: 'a1', data: {eventId: 'A', teamMemberId: 'm', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'B', teamMemberId: 'm', roleType: 'medic'}},
+    ],
+    eventsData: {
+      A: dayEvent('A', '2026-12-01', '2026-12-02'),
+      B: dayEvent('B', '2026-12-02', '2026-12-02'),
+    },
+    selectedEventIds: ['A', 'B'],
+  });
+
+  assert.deepEqual(rows, ['A: דנה כהן (משובץ גם בB)', 'B: דנה כהן (משובץ גם בA)']);
+});
+
+test('per-event export: arriving the evening before marks that earlier day', () => {
+  const rows = sameDayRowNames({
+    assignments: [
+      {
+        id: 'a1',
+        data: {
+          eventId: 'A',
+          teamMemberId: 'm',
+          roleType: 'medic',
+          customStartAt: '2026-11-30T19:00',
+          customEndAt: '2026-12-01T23:00',
+        },
+      },
+      {id: 'a2', data: {eventId: 'C', teamMemberId: 'm', roleType: 'medic'}},
+    ],
+    eventsData: {
+      A: dayEvent('A', '2026-12-01', '2026-12-02'),
+      C: dayEvent('C', '2026-11-30', '2026-11-30'),
+    },
+    selectedEventIds: ['A', 'C'],
+  });
+
+  assert.deepEqual(rows, ['C: דנה כהן (משובץ גם בA)', 'A: דנה כהן (משובץ גם בC)']);
+});
+
+test('per-event export: hours ending at exactly 00:00 do not touch the next day', () => {
+  const rows = sameDayRowNames({
+    assignments: [
+      {
+        id: 'a1',
+        data: {
+          eventId: 'A',
+          teamMemberId: 'm',
+          roleType: 'medic',
+          customStartAt: '2026-12-01T17:00',
+          customEndAt: '2026-12-02T00:00',
+        },
+      },
+      {id: 'a2', data: {eventId: 'B', teamMemberId: 'm', roleType: 'medic'}},
+    ],
+    eventsData: {
+      A: dayEvent('A', '2026-12-01', '2026-12-02'),
+      B: dayEvent('B', '2026-12-02', '2026-12-02'),
+    },
+    selectedEventIds: ['A', 'B'],
+  });
+
+  assert.deepEqual(rows, ['A: דנה כהן', 'B: דנה כהן']);
+});
+
+test('per-event export: unreadable hours fall back to the whole event', () => {
+  const rows = sameDayRowNames({
+    assignments: [
+      {
+        id: 'a1',
+        data: {
+          eventId: 'A',
+          teamMemberId: 'm',
+          roleType: 'medic',
+          customStartAt: '2026-12-01 17:00',
+          customEndAt: '2026-12-01T23:00',
+        },
+      },
+      {id: 'a2', data: {eventId: 'B', teamMemberId: 'm', roleType: 'medic'}},
+    ],
+    eventsData: {
+      A: dayEvent('A', '2026-12-01', '2026-12-02'),
+      B: dayEvent('B', '2026-12-02', '2026-12-02'),
+    },
+    selectedEventIds: ['A', 'B'],
+  });
+
+  assert.deepEqual(rows, ['A: דנה כהן (משובץ גם בB)', 'B: דנה כהן (משובץ גם בA)']);
+});
+
+test('per-event export: a member with two sets of hours in one event is judged by both', () => {
+  // An allowMultipleAssignments member can hold different hours per role: the
+  // event counts on every day any of its assignments touches, and only those.
+  const rows = sameDayRowNames({
+    assignments: [
+      {
+        id: 'a1',
+        data: {
+          eventId: 'A',
+          teamMemberId: 'm',
+          roleType: 'medic',
+          customStartAt: '2026-12-01T17:00',
+          customEndAt: '2026-12-01T23:00',
+        },
+      },
+      {
+        id: 'a2',
+        data: {
+          eventId: 'A',
+          teamMemberId: 'm',
+          roleType: 'medic',
+          customStartAt: '2026-12-03T10:00',
+          customEndAt: '2026-12-03T12:00',
+        },
+      },
+      {id: 'a3', data: {eventId: 'B', teamMemberId: 'm', roleType: 'medic'}},
+      {id: 'a4', data: {eventId: 'D', teamMemberId: 'm', roleType: 'medic'}},
+    ],
+    eventsData: {
+      A: dayEvent('A', '2026-12-01', '2026-12-03'),
+      // Day 2 lies between the two sets of hours: neither touches it.
+      B: dayEvent('B', '2026-12-02', '2026-12-02'),
+      D: dayEvent('D', '2026-12-03', '2026-12-03'),
+    },
+    selectedEventIds: ['A', 'B', 'D'],
+  });
+
+  // A has one row per assignment, and both carry the member's mark.
+  assert.deepEqual(rows, [
+    'A: דנה כהן (משובץ גם בD)',
+    'A: דנה כהן (משובץ גם בD)',
+    'B: דנה כהן',
+    'D: דנה כהן (משובץ גם בA)',
+  ]);
 });

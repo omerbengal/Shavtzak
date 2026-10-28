@@ -61,9 +61,83 @@ void main() {
     expect(idMap.keys, ['a1']);
     expect(idMap['a1']!.eventId, copy.id);
   });
+
+  group('custom hours', () {
+    List<Assignment> sentBatch() => verify(db.insertAssignmentsBatch(
+          captureAny,
+          bypassAvailability: true,
+        )).captured.single as List<Assignment>;
+
+    test('a copy carries the hours handed in for its source assignment',
+        () async {
+      await repo.duplicateEvent(
+        original,
+        copy,
+        [
+          _assignment('a1', 'm1',
+              start: '2026-11-03T14:00', end: '2026-11-03T20:00'),
+          _assignment('a2', 'm2',
+              start: '2026-11-03T09:00', end: '2026-11-03T12:00'),
+        ],
+        hoursByAssignmentId: {
+          'a1': (start: '2026-11-10T14:00', end: '2026-11-10T20:00'),
+        },
+      );
+
+      final sent = sentBatch();
+      expect(sent.map((a) => a.teamMemberId), ['m1', 'm2']);
+      expect(sent[0].customStartAt, '2026-11-10T14:00');
+      expect(sent[0].customEndAt, '2026-11-10T20:00');
+      // a2 is not in the map: its own hours sit on the original's days and
+      // are not carried over.
+      expect(sent[1].customStartAt, isNull);
+      expect(sent[1].customEndAt, isNull);
+    });
+
+    test('with no hours handed in no copy carries any, whatever the source '
+        'holds', () async {
+      await repo.duplicateEvent(original, copy, [
+        _assignment('a1', 'm1',
+            start: '2026-11-03T14:00', end: '2026-11-03T20:00'),
+      ]);
+
+      final sent = sentBatch().single;
+      expect(sent.customStartAt, isNull);
+      expect(sent.customEndAt, isNull);
+    });
+
+    test('the copy is a new assignment: the source is left as it was',
+        () async {
+      final source = _assignment('a1', 'm1',
+          start: '2026-11-03T14:00', end: '2026-11-03T20:00');
+
+      await repo.duplicateEvent(original, copy, [source], hoursByAssignmentId: {
+        'a1': (start: '2026-11-10T14:00', end: '2026-11-10T20:00'),
+      });
+
+      expect(sentBatch().single.id, isNot('a1'));
+      expect(source.customStartAt, '2026-11-03T14:00');
+    });
+
+    test('duplicateEventWithAssignmentIds carries no hours', () async {
+      await repo.duplicateEventWithAssignmentIds(original, copy, [
+        _assignment('a1', 'm1',
+            start: '2026-11-03T14:00', end: '2026-11-03T20:00'),
+      ]);
+
+      final sent = sentBatch().single;
+      expect(sent.customStartAt, isNull);
+      expect(sent.customEndAt, isNull);
+    });
+  });
 }
 
-Assignment _assignment(String id, String memberId) {
+Assignment _assignment(
+  String id,
+  String memberId, {
+  String? start,
+  String? end,
+}) {
   final now = DateTime(2026, 10, 1);
   return Assignment(
     id: id,
@@ -73,6 +147,8 @@ Assignment _assignment(String id, String memberId) {
     slotIndex: 0,
     status: AssignmentStatus.confirmed,
     notes: '',
+    customStartAt: start,
+    customEndAt: end,
     createdAt: now,
     updatedAt: now,
   );

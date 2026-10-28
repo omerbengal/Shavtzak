@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/debug/logger.dart';
+import '../../core/utils/custom_hours.dart';
 import '../../core/utils/date_utils.dart' as app_date_utils;
+import '../../core/utils/same_day_assignments.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
@@ -767,19 +769,15 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
 
     if (selectedMembers.isEmpty) return;
 
-    final location = _sanitizeCell(_shamapLocationController.text);
-    final startDate =
-        app_date_utils.DateUtils.formatDate(_selectedEvent!.startDate);
-    final endDate =
-        app_date_utils.DateUtils.formatDate(_selectedEvent!.endDate);
-
-    final lines = selectedMembers.map((member) {
-      final (firstNameRaw, lastNameRaw) = _splitName(member.name);
-      final firstName = _sanitizeCell(firstNameRaw);
-      final lastName = _sanitizeCell(lastNameRaw);
-      // A=empty, B=firstName, C=lastName, D=location, E=empty, F=empty, G=start, H=end
-      return '\t$firstName\t$lastName\t$location\t\t\t$startDate\t$endDate';
-    }).join('\n');
+    final event = _selectedEvent!;
+    final lines = selectedMembers
+        .map((member) => shamapLine(
+              member,
+              event,
+              _assignments,
+              _shamapLocationController.text,
+            ))
+        .join('\n');
 
     await Clipboard.setData(ClipboardData(text: lines));
 
@@ -932,18 +930,45 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
     result = result.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
     return result;
   }
+}
 
-  String _sanitizeCell(String value) {
-    return value.replaceAll('\t', ' ').replaceAll('\n', ' ').trim();
-  }
+/// One member's row in the ש.מ.פ. sheet, tab-separated:
+/// A=empty, B=first name, C=last name, D=[location], E=empty, F=empty,
+/// G=start date, H=end date (dd/MM/yyyy).
+///
+/// The dates are the event's, unless the member has custom hours in it: then
+/// they are the days those hours cover ([windowDays]), the first usable window
+/// among [assignments] (any list; only the member's own in [event] count).
+/// Hours that cannot be read count as no hours.
+String shamapLine(
+  TeamMember member,
+  Event event,
+  List<Assignment> assignments,
+  String location,
+) {
+  final (firstNameRaw, lastNameRaw) = _splitName(member.name);
+  final window = firstCustomWindow(assignments.where((assignment) =>
+      assignment.eventId == event.id && assignment.teamMemberId == member.id));
+  final days = window == null ? null : windowDays(window);
+  final startDate =
+      app_date_utils.DateUtils.formatDate(days?.first ?? event.startDate);
+  final endDate =
+      app_date_utils.DateUtils.formatDate(days?.last ?? event.endDate);
 
-  (String, String) _splitName(String fullName) {
-    final parts = fullName
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return ('', '');
-    if (parts.length == 1) return (parts.first, '');
-    return (parts.first, parts.sublist(1).join(' '));
-  }
+  return '\t${_sanitizeCell(firstNameRaw)}\t${_sanitizeCell(lastNameRaw)}'
+      '\t${_sanitizeCell(location)}\t\t\t$startDate\t$endDate';
+}
+
+String _sanitizeCell(String value) {
+  return value.replaceAll('\t', ' ').replaceAll('\n', ' ').trim();
+}
+
+(String, String) _splitName(String fullName) {
+  final parts = fullName
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return ('', '');
+  if (parts.length == 1) return (parts.first, '');
+  return (parts.first, parts.sublist(1).join(' '));
 }

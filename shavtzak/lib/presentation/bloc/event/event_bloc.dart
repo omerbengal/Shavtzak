@@ -8,11 +8,32 @@ import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/calendar_constants.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/custom_hours.dart';
+import '../../../core/utils/event_stretch.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
 import '../calendar_sync/calendar_sync_event.dart';
 import 'duplication_availability.dart';
+import 'duplication_custom_hours.dart';
 import 'event_event.dart';
 import 'event_state.dart';
+
+final RegExp _backendMutationFailure =
+    RegExp(r'Failed backend mutation [\w.]+: (.*)$', dotAll: true);
+final RegExp _hebrewLetter = RegExp(r'[א-ת]');
+
+/// What to tell the admin when saving an event fails.
+///
+/// The backend refuses in Hebrew when it has a reason the admin can act on
+/// (for example 'לחלק מהצוות נוספו שעות מותאמות בינתיים — יש לפתוח את האירוע
+/// מחדש' when members gained custom hours after the form opened). That text
+/// reaches the client wrapped in two `DatabaseException`s; the Hebrew reason is
+/// shown on its own. Anything else keeps the generic line with the error.
+String eventUpdateErrorMessage(Object error) {
+  final reason =
+      _backendMutationFailure.firstMatch(error.toString())?.group(1)?.trim();
+  if (reason != null && _hebrewLetter.hasMatch(reason)) return reason;
+  return 'שגיאה בעדכון פרטי האירוע: $error';
+}
 
 /// BLoC for managing events
 class EventBloc extends Bloc<EventEvent, EventState> {
@@ -425,7 +446,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // one-shot getEventById() on the save path (that .get() can park ~30s
       // on a flaky connection and freeze the save).
       await _repository.updateEvent(event.event,
-          knownOriginal: event.originalEvent);
+          knownOriginal: event.originalEvent,
+          customHoursResolutions: event.customHoursResolutions);
 
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
@@ -433,7 +455,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
       // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
-      final message = 'שגיאה בעדכון פרטי האירוע: $e';
+      final message = eventUpdateErrorMessage(e);
       emit(EventError(message));
       _completeActionFailure(event.completion, message);
     }
@@ -551,18 +573,41 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         }
       }
 
+      // The hours each copy would carry: the members' custom hours moved by
+      // the number of days between the two events, when the admin asked for
+      // them. Empty otherwise, and then nothing below differs from a
+      // duplication without custom hours.
+      final movedHours = event.duplicateCustomHours
+          ? movedCustomHours(
+              assignments,
+              calendarDaysBetween(
+                  originalEvent.startDate, proposedEvent.startDate),
+            )
+          : const <String, CopiedHours>{};
+
       // Build assignment info list with conflict details
       final assignmentInfos = <AssignmentDuplicationInfo>[];
       bool hasAnyConflict = false;
 
       for (final assignment in assignments) {
         // Same rule as assigning, judged against the proposed event (new dates
-        // and times). Members the backend refuses even with the bypass come
-        // back with canKeep false.
+        // and times) and, for a copy that carries hours, against those hours.
+        // Members the backend refuses even with the bypass come back with
+        // canKeep false.
+        final moved = movedHours[assignment.id];
         final availability = duplicationAvailability(
           assignment: assignment,
           proposedEvent: proposedEvent,
+          window: _hoursWindow(moved),
         );
+        // The admin may untick the hours, which gives the member the new
+        // event's own: the dialog needs that judgement too.
+        final availabilityWithEventHours = moved == null
+            ? null
+            : duplicationAvailability(
+                assignment: assignment,
+                proposedEvent: proposedEvent,
+              );
 
         final isInOverQuotaRole = overQuotaRoles.contains(assignment.roleType);
 
@@ -577,12 +622,15 @@ class EventBloc extends Bloc<EventEvent, EventState> {
               availability.flagged ? availability.reasons.join('\n') : null,
           isInOverQuotaRole: isInOverQuotaRole,
           canKeep: availability.canKeep,
+          movedCustomStartAt: moved?.start,
+          movedCustomEndAt: moved?.end,
+          availabilityWithEventHours: availabilityWithEventHours,
         ));
       }
 
-      // If there are ANY conflicts, emit state for user resolution
-      // DO NOT create anything yet!
-      if (hasAnyConflict) {
+      // If there are ANY conflicts, or hours to confirm, emit state for user
+      // resolution. DO NOT create anything yet!
+      if (hasAnyConflict || movedHours.isNotEmpty) {
         // Role requirements are already Map<String, int>, use them directly
         final roleQuotas = Map<String, int>.from(event.newRoleRequirements);
 
@@ -620,15 +668,29 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       final allAssignments = await _assignmentRepository
           .getAssignmentsByEvent(event.originalEvent.id);
 
+      // The hours each copy carries: the moved hours of every member whose
+      // hours the admin left ticked. Worked out from the freshly fetched
+      // assignments, like the rest, and empty when hours were not asked for.
+      final movedHours = event.duplicateCustomHours
+          ? movedCustomHours(
+              allAssignments,
+              calendarDaysBetween(event.originalEvent.startDate,
+                  event.proposedEvent.startDate),
+              dropped: event.customHoursDropped,
+            )
+          : const <String, CopiedHours>{};
+
       // Filter out excluded assignments. Also drop any the backend would
       // refuse even with the bypass (member gone, inactive, role lost): the
       // dialog locks those rows, and this re-judges the freshly fetched data
-      // so a kept one can never fail the whole batch.
+      // so a kept one can never fail the whole batch. Each is judged with the
+      // window its copy will hold: the moved hours, else the new event's own.
       final assignmentsToInclude = allAssignments
           .where((a) => !event.assignmentIdsToExclude.contains(a.id))
           .where((a) => duplicationAvailability(
                 assignment: a,
                 proposedEvent: event.proposedEvent,
+                window: _hoursWindow(movedHours[a.id]),
               ).canKeep)
           .toList();
 
@@ -641,6 +703,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         event.originalEvent,
         adjustedEvent,
         assignmentsToInclude,
+        hoursByAssignmentId: {
+          for (final assignment in assignmentsToInclude)
+            if (movedHours[assignment.id] != null)
+              assignment.id: movedHours[assignment.id]!,
+        },
       );
 
       // Build success message
@@ -663,6 +730,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       emit(EventError('שגיאה בשכפול האירוע: $e'));
     }
   }
+
+  /// The window a copy holds its member for when it carries [hours]; null (the
+  /// new event's own stretch) when it carries none.
+  WallInterval? _hoursWindow(CopiedHours? hours) =>
+      hours == null ? null : customHoursInterval(hours.start, hours.end);
 
   /// Adjust role requirements in the event to match the number of kept assignments
   /// This ensures the event's quotas are consistent with what will be created

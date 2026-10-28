@@ -4,6 +4,8 @@ import '../../../../core/constants/constraint_status.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/event_constraint_collisions.dart';
 import '../../../../core/utils/search_utils.dart';
+import '../../../../data/repositories/assignment_repository.dart';
+import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../bloc/team/team_bloc.dart';
@@ -11,8 +13,40 @@ import '../../../bloc/team/team_event.dart' as team;
 import '../../../bloc/team/team_state.dart';
 import '../../../widgets/name_search_field.dart';
 
+/// How long [readEventAssignmentsOnce] waits for the stream's first emit.
+const Duration eventAssignmentsReadTimeout = Duration(seconds: 10);
+
+/// The event's assignments, read once from the live stream: its first emit,
+/// which Firestore serves from cache at once and heals from the server. Never
+/// an awaited one-shot `getX()`, which can park for ~30 s on a transport
+/// hiccup while listeners on the same connection stay fast.
+///
+/// Returns an empty list when the read fails, ends without an emit or takes
+/// longer than [timeout], so the caller falls back to judging every member by
+/// the whole event instead of waiting on, or failing with, the read.
+Future<List<Assignment>> readEventAssignmentsOnce(
+  AssignmentRepository repository,
+  String eventId, {
+  Duration timeout = eventAssignmentsReadTimeout,
+}) async {
+  try {
+    return await repository
+        .watchAssignmentsByEvent(eventId)
+        .first
+        .timeout(timeout);
+  } catch (e) {
+    Logger.warning('eventConstraintCollisions:assignmentsUnread', {
+      'eventId': eventId,
+      'error': e.runtimeType.toString(),
+    });
+    return const [];
+  }
+}
+
 /// Read-only list of the permanent members' constraints (approved, pending
-/// and rejected) that collide with one event.
+/// and rejected) that collide with one event. A member assigned with custom
+/// hours is judged against those hours, so a constraint on a day they are not
+/// there for is not listed.
 class EventConstraintCollisionsDialog extends StatefulWidget {
   final Event event;
 
@@ -26,6 +60,10 @@ class EventConstraintCollisionsDialog extends StatefulWidget {
 class _EventConstraintCollisionsDialogState
     extends State<EventConstraintCollisionsDialog> {
   List<TeamMember>? _lastLoadedMembers;
+
+  /// The event's assignments, or null until the one read has settled (it
+  /// settles as an empty list when it fails or times out).
+  List<Assignment>? _eventAssignments;
   String _searchQuery = '';
 
   @override
@@ -40,6 +78,14 @@ class _EventConstraintCollisionsDialogState
         context.read<TeamBloc>().add(const team.LoadTeamMembers());
       });
     }
+    _readEventAssignments(context.read<AssignmentRepository>());
+  }
+
+  Future<void> _readEventAssignments(AssignmentRepository repository) async {
+    final assignments =
+        await readEventAssignmentsOnce(repository, widget.event.id);
+    if (!mounted) return;
+    setState(() => _eventAssignments = assignments);
   }
 
   @override
@@ -61,13 +107,15 @@ class _EventConstraintCollisionsDialogState
             builder: (context, state) {
               if (state is TeamLoaded) _lastLoadedMembers = state.members;
               final members = _lastLoadedMembers;
-              if (members == null) {
+              final assignments = _eventAssignments;
+              if (members == null || assignments == null) {
                 return const Center(child: CircularProgressIndicator());
               }
 
               final collisions = findEventConstraintCollisions(
                 event: widget.event,
                 members: members,
+                assignments: assignments,
               );
               if (collisions.isEmpty) {
                 return const Center(

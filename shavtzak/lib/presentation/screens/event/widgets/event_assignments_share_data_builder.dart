@@ -1,3 +1,4 @@
+import '../../../../core/utils/custom_hours.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/assignment_label.dart';
 import '../../../../domain/entities/event.dart';
@@ -18,16 +19,16 @@ class EventAssignmentsShareDataBuilder {
 
     EventAssignmentsShareRow buildRow(Assignment assignment) {
       final memberName = assignment.teamMember!.name;
-      final trimmedNote = assignment.notes.trim();
+      final noteText = _noteText(assignment, event);
       int? noteNumber;
 
-      if (trimmedNote.isNotEmpty) {
+      if (noteText != null) {
         noteNumber = nextNoteNumber++;
         notes.add(
           EventAssignmentsShareNote(
             number: noteNumber,
             memberName: memberName,
-            text: trimmedNote,
+            text: noteText,
           ),
         );
       }
@@ -63,6 +64,24 @@ class EventAssignmentsShareDataBuilder {
       sections: sections,
       notes: notes,
     );
+  }
+
+  /// What the numbered note under the picture says about [assignment]'s
+  /// member, or null when it has nothing to say.
+  ///
+  /// A member with hours of their own gets a note even without one: 'שעות
+  /// 14:00–23:00' (days by weekday, see [formatCustomHoursByWeekday]),
+  /// followed by ' · ' and the assignment's note when it has one. Hours that
+  /// cannot be read count as no hours.
+  static String? _noteText(Assignment assignment, Event event) {
+    final trimmedNote = assignment.notes.trim();
+    final window = assignment.customWindow;
+    if (window == null) {
+      return trimmedNote.isEmpty ? null : trimmedNote;
+    }
+
+    final hours = 'שעות ${formatCustomHoursByWeekday(window, event)}';
+    return trimmedNote.isEmpty ? hours : '$hours · $trimmedNote';
   }
 
   static List<Assignment> _applyAssignmentLabels(

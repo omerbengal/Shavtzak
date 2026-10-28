@@ -11,6 +11,7 @@ import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
 import '../../core/debug/logger.dart';
 import '../../core/utils/search_utils.dart';
+import 'assignment_hours_line.dart';
 import 'name_search_field.dart';
 
 /// Dialog showing all team members assigned to an event, grouped by role
@@ -337,6 +338,8 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                         ],
                       ],
                     ),
+                    // The member's own hours, when they have any
+                    AssignmentHoursLine(assignment: assignment),
                     // Notes display
                     if (assignment.notes.isNotEmpty)
                       Padding(

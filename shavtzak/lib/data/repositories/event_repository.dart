@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/slot_annotation.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/role_types.dart';
@@ -130,7 +131,15 @@ class EventRepository {
   /// of seconds on a flaky Firestore Web connection — live snapshot streams
   /// keep flowing, but a fresh `.get()` stalls — which would freeze the user's
   /// save. Only used to decide whether the background Drive-folder rename runs.
-  Future<Event> updateEvent(Event event, {Event? knownOriginal}) async {
+  ///
+  /// [customHoursResolutions] are the hours the admin chose for members with
+  /// custom hours when this update moves the event's dates or times; the
+  /// backend saves them with the event in one transaction.
+  Future<Event> updateEvent(
+    Event event, {
+    Event? knownOriginal,
+    List<CustomHoursResolution> customHoursResolutions = const [],
+  }) async {
     // Check for duplicate event (excluding this event)
     try {
       final isDuplicate = await isDuplicateEvent(
@@ -159,7 +168,8 @@ class EventRepository {
     final originalEvent = knownOriginal ?? await getEventById(event.id);
 
     // Update event in database first
-    await _database.updateEvent(event);
+    await _database.updateEvent(event,
+        customHoursResolutions: customHoursResolutions);
 
     // Rename Drive folder in background if needed
     if (_driveService.isInitialized && event.hasDriveFolder) {
@@ -305,11 +315,16 @@ class EventRepository {
 
   /// Duplicate an event with new date/time and copy all assignments
   /// Creates Drive folder for the new event and runs archive check
+  ///
+  /// A copy carries custom hours only when its source assignment's id is a key
+  /// of [hoursByAssignmentId]: the caller has already moved them to the new
+  /// event's dates. Every other copy carries none.
   Future<void> duplicateEvent(
     Event originalEvent,
     Event newEvent,
-    List<Assignment> originalAssignments,
-  ) async {
+    List<Assignment> originalAssignments, {
+    Map<String, ({String? start, String? end})> hoursByAssignmentId = const {},
+  }) async {
     // Insert event to database first (Drive folder created in background)
     await _database.insertEvent(newEvent);
 
@@ -330,6 +345,10 @@ class EventRepository {
               notes: assignment.notes,
               semanticLabelId: assignment.semanticLabelId,
               alternativePhoneNumber: assignment.alternativePhoneNumber,
+              // Custom hours sit on the original event's days, so only the
+              // ones the caller moved to the new days are carried.
+              customStartAt: hoursByAssignmentId[assignment.id]?.start,
+              customEndAt: hoursByAssignmentId[assignment.id]?.end,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
               teamMember: assignment.teamMember,
@@ -374,6 +393,9 @@ class EventRepository {
         notes: assignment.notes,
         semanticLabelId: assignment.semanticLabelId,
         alternativePhoneNumber: assignment.alternativePhoneNumber,
+        // Custom hours are not copied by this variant: they sit on the
+        // original event's days, and the duplicate is on others. Only
+        // [duplicateEvent] carries them, moved to the new days.
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         teamMember: assignment.teamMember,

@@ -10,6 +10,7 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
+import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
@@ -272,11 +273,22 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
-  Future<void> updateEvent(Event event) => _runFuture(
+  Future<void> updateEvent(
+    Event event, {
+    List<CustomHoursResolution> customHoursResolutions = const [],
+  }) =>
+      _runFuture(
         op: 'updateEvent',
-        ctx: {'collection': 'events', 'id': event.id},
+        ctx: {
+          'collection': 'events',
+          'id': event.id,
+          // How many members' hours ride along, never the hours themselves.
+          if (customHoursResolutions.isNotEmpty)
+            'customHoursResolutions': customHoursResolutions.length,
+        },
         countOf: (_) => null,
-        action: () => _inner.updateEvent(event),
+        action: () => _inner.updateEvent(event,
+            customHoursResolutions: customHoursResolutions),
       );
 
   @override
