@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../domain/entities/custom_hours_resolution.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/participant_group.dart';
 import '../../../core/utils/crud_action_result.dart';
@@ -63,10 +64,19 @@ class UpdateEvent extends EventEvent {
   final Event? originalEvent;
   final CrudActionCompleter? completion;
 
-  const UpdateEvent(this.event, {this.originalEvent, this.completion});
+  /// The hours the admin chose for members with custom hours when this save
+  /// moves the event's dates or times. Empty when it moves nothing.
+  final List<CustomHoursResolution> customHoursResolutions;
+
+  const UpdateEvent(
+    this.event, {
+    this.originalEvent,
+    this.completion,
+    this.customHoursResolutions = const [],
+  });
 
   @override
-  List<Object?> get props => [event];
+  List<Object?> get props => [event, customHoursResolutions];
 }
 
 /// Delete event

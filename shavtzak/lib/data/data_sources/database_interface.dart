@@ -2,6 +2,7 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
+import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
@@ -84,8 +85,16 @@ abstract class DatabaseInterface {
   /// Insert a new event
   Future<void> insertEvent(Event event);
 
-  /// Update an existing event
-  Future<void> updateEvent(Event event);
+  /// Update an existing event.
+  ///
+  /// [customHoursResolutions] are the hours the admin chose for assignments
+  /// with custom hours when the update moves the event in time; the backend
+  /// writes them in the same transaction as the event. Empty for any update
+  /// that does not move the event.
+  Future<void> updateEvent(
+    Event event, {
+    List<CustomHoursResolution> customHoursResolutions = const [],
+  });
 
   /// Upsert (or clear, when [value] is null) a single slot annotation on an
   /// event. Routes through the backend `event.updateSlotAnnotation` mutation

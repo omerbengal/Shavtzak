@@ -15,6 +15,7 @@ import 'package:shavtzak/data/repositories/event_repository.dart' as _i10;
 import 'package:shavtzak/data/repositories/role_repository.dart' as _i14;
 import 'package:shavtzak/data/repositories/team_repository.dart' as _i8;
 import 'package:shavtzak/domain/entities/assignment.dart' as _i6;
+import 'package:shavtzak/domain/entities/custom_hours_resolution.dart' as _i16;
 import 'package:shavtzak/domain/entities/event.dart' as _i3;
 import 'package:shavtzak/domain/entities/role.dart' as _i15;
 import 'package:shavtzak/domain/entities/slot_annotation.dart' as _i12;
@@ -776,19 +777,26 @@ class MockEventRepository extends _i1.Mock implements _i10.EventRepository {
   _i5.Future<_i3.Event> updateEvent(
     _i3.Event? event, {
     _i3.Event? knownOriginal,
+    List<_i16.CustomHoursResolution>? customHoursResolutions = const [],
   }) =>
       (super.noSuchMethod(
         Invocation.method(
           #updateEvent,
           [event],
-          {#knownOriginal: knownOriginal},
+          {
+            #knownOriginal: knownOriginal,
+            #customHoursResolutions: customHoursResolutions,
+          },
         ),
         returnValue: _i5.Future<_i3.Event>.value(_FakeEvent_1(
           this,
           Invocation.method(
             #updateEvent,
             [event],
-            {#knownOriginal: knownOriginal},
+            {
+              #knownOriginal: knownOriginal,
+              #customHoursResolutions: customHoursResolutions,
+            },
           ),
         )),
       ) as _i5.Future<_i3.Event>);

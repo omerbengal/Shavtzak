@@ -14,6 +14,24 @@ import 'duplication_availability.dart';
 import 'event_event.dart';
 import 'event_state.dart';
 
+final RegExp _backendMutationFailure =
+    RegExp(r'Failed backend mutation [\w.]+: (.*)$', dotAll: true);
+final RegExp _hebrewLetter = RegExp(r'[א-ת]');
+
+/// What to tell the admin when saving an event fails.
+///
+/// The backend refuses in Hebrew when it has a reason the admin can act on
+/// (for example 'לחלק מהצוות נוספו שעות מותאמות בינתיים — יש לפתוח את האירוע
+/// מחדש' when members gained custom hours after the form opened). That text
+/// reaches the client wrapped in two `DatabaseException`s; the Hebrew reason is
+/// shown on its own. Anything else keeps the generic line with the error.
+String eventUpdateErrorMessage(Object error) {
+  final reason =
+      _backendMutationFailure.firstMatch(error.toString())?.group(1)?.trim();
+  if (reason != null && _hebrewLetter.hasMatch(reason)) return reason;
+  return 'שגיאה בעדכון פרטי האירוע: $error';
+}
+
 /// BLoC for managing events
 class EventBloc extends Bloc<EventEvent, EventState> {
   final EventRepository _repository;
@@ -425,7 +443,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // one-shot getEventById() on the save path (that .get() can park ~30s
       // on a flaky connection and freeze the save).
       await _repository.updateEvent(event.event,
-          knownOriginal: event.originalEvent);
+          knownOriginal: event.originalEvent,
+          customHoursResolutions: event.customHoursResolutions);
 
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
@@ -433,7 +452,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
       // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
-      final message = 'שגיאה בעדכון פרטי האירוע: $e';
+      final message = eventUpdateErrorMessage(e);
       emit(EventError(message));
       _completeActionFailure(event.completion, message);
     }

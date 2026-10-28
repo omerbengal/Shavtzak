@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/slot_annotation.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/role_types.dart';
@@ -130,7 +131,15 @@ class EventRepository {
   /// of seconds on a flaky Firestore Web connection — live snapshot streams
   /// keep flowing, but a fresh `.get()` stalls — which would freeze the user's
   /// save. Only used to decide whether the background Drive-folder rename runs.
-  Future<Event> updateEvent(Event event, {Event? knownOriginal}) async {
+  ///
+  /// [customHoursResolutions] are the hours the admin chose for members with
+  /// custom hours when this update moves the event's dates or times; the
+  /// backend saves them with the event in one transaction.
+  Future<Event> updateEvent(
+    Event event, {
+    Event? knownOriginal,
+    List<CustomHoursResolution> customHoursResolutions = const [],
+  }) async {
     // Check for duplicate event (excluding this event)
     try {
       final isDuplicate = await isDuplicateEvent(
@@ -159,7 +168,8 @@ class EventRepository {
     final originalEvent = knownOriginal ?? await getEventById(event.id);
 
     // Update event in database first
-    await _database.updateEvent(event);
+    await _database.updateEvent(event,
+        customHoursResolutions: customHoursResolutions);
 
     // Rename Drive folder in background if needed
     if (_driveService.isInitialized && event.hasDriveFolder) {

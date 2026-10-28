@@ -6,6 +6,7 @@ import 'package:mockito/mockito.dart';
 import 'package:shavtzak/core/services/drive_service.dart';
 import 'package:shavtzak/data/data_sources/database_interface.dart';
 import 'package:shavtzak/data/repositories/event_repository.dart';
+import 'package:shavtzak/domain/entities/custom_hours_resolution.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 
 import 'event_repository_reconcile_test.mocks.dart';
@@ -160,6 +161,44 @@ void main() {
 
       verify(db.updateEvent(any)).called(1);
       verifyNever(db.getEventById(any));
+    });
+
+    test('hands the hours resolutions to the database with the event',
+        () async {
+      when(drive.isInitialized).thenReturn(false);
+      const resolutions = [
+        CustomHoursResolution(
+          assignmentId: 'a1',
+          customStartAt: '2026-05-08T14:00',
+          customEndAt: '2026-05-08T23:00',
+        ),
+      ];
+      when(db.updateEvent(any,
+              customHoursResolutions: anyNamed('customHoursResolutions')))
+          .thenAnswer((_) async {});
+
+      final original = buildEvent();
+      final moved = original.copyWith(
+        startDate: DateTime(2026, 5, 8),
+        endDate: DateTime(2026, 5, 8),
+      );
+      await repo.updateEvent(moved,
+          knownOriginal: original, customHoursResolutions: resolutions);
+
+      verify(db.updateEvent(moved, customHoursResolutions: resolutions))
+          .called(1);
+    });
+
+    test('an update without resolutions sends the database none', () async {
+      when(drive.isInitialized).thenReturn(false);
+      final original = buildEvent();
+      final renamed = original.copyWith(name: 'שם חדש');
+
+      await repo.updateEvent(renamed, knownOriginal: original);
+
+      verify(db.updateEvent(renamed,
+              customHoursResolutions: const <CustomHoursResolution>[]))
+          .called(1);
     });
 
     test('renames the Drive folder when the supplied original changed name',

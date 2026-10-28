@@ -6,6 +6,7 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
+import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
@@ -90,8 +91,11 @@ class FirestoreDatabase implements DatabaseInterface {
     return '${EnvironmentService.instance.collectionPrefix}checklist_presets';
   }
 
-  FirestoreDatabase({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  FirestoreDatabase({
+    FirebaseFirestore? firestore,
+    BackendApiService? backendApiService,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _backendApiServiceInstance = backendApiService;
 
   @override
   Future<void> initialize() async {
@@ -632,11 +636,21 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
-  Future<void> updateEvent(Event event) async {
+  Future<void> updateEvent(
+    Event event, {
+    List<CustomHoursResolution> customHoursResolutions = const [],
+  }) async {
     try {
       await _invokeMutation(
         'event.update',
-        payload: {'event': _eventEntityToMap(event)},
+        payload: {
+          'event': _eventEntityToMap(event),
+          // Only when there are some: a save that moves nothing sends exactly
+          // what it sent before hours existed.
+          if (customHoursResolutions.isNotEmpty)
+            'customHoursResolutions':
+                customHoursResolutions.map((r) => r.toJson()).toList(),
+        },
       );
     } catch (e) {
       throw DatabaseException('Failed to update event: $e');

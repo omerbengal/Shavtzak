@@ -6,10 +6,13 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
+import '../../../../core/utils/custom_hours.dart';
 import '../../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/slot_annotations.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../domain/entities/assignment.dart';
+import '../../../../domain/entities/custom_hours_resolution.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/participant_group.dart';
 import 'participant_group_rows.dart';
@@ -33,6 +36,7 @@ import '../../../widgets/parking_location_picker_dialog.dart';
 import '../../../widgets/loading_overlay.dart';
 import '../quota_reduction_analyzer.dart';
 import '../quota_reduction_planner.dart';
+import 'custom_hours_resolve_dialog.dart';
 import 'empty_note_removal_dialog.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
@@ -444,36 +448,6 @@ class _EventFormModalState extends State<EventFormModal> {
       return;
     }
 
-    // Quota reduction: decide and apply which ROWS go, before the event write
-    // (edit mode only). See _resolveQuotaReductions.
-    if (_isEditMode) {
-      try {
-        final proceed = await _resolveQuotaReductions();
-        if (!proceed) return; // cancelled — quotas already reverted
-      } catch (e) {
-        // Show error and don't proceed with save
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(
-              SnackBar(
-                content: Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Text('שגיאה בניתוח שיבוצים: $e'),
-                ),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 2),
-              ),
-            );
-        }
-        setState(() {
-          _isSaving = false;
-          _loadingMessage = '';
-        });
-        return;
-      }
-    }
-
     final now = DateTime.now();
     // Use raw location value (with hidden coordinates) if available and unchanged
     // Otherwise use the text field value (user typed manually)
@@ -515,6 +489,47 @@ class _EventFormModalState extends State<EventFormModal> {
       inviteAllPermanentWhenUnassigned: _inviteAllPermanentWhenUnassigned,
     );
 
+    // Members' custom hours: when the save moves the event in time, the admin
+    // decides what happens to each member's hours (edit mode only). This runs
+    // BEFORE the quota step, so cancelling here writes nothing at all. See
+    // _resolveCustomHours.
+    var hoursResolutions = const <CustomHoursResolution>[];
+    if (_isEditMode) {
+      final chosen = await _resolveCustomHours(event);
+      if (chosen == null) return; // cancelled, or the check failed
+      hoursResolutions = chosen;
+    }
+
+    // Quota reduction: decide and apply which ROWS go, before the event write
+    // (edit mode only). See _resolveQuotaReductions.
+    if (_isEditMode) {
+      try {
+        final proceed = await _resolveQuotaReductions();
+        if (!proceed) return; // cancelled — quotas already reverted
+      } catch (e) {
+        // Show error and don't proceed with save
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              SnackBar(
+                content: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Text('שגיאה בניתוח שיבוצים: $e'),
+                ),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+        }
+        setState(() {
+          _isSaving = false;
+          _loadingMessage = '';
+        });
+        return;
+      }
+    }
+
     if (!mounted) return;
     final bloc = context.read<EventBloc>();
     final completion = Completer<CrudActionResult>();
@@ -522,7 +537,9 @@ class _EventFormModalState extends State<EventFormModal> {
       // Pass the pre-edit event so the save doesn't await a one-shot
       // getEventById() that can park for tens of seconds on a flaky connection.
       bloc.add(UpdateEvent(event,
-          originalEvent: widget.event, completion: completion));
+          originalEvent: widget.event,
+          customHoursResolutions: hoursResolutions,
+          completion: completion));
     } else {
       bloc.add(CreateEvent(event, completion: completion));
     }
@@ -546,6 +563,80 @@ class _EventFormModalState extends State<EventFormModal> {
         ?.call(event.id, Map<String, int>.from(event.roleRequirements));
 
     widget.onSuccess();
+  }
+
+  /// Ask what to do with members' custom hours when this save moves the event
+  /// in time, BEFORE the event write. [newEvent] is exactly what the form is
+  /// about to send, and the event as opened ([EventFormModal.event]) is what is
+  /// stored, so [eventTimesChanged] judges what the backend will judge; a
+  /// mismatch would come back as a refusal.
+  ///
+  /// Returns the resolutions to send with the event (empty when none are
+  /// needed), or null when the save must stop: the admin cancelled, or the
+  /// assignments could not be read in time. Either way nothing was written and
+  /// the form is ready for another try.
+  Future<List<CustomHoursResolution>?> _resolveCustomHours(
+      Event newEvent) async {
+    final original = widget.event!;
+    if (!eventTimesChanged(original, newEvent)) return const [];
+
+    // Every context.read happens up front, before the first await.
+    final assignmentRepo = context.read<AssignmentRepository>();
+    final roleNames = _roleHebrewNames();
+
+    final List<Assignment> assignments;
+    try {
+      // The live stream's first value, never a one-shot get (see
+      // firestore-stream-first): a fresh get can park for tens of seconds.
+      assignments = await assignmentRepo
+          .watchAssignmentsByEvent(original.id)
+          .first
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      Logger.action('hours:loadFailed', {'event': original.id});
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: const Text('לא ניתן לבדוק שעות מותאמות כרגע — נסו שוב'),
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        setState(() {
+          _isSaving = false;
+          _loadingMessage = '';
+        });
+      }
+      return null;
+    }
+    if (!mounted) return null;
+
+    final withHours =
+        assignments.where((assignment) => assignment.hasCustomHours).toList();
+    if (withHours.isEmpty) return const [];
+
+    final resolutions = await CustomHoursResolveDialog.show(
+      context,
+      oldEvent: original,
+      newEvent: newEvent,
+      withHours: withHours,
+      roleNames: roleNames,
+    );
+    if (resolutions == null) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _loadingMessage = '';
+        });
+      }
+      return null;
+    }
+    return resolutions;
   }
 
   /// Resolve every role whose quota is being reduced, BEFORE the event write.
