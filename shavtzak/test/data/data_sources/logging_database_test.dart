@@ -7,6 +7,7 @@ import 'package:shavtzak/core/debug/debug_logger.dart';
 import 'package:shavtzak/core/debug/log_event.dart';
 import 'package:shavtzak/data/data_sources/database_interface.dart';
 import 'package:shavtzak/data/data_sources/logging_database.dart';
+import 'package:shavtzak/domain/entities/custom_hours_resolution.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 
 import 'logging_database_test.mocks.dart';
@@ -97,6 +98,52 @@ void main() {
     expect(events.last.type, LogEventType.dbEnd);
     expect(events.last.context['ok'], true);
     expect(events.last.context.containsKey('count'), false);
+  });
+
+  test(
+      'updateEvent forwards the custom hours resolutions to the wrapped '
+      'database and logs only how many there are', () async {
+    final ev = Event(
+      id: 'e1',
+      name: 'Test',
+      startDate: DateTime.utc(2026, 5, 18),
+      endDate: DateTime.utc(2026, 5, 18),
+      startTime: '10:00',
+      endTime: '12:00',
+      assemblyTime: '09:30',
+      requiresArmed: false,
+      roleRequirements: const {},
+      createdAt: DateTime.utc(2026, 5, 18),
+      updatedAt: DateTime.utc(2026, 5, 18),
+    );
+    const resolutions = [
+      CustomHoursResolution(
+        assignmentId: 'a1',
+        customStartAt: '2026-05-18T11:00',
+        customEndAt: '2026-05-18T13:00',
+      ),
+      CustomHoursResolution(
+          assignmentId: 'a2', customStartAt: null, customEndAt: null),
+    ];
+    when(inner.updateEvent(ev,
+            customHoursResolutions: anyNamed('customHoursResolutions')))
+        .thenAnswer((_) async {});
+
+    await decorator.updateEvent(ev, customHoursResolutions: resolutions);
+
+    // Dropping them would make the backend refuse every time move of an
+    // event whose members have hours (409).
+    final forwarded = verify(inner.updateEvent(ev,
+            customHoursResolutions: captureAnyNamed('customHoursResolutions')))
+        .captured
+        .single;
+    expect(forwarded, resolutions);
+    final start = DebugLogger.instance.events
+        .firstWhere((e) => e.type == LogEventType.dbStart);
+    expect(start.context['customHoursResolutions'], 2);
+    for (final logged in DebugLogger.instance.events) {
+      expect(logged.context.values.join(' '), isNot(contains('2026-05-18T')));
+    }
   });
 
   test('stream subscription cancellation records DB_END with disposed: true',
