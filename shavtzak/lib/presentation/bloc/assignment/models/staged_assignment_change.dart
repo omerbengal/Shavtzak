@@ -17,12 +17,25 @@ class StagedAssignmentChange extends Equatable {
   final String? desiredSemanticLabelId;
   final String? desiredAltPhone;
 
+  /// The member's own hours on this assignment (`yyyy-MM-ddTHH:mm` wall
+  /// moments), or both null for "the event's whole stretch". Always sent on
+  /// Save, because the backend reads a missing pair on an update as "keep" and
+  /// an explicit null pair as "clear": a Save that did not touch the hours must
+  /// send back exactly what is stored, which is what the seeded value is.
+  final String? desiredCustomStartAt;
+  final String? desiredCustomEndAt;
+
   // Baseline snapshot (DB state at first touch). Null member => slot was empty.
   final String? baselineAssignmentId;
   final String? baselineMemberId;
   final String baselineNotes;
   final String? baselineSemanticLabelId;
   final String? baselineAltPhone;
+
+  /// The stored hours when the slot was first touched. Set only by the seed and
+  /// by [fromJson]; used by conflict detection to see hours changed underneath.
+  final String? baselineCustomStartAt;
+  final String? baselineCustomEndAt;
 
   /// Stable id to use if this staged change creates a new assignment doc.
   final String desiredAssignmentId;
@@ -47,11 +60,15 @@ class StagedAssignmentChange extends Equatable {
     required this.desiredNotes,
     required this.desiredSemanticLabelId,
     required this.desiredAltPhone,
+    required this.desiredCustomStartAt,
+    required this.desiredCustomEndAt,
     required this.baselineAssignmentId,
     required this.baselineMemberId,
     required this.baselineNotes,
     required this.baselineSemanticLabelId,
     required this.baselineAltPhone,
+    required this.baselineCustomStartAt,
+    required this.baselineCustomEndAt,
     required this.desiredAssignmentId,
     required this.stagedAtMillis,
     this.markedForDeletion = false,
@@ -72,13 +89,17 @@ class StagedAssignmentChange extends Equatable {
       desiredMemberId == baselineMemberId &&
       desiredNotes == baselineNotes &&
       desiredSemanticLabelId == baselineSemanticLabelId &&
-      desiredAltPhone == baselineAltPhone;
+      desiredAltPhone == baselineAltPhone &&
+      desiredCustomStartAt == baselineCustomStartAt &&
+      desiredCustomEndAt == baselineCustomEndAt;
 
   StagedAssignmentChange copyWith({
     String? Function()? desiredMemberId,
     String? desiredNotes,
     String? Function()? desiredSemanticLabelId,
     String? Function()? desiredAltPhone,
+    String? Function()? desiredCustomStartAt,
+    String? Function()? desiredCustomEndAt,
     String? Function()? baselineAssignmentId,
     String? Function()? baselineMemberId,
     int? stagedAtMillis,
@@ -98,6 +119,12 @@ class StagedAssignmentChange extends Equatable {
           : this.desiredSemanticLabelId,
       desiredAltPhone:
           desiredAltPhone != null ? desiredAltPhone() : this.desiredAltPhone,
+      desiredCustomStartAt: desiredCustomStartAt != null
+          ? desiredCustomStartAt()
+          : this.desiredCustomStartAt,
+      desiredCustomEndAt: desiredCustomEndAt != null
+          ? desiredCustomEndAt()
+          : this.desiredCustomEndAt,
       baselineAssignmentId: baselineAssignmentId != null
           ? baselineAssignmentId()
           : this.baselineAssignmentId,
@@ -106,6 +133,8 @@ class StagedAssignmentChange extends Equatable {
       baselineNotes: baselineNotes,
       baselineSemanticLabelId: baselineSemanticLabelId,
       baselineAltPhone: baselineAltPhone,
+      baselineCustomStartAt: baselineCustomStartAt,
+      baselineCustomEndAt: baselineCustomEndAt,
       desiredAssignmentId: desiredAssignmentId,
       stagedAtMillis: stagedAtMillis ?? this.stagedAtMillis,
       markedForDeletion: markedForDeletion ?? this.markedForDeletion,
@@ -122,11 +151,15 @@ class StagedAssignmentChange extends Equatable {
         'desiredNotes': desiredNotes,
         'desiredSemanticLabelId': desiredSemanticLabelId,
         'desiredAltPhone': desiredAltPhone,
+        'desiredCustomStartAt': desiredCustomStartAt,
+        'desiredCustomEndAt': desiredCustomEndAt,
         'baselineAssignmentId': baselineAssignmentId,
         'baselineMemberId': baselineMemberId,
         'baselineNotes': baselineNotes,
         'baselineSemanticLabelId': baselineSemanticLabelId,
         'baselineAltPhone': baselineAltPhone,
+        'baselineCustomStartAt': baselineCustomStartAt,
+        'baselineCustomEndAt': baselineCustomEndAt,
         'desiredAssignmentId': desiredAssignmentId,
         'stagedAtMillis': stagedAtMillis,
         'markedForDeletion': markedForDeletion,
@@ -143,11 +176,16 @@ class StagedAssignmentChange extends Equatable {
         desiredNotes: (json['desiredNotes'] as String?) ?? '',
         desiredSemanticLabelId: json['desiredSemanticLabelId'] as String?,
         desiredAltPhone: json['desiredAltPhone'] as String?,
+        // Caches written before custom hours have no hour keys: no hours.
+        desiredCustomStartAt: json['desiredCustomStartAt'] as String?,
+        desiredCustomEndAt: json['desiredCustomEndAt'] as String?,
         baselineAssignmentId: json['baselineAssignmentId'] as String?,
         baselineMemberId: json['baselineMemberId'] as String?,
         baselineNotes: (json['baselineNotes'] as String?) ?? '',
         baselineSemanticLabelId: json['baselineSemanticLabelId'] as String?,
         baselineAltPhone: json['baselineAltPhone'] as String?,
+        baselineCustomStartAt: json['baselineCustomStartAt'] as String?,
+        baselineCustomEndAt: json['baselineCustomEndAt'] as String?,
         desiredAssignmentId: json['desiredAssignmentId'] as String,
         stagedAtMillis: json['stagedAtMillis'] as int,
         markedForDeletion: (json['markedForDeletion'] as bool?) ?? false,
@@ -164,11 +202,15 @@ class StagedAssignmentChange extends Equatable {
         desiredNotes,
         desiredSemanticLabelId,
         desiredAltPhone,
+        desiredCustomStartAt,
+        desiredCustomEndAt,
         baselineAssignmentId,
         baselineMemberId,
         baselineNotes,
         baselineSemanticLabelId,
         baselineAltPhone,
+        baselineCustomStartAt,
+        baselineCustomEndAt,
         desiredAssignmentId,
         stagedAtMillis,
         markedForDeletion,

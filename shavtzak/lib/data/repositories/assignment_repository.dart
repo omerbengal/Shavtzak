@@ -221,17 +221,19 @@ class AssignmentRepository {
       return conflicts;
     }
 
-    // Check availability conflict for entire event duration (with time-based detection)
-    // Skip for members with allowMultipleAssignments
+    // Check availability conflict for the assignment's own window: its custom
+    // hours when it has them, else the event's whole stretch (with time-based
+    // detection). Skip for members with allowMultipleAssignments
+    final window = assignment.windowIn(event);
     if (!skipAvailability &&
         !member.allowMultipleAssignments &&
-        !member.isAvailableForEventWithTime(event)) {
+        !member.isAvailableForEventWithTime(event, window: window)) {
       final dateRange = _isSameDay(event.startDate, event.endDate)
           ? _formatDate(event.startDate)
           : '${_formatDate(event.startDate)} - ${_formatDate(event.endDate)}';
 
       if (member.isPermanent) {
-        final blockers = member.constraintsBlockingEvent(event);
+        final blockers = member.constraintsBlockingWindow(window);
         final onlyPending = blockers.isNotEmpty &&
             blockers.every((constraint) => constraint.isPending());
         final reason =

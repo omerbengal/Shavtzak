@@ -808,8 +808,9 @@ class EventSummaryTile extends StatelessWidget {
       final otherEvent = eventMap[assignment.eventId];
       if (otherEvent == null) continue;
 
-      // Check if events share any day
-      if (eventsShareDay(event, otherEvent)) {
+      // Does the other booking hold the member on a day this event spans? Its
+      // own days (custom hours, else its whole event) vs. all of this event's.
+      if (assignmentOverlapsEventDays(assignment, otherEvent, event)) {
         final member = membersById[assignment.teamMemberId];
         if (member == null) continue;
 

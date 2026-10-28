@@ -572,6 +572,67 @@ void main() {
       );
     });
   });
+
+  group('assignmentOverlapsEventDays', () {
+    final multiDay = _event(
+      id: 'multi',
+      start: DateTime(2026, 10, 27),
+      end: DateTime(2026, 10, 28),
+    );
+    final day2 = _event(id: 'day2', start: DateTime(2026, 10, 28));
+    final day1 = _event(id: 'day1', start: DateTime(2026, 10, 27));
+
+    test('without hours the assignment holds every day of its event', () {
+      final a = _assignment(id: 'a1', eventId: 'multi', memberId: 'm1');
+
+      expect(assignmentOverlapsEventDays(a, multiDay, day1), isTrue);
+      expect(assignmentOverlapsEventDays(a, multiDay, day2), isTrue);
+    });
+
+    test('hours on day 1 only do not overlap an event on day 2', () {
+      final a = _assignment(
+        id: 'a1',
+        eventId: 'multi',
+        memberId: 'm1',
+        customStartAt: '2026-10-27T10:00',
+        customEndAt: '2026-10-27T16:00',
+      );
+
+      expect(assignmentOverlapsEventDays(a, multiDay, day1), isTrue);
+      expect(assignmentOverlapsEventDays(a, multiDay, day2), isFalse);
+    });
+
+    test('the event being filled is judged by all of its days', () {
+      final a = _assignment(
+        id: 'a1',
+        eventId: 'multi',
+        memberId: 'm1',
+        customStartAt: '2026-10-27T10:00',
+        customEndAt: '2026-10-27T16:00',
+      );
+      final spansBoth = _event(
+        id: 'both',
+        start: DateTime(2026, 10, 27),
+        end: DateTime(2026, 10, 28),
+      );
+
+      expect(assignmentOverlapsEventDays(a, multiDay, spansBoth), isTrue);
+    });
+
+    test('hours that reach outside the event reach the neighbouring event', () {
+      // Arriving the evening before: the booking's days start on 26/10.
+      final a = _assignment(
+        id: 'a1',
+        eventId: 'multi',
+        memberId: 'm1',
+        customStartAt: '2026-10-26T20:00',
+        customEndAt: '2026-10-27T12:00',
+      );
+      final before = _event(id: 'before', start: DateTime(2026, 10, 26));
+
+      expect(assignmentOverlapsEventDays(a, multiDay, before), isTrue);
+    });
+  });
 }
 
 Event _event({

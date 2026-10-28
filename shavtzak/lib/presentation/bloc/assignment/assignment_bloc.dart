@@ -1494,11 +1494,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       desiredNotes: db?.notes ?? '',
       desiredSemanticLabelId: db?.semanticLabelId,
       desiredAltPhone: db?.alternativePhoneNumber,
+      // The hours go with the slot's occupant: desired starts as what is stored,
+      // so a Save that did not touch them sends back exactly that. (A staged
+      // replacement of the occupant keeps these for now; a new occupant's
+      // hours are decided when the edit-hours dialog lands.)
+      desiredCustomStartAt: db?.customStartAt,
+      desiredCustomEndAt: db?.customEndAt,
       baselineAssignmentId: db?.id,
       baselineMemberId: db?.teamMemberId,
       baselineNotes: db?.notes ?? '',
       baselineSemanticLabelId: db?.semanticLabelId,
       baselineAltPhone: db?.alternativePhoneNumber,
+      baselineCustomStartAt: db?.customStartAt,
+      baselineCustomEndAt: db?.customEndAt,
       desiredAssignmentId: db?.id ?? const Uuid().v4(),
       stagedAtMillis: DateTime.now().millisecondsSinceEpoch,
     );
@@ -1685,6 +1693,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           notes: c.desiredNotes,
           semanticLabelId: c.desiredSemanticLabelId,
           alternativePhoneNumber: c.desiredAltPhone,
+          customStartAt: c.desiredCustomStartAt,
+          customEndAt: c.desiredCustomEndAt,
           createdAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
           updatedAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
           teamMember: _windowMembersMap[c.desiredMemberId],
@@ -1733,6 +1743,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         notes: c.desiredNotes,
         semanticLabelId: c.desiredSemanticLabelId,
         alternativePhoneNumber: c.desiredAltPhone,
+        customStartAt: c.desiredCustomStartAt,
+        customEndAt: c.desiredCustomEndAt,
         createdAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
         teamMember: _windowMembersMap[c.desiredMemberId],
@@ -1951,11 +1963,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         desiredNotes: c.desiredNotes,
         desiredSemanticLabelId: c.desiredSemanticLabelId,
         desiredAltPhone: c.desiredAltPhone,
+        desiredCustomStartAt: c.desiredCustomStartAt,
+        desiredCustomEndAt: c.desiredCustomEndAt,
         baselineAssignmentId: c.baselineAssignmentId,
         baselineMemberId: c.baselineMemberId,
         baselineNotes: c.baselineNotes,
         baselineSemanticLabelId: c.baselineSemanticLabelId,
         baselineAltPhone: c.baselineAltPhone,
+        baselineCustomStartAt: c.baselineCustomStartAt,
+        baselineCustomEndAt: c.baselineCustomEndAt,
         desiredAssignmentId: c.desiredAssignmentId,
         stagedAtMillis: c.stagedAtMillis,
         markedForDeletion: c.markedForDeletion,
@@ -2030,8 +2046,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       slotKey: key, eventId: eventId, roleType: role, slotIndex: slotIndex,
       desiredMemberId: event.member.id, desiredNotes: '',
       desiredSemanticLabelId: null, desiredAltPhone: null,
+      // A new slot starts without hours (desired and baseline alike).
+      desiredCustomStartAt: null, desiredCustomEndAt: null,
       baselineAssignmentId: null, baselineMemberId: null, baselineNotes: '',
       baselineSemanticLabelId: null, baselineAltPhone: null,
+      baselineCustomStartAt: null, baselineCustomEndAt: null,
       desiredAssignmentId: const Uuid().v4(),
       stagedAtMillis: DateTime.now().millisecondsSinceEpoch,
       isManualAdd: true,
@@ -2435,19 +2454,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final dbAltPhone = dbAssignment?.alternativePhoneNumber;
       final baselineMember = c.baselineMemberId;
 
-      // No divergence from baseline (member + notes + label + altPhone) =>
-      // no conflict. Label/altPhone must be included: a concurrent DB change
-      // to only one of those (notes/member unchanged) is a real divergence
-      // that would otherwise be classified no-conflict and silently
-      // overwritten at Save.
+      // No divergence from baseline (member + notes + label + altPhone +
+      // hours) => no conflict. Label/altPhone/hours must be included: a
+      // concurrent DB change to only one of those (notes/member unchanged) is
+      // a real divergence that would otherwise be classified no-conflict and
+      // silently overwritten at Save (a Save always sends the hours pair).
       final memberDiverged = dbMemberId != baselineMember;
       final notesDiverged = dbNotes != c.baselineNotes;
       final labelDiverged = dbLabel != c.baselineSemanticLabelId;
       final altPhoneDiverged = dbAltPhone != c.baselineAltPhone;
+      final hoursDiverged =
+          dbAssignment?.customStartAt != c.baselineCustomStartAt ||
+              dbAssignment?.customEndAt != c.baselineCustomEndAt;
       if (!memberDiverged &&
           !notesDiverged &&
           !labelDiverged &&
-          !altPhoneDiverged) {
+          !altPhoneDiverged &&
+          !hoursDiverged) {
         return;
       }
 
@@ -2486,13 +2509,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         return;
       }
 
-      // F: notes, label, or alt-phone changed underneath a non-member edit
-      // (member unchanged from baseline, so A/B/C above did not fire).
+      // F: notes, label, alt-phone or hours changed underneath a non-member
+      // edit (member unchanged from baseline, so A/B/C above did not fire).
+      // The wording names the hours only when they moved, so the long-standing
+      // notes/label message is unchanged for every other case.
+      final String fDescription;
+      if (!hoursDiverged) {
+        fDescription = 'ההערות/הלייבל של השיבוץ שונו בינתיים ב-DB.';
+      } else if (notesDiverged || labelDiverged || altPhoneDiverged) {
+        fDescription = 'ההערות/הלייבל/השעות של השיבוץ שונו בינתיים ב-DB.';
+      } else {
+        fDescription = 'השעות של השיבוץ שונו בינתיים ב-DB.';
+      }
       conflicts.add(AssignmentConflict(
         slotKey: key,
         type: AssignmentConflictType.notesChanged,
         title: conflictTitle,
-        description: 'ההערות/הלייבל של השיבוץ שונו בינתיים ב-DB.',
+        description: fDescription,
       ));
     });
 
@@ -3149,6 +3182,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       notes: c.desiredNotes,
       semanticLabelId: c.desiredSemanticLabelId,
       alternativePhoneNumber: c.desiredAltPhone,
+      customStartAt: c.desiredCustomStartAt,
+      customEndAt: c.desiredCustomEndAt,
       createdAt: createdAt ?? now,
       // updatedAt defaults to now for the Save path (a real write), but callers
       // that render a synthesized row MUST pass a STABLE timestamp: an
@@ -3608,8 +3643,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             // Skip if event not found or is the same event
             if (otherEvent.id == event.id) continue;
 
-            // Check if events share dates
-            if (eventsShareDay(event, otherEvent)) {
+            // Does the other booking hold the member on a day this event
+            // spans? Judged by the booking's own days (its custom hours, else
+            // its whole event); this event, the candidate side, by all of its.
+            if (assignmentOverlapsEventDays(
+                otherAssignment, otherEvent, event)) {
               final memberId = otherAssignment.teamMemberId;
               // Null-safe: skip if the owner isn't in the active-member set
               // (deactivated, or members not yet streamed in) rather than
@@ -4079,8 +4117,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // their assignments are preserved but treated as inactive.
               if (otherEvent.isDeactivated) continue;
 
-              // Check if events share dates
-              if (eventsShareDay(eventData, otherEvent)) {
+              // Does the other booking hold the member on a day this event
+              // spans? Its own days (custom hours, else its whole event) vs.
+              // all of this event's days.
+              if (assignmentOverlapsEventDays(
+                  otherAssignment, otherEvent, eventData)) {
                 final memberId = otherAssignment.teamMemberId;
                 final member = teamMembersMap[memberId];
 

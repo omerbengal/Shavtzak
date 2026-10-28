@@ -55,6 +55,23 @@ bool dayRangesOverlap(DayRange a, DayRange b) =>
 bool eventsShareDay(Event a, Event b) =>
     dayRangesOverlap(eventDays(a), eventDays(b));
 
+/// True when [assignment], held in [assignmentEvent], keeps its member on at
+/// least one day [event] spans.
+///
+/// The "other booking" side of a same-day check: the existing assignment is
+/// judged by its own days ([assignmentDays]: its custom hours, else its whole
+/// event), the event being filled by all of its days ([eventDays]). Hours on
+/// day 1 of a two-day event do not collide with another event on day 2.
+bool assignmentOverlapsEventDays(
+  Assignment assignment,
+  Event assignmentEvent,
+  Event event,
+) =>
+    dayRangesOverlap(
+      eventDays(event),
+      assignmentDays(assignment, assignmentEvent),
+    );
+
 /// Other events sharing a calendar day with [event] that a member is ALSO
 /// assigned to, keyed by member id. Members with no such event are absent.
 ///

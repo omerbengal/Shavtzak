@@ -822,8 +822,11 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
       // Skip if event not found
       if (otherEvent.id.isEmpty) continue;
 
-      // Check if events share dates
-      if (eventsShareDay(_selectedEvent!, otherEvent)) {
+      // Does the other booking hold the member on a day the selected event
+      // spans? Its own days (custom hours, else its whole event) vs. all of
+      // the selected event's.
+      if (assignmentOverlapsEventDays(
+          assignment, otherEvent, _selectedEvent!)) {
         final memberId = assignment.teamMemberId;
         sameDayMap.putIfAbsent(memberId, () => []);
         if (!sameDayMap[memberId]!.contains(otherEvent.name)) {
