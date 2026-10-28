@@ -138,6 +138,116 @@ void main() {
       expect(data.participantsLine, 'כמות משתתפים: בוקר: 500, סבב 2: 700');
     });
 
+    group('custom hours', () {
+      final roles = [_role('medic', 'חובשים', 0)];
+
+      EventAssignmentsShareData buildFor(List<Assignment> assignments) =>
+          EventAssignmentsShareDataBuilder.build(
+            event: _event(DateTime(2026, 5, 4, 10)),
+            assignments: assignments,
+            activeRoles: roles,
+            labels: const [],
+            groupingMode: EventAssignmentsGroupingMode.role,
+          );
+
+      test('a member with hours and notes gets both in one numbered note', () {
+        final data = buildFor([
+          _assignment(
+            id: 'a1',
+            roleType: 'medic',
+            slotIndex: 0,
+            member: _member('m1', 'דנה כהן'),
+            notes: ' מביא ציוד ',
+            customStartAt: '2026-10-27T14:00',
+            customEndAt: '2026-10-27T23:00',
+          ),
+        ]);
+
+        expect(data.sections.single.rows.single.noteNumber, 1);
+        expect(data.notes.single.number, 1);
+        expect(data.notes.single.memberName, 'דנה כהן');
+        expect(data.notes.single.text, 'שעות 27.10 14:00–23:00 · מביא ציוד');
+      });
+
+      test('a member with hours but no notes still gets a numbered note', () {
+        final data = buildFor([
+          _assignment(
+            id: 'a1',
+            roleType: 'medic',
+            slotIndex: 0,
+            member: _member('m1', 'דנה כהן'),
+            customStartAt: '2026-10-27T14:00',
+            customEndAt: '2026-10-28T02:00',
+          ),
+        ]);
+
+        expect(data.sections.single.rows.single.noteNumber, 1);
+        expect(data.notes.single.text, 'שעות 27.10 14:00 – 28.10 02:00');
+      });
+
+      test('notes are numbered in visual order across members with and '
+          'without hours, and a member without hours keeps their note as is',
+          () {
+        final data = buildFor([
+          _assignment(
+            id: 'a1',
+            roleType: 'medic',
+            slotIndex: 0,
+            member: _member('m1', 'אורי ברק'),
+            notes: 'מגיע מוקדם',
+          ),
+          _assignment(
+            id: 'a2',
+            roleType: 'medic',
+            slotIndex: 1,
+            member: _member('m2', 'גל לוי'),
+          ),
+          _assignment(
+            id: 'a3',
+            roleType: 'medic',
+            slotIndex: 2,
+            member: _member('m3', 'דנה כהן'),
+            customStartAt: '2026-10-27T14:00',
+            customEndAt: '2026-10-27T23:00',
+          ),
+        ]);
+
+        expect(
+          data.sections.single.rows
+              .map((row) => '${row.memberName}:${row.noteNumber}'),
+          ['אורי ברק:1', 'גל לוי:null', 'דנה כהן:2'],
+        );
+        expect(
+          data.notes.map((note) => '${note.number}:${note.text}'),
+          ['1:מגיע מוקדם', '2:שעות 27.10 14:00–23:00'],
+        );
+      });
+
+      test('hours that cannot be read add nothing', () {
+        final data = buildFor([
+          _assignment(
+            id: 'a1',
+            roleType: 'medic',
+            slotIndex: 0,
+            member: _member('m1', 'דנה כהן'),
+            customStartAt: '2026-10-27T23:00',
+            customEndAt: '2026-10-27T14:00',
+          ),
+          _assignment(
+            id: 'a2',
+            roleType: 'medic',
+            slotIndex: 1,
+            member: _member('m2', 'אורי ברק'),
+            notes: 'מגיע מוקדם',
+            customStartAt: 'garbage',
+            customEndAt: '2026-10-27T14:00',
+          ),
+        ]);
+
+        expect(data.notes.map((note) => note.text), ['מגיע מוקדם']);
+      });
+    });
+
     test('participants line is empty when no groups are set', () {
       final data = EventAssignmentsShareDataBuilder.build(
         event: _event(DateTime(2026, 5, 4, 10)),
@@ -207,6 +317,8 @@ Assignment _assignment({
   String notes = '',
   String? semanticLabelId,
   String? alternativePhoneNumber,
+  String? customStartAt,
+  String? customEndAt,
   AssignmentStatus status = AssignmentStatus.confirmed,
 }) {
   final now = DateTime(2026, 5, 4, 10);
@@ -220,6 +332,8 @@ Assignment _assignment({
     notes: notes,
     semanticLabelId: semanticLabelId,
     alternativePhoneNumber: alternativePhoneNumber,
+    customStartAt: customStartAt,
+    customEndAt: customEndAt,
     createdAt: now,
     updatedAt: now,
     teamMember: member,

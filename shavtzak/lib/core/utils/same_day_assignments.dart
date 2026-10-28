@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
+import 'event_stretch.dart';
 
 /// A run of calendar days, first to last inclusive, as local date-only
 /// `DateTime(y, m, d)` values.
@@ -32,7 +33,13 @@ DayRange eventDays(Event e) =>
 /// own dates. Without usable hours: [eventDays].
 DayRange assignmentDays(Assignment a, Event event) {
   final window = a.customWindow;
-  if (window == null) return eventDays(event);
+  return window == null ? eventDays(event) : windowDays(window);
+}
+
+/// The calendar days [window] covers: the day of its start to the day of its
+/// last minute (its end minus one minute, so a window ending exactly at
+/// midnight stays on the day before).
+DayRange windowDays(WallInterval window) {
   final lastMinute = window.end.subtract(const Duration(minutes: 1));
   return DayRange(
     DateTime(window.start.year, window.start.month, window.start.day),

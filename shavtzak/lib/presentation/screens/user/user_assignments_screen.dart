@@ -1,11 +1,15 @@
 import 'dart:async';
 
+import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/debug/logger.dart';
 import '../../../core/utils/web_url_launcher.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/custom_hours.dart';
 import '../../../core/utils/event_sorting.dart';
+import '../../../core/utils/event_stretch.dart';
+import '../../../core/utils/same_day_assignments.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../core/constants/role_types.dart';
@@ -525,7 +529,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     final eventStart = DateTime(
         event.startDate.year, event.startDate.month, event.startDate.day);
     final isToday = eventStart.isAtSameMomentAs(today);
-    final isTomorrow = eventStart.isAtSameMomentAs(tomorrow);
+
+    // The member's own hours (the first usable window among their roles in
+    // this event), when they have any: the date, arrival and departure rows
+    // then describe the member's attendance, not the whole event's.
+    final timeRows =
+        memberCardTimeRows(event, firstCustomWindow(assignmentGroup));
+    final firstDayOnly = DateTime(timeRows.firstDay.year,
+        timeRows.firstDay.month, timeRows.firstDay.day);
+    final firstDayIsToday = firstDayOnly.isAtSameMomentAs(today);
+    final firstDayIsTomorrow = firstDayOnly.isAtSameMomentAs(tomorrow);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -644,8 +657,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Date section
-                  if (_isSameDay(event.startDate, event.endDate))
-                    // Single day event - one row
+                  if (_isSameDay(timeRows.firstDay, timeRows.lastDay))
+                    // Single day event (or a member there for one day) - one row
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -669,15 +682,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         ),
                         const SizedBox(width: 4),
                         Expanded(
-                          child: Text.rich(
-                            _formatDateWithHighlight(
-                              _formatSingleDayDisplay(
-                                  event.startDate, isToday, isTomorrow),
-                              isUpcoming,
-                              context,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: _buildDateRowValue(
+                            context,
+                            date: timeRows.firstDay,
+                            isToday: firstDayIsToday,
+                            isTomorrow: firstDayIsTomorrow,
+                            // Both ends can differ from the event's: the
+                            // member is there for a middle day.
+                            note:
+                                '${timeRows.firstDayNote}${timeRows.lastDayNote}',
+                            isUpcoming: isUpcoming,
                           ),
                         ),
                       ],
@@ -710,15 +724,13 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             ),
                             const SizedBox(width: 4),
                             Expanded(
-                              child: Text.rich(
-                                _formatDateWithHighlight(
-                                  _formatSingleDayDisplay(
-                                      event.startDate, isToday, isTomorrow),
-                                  isUpcoming,
-                                  context,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              child: _buildDateRowValue(
+                                context,
+                                date: timeRows.firstDay,
+                                isToday: firstDayIsToday,
+                                isTomorrow: firstDayIsTomorrow,
+                                note: timeRows.firstDayNote,
+                                isUpcoming: isUpcoming,
                               ),
                             ),
                           ],
@@ -747,15 +759,13 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             ),
                             const SizedBox(width: 4),
                             Expanded(
-                              child: Text.rich(
-                                _formatDateWithHighlight(
-                                  _formatSingleDayDisplay(
-                                      event.endDate, false, false),
-                                  isUpcoming,
-                                  context,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              child: _buildDateRowValue(
+                                context,
+                                date: timeRows.lastDay,
+                                isToday: false,
+                                isTomorrow: false,
+                                note: timeRows.lastDayNote,
+                                isUpcoming: isUpcoming,
                               ),
                             ),
                           ],
@@ -971,7 +981,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'שעת התייצבות:',
+                        timeRows.arrivalLabel,
                         style: TextStyle(
                           fontSize: _getResponsiveFontSize(context,
                               minSize: 14.0, maxSize: 16.0),
@@ -980,17 +990,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         ),
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        event.assemblyTime.isNotEmpty
-                            ? event.assemblyTime
-                            : 'טרם נקבעה',
-                        style: TextStyle(
-                          fontSize: _getResponsiveFontSize(context,
-                              minSize: 14.0, maxSize: 16.0),
-                          fontWeight: FontWeight.w600,
-                          color: isUpcoming
-                              ? Colors.blue.shade900
-                              : Colors.grey.shade700,
+                      Expanded(
+                        child: _buildTimeRowValue(
+                          context,
+                          value: timeRows.arrival,
+                          note: timeRows.arrivalNote,
+                          highlighted: timeRows.hasCustomHours,
+                          valueStyle: TextStyle(
+                            fontSize: _getResponsiveFontSize(context,
+                                minSize: 14.0, maxSize: 16.0),
+                            fontWeight: FontWeight.w600,
+                            color: isUpcoming
+                                ? Colors.blue.shade900
+                                : Colors.grey.shade700,
+                          ),
+                          isUpcoming: isUpcoming,
                         ),
                       ),
                     ],
@@ -1110,8 +1124,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 ),
               ),
 
-            // 4. Team end time (סיום הצוות)
-            if (event.teamEndTime.isNotEmpty)
+            // 4. Team end time (סיום הצוות), or when the member leaves
+            if (timeRows.departure != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -1124,7 +1138,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'סיום צוות משוער:',
+                      timeRows.departureLabel,
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
                             minSize: 13.0, maxSize: 14.0),
@@ -1133,13 +1147,19 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      event.teamEndTime,
-                      style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context,
-                            minSize: 13.0, maxSize: 14.0),
-                        fontWeight: FontWeight.w500,
-                        color: textColor,
+                    Expanded(
+                      child: _buildTimeRowValue(
+                        context,
+                        value: timeRows.departure!,
+                        note: timeRows.departureNote,
+                        highlighted: timeRows.hasCustomHours,
+                        valueStyle: TextStyle(
+                          fontSize: _getResponsiveFontSize(context,
+                              minSize: 13.0, maxSize: 14.0),
+                          fontWeight: FontWeight.w500,
+                          color: textColor,
+                        ),
+                        isUpcoming: isUpcoming,
                       ),
                     ),
                   ],
@@ -1399,6 +1419,93 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       return '$dateStr (מחר)';
     }
     return dateStr;
+  }
+
+  /// Marks what the member's own hours changed on the card, as in the
+  /// approved mockup: a light wash behind the text.
+  static const Color _ownHoursHighlight = Color(0x99FFFFFF);
+
+  /// The bracket after a value: what the event itself does.
+  TextStyle _eventBracketStyle(bool isUpcoming, double fontSize) {
+    return TextStyle(
+      fontSize: fontSize,
+      fontWeight: FontWeight.w400,
+      color: isUpcoming ? Colors.grey.shade600 : Colors.grey.shade500,
+    );
+  }
+
+  /// The value of a date row: [date] as the card words it, then [note] (the
+  /// event's own end, when the member's hours put them on other days) in the
+  /// dimmer bracket style. Without a note it is the plain one-line date.
+  Widget _buildDateRowValue(
+    BuildContext context, {
+    required DateTime date,
+    required bool isToday,
+    required bool isTomorrow,
+    required String note,
+    required bool isUpcoming,
+  }) {
+    final dateSpan = _formatDateWithHighlight(
+      _formatSingleDayDisplay(date, isToday, isTomorrow),
+      isUpcoming,
+      context,
+    );
+    if (note.isEmpty) {
+      return Text.rich(
+        dateSpan,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            style: const TextStyle(backgroundColor: _ownHoursHighlight),
+            children: [dateSpan],
+          ),
+          TextSpan(
+            text: note,
+            style: _eventBracketStyle(
+              isUpcoming,
+              _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+            ),
+          ),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  /// The value of the arrival or departure row: [value] in [valueStyle]
+  /// (washed when it is the member's own, [highlighted]), then [note] in the
+  /// dimmer bracket style.
+  Widget _buildTimeRowValue(
+    BuildContext context, {
+    required String value,
+    required String note,
+    required bool highlighted,
+    required TextStyle valueStyle,
+    required bool isUpcoming,
+  }) {
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: value,
+            style: highlighted
+                ? valueStyle.copyWith(backgroundColor: _ownHoursHighlight)
+                : valueStyle,
+          ),
+          if (note.isNotEmpty)
+            TextSpan(
+              text: note,
+              style: _eventBracketStyle(isUpcoming, valueStyle.fontSize ?? 14.0),
+            ),
+        ],
+      ),
+    );
   }
 
   String _formatDayMonth(DateTime date) {
@@ -1985,4 +2092,134 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       ),
     );
   }
+}
+
+/// How a member's card words its date, arrival and departure rows.
+///
+/// Without custom hours these are the rows the card always had. With hours
+/// (see [memberCardTimeRows]) the date rows show the member's own days, the
+/// arrival row their arrival and the departure row their departure, each
+/// followed by what the event itself does.
+class MemberCardTimeRows extends Equatable {
+  const MemberCardTimeRows({
+    required this.hasCustomHours,
+    required this.firstDay,
+    required this.lastDay,
+    this.firstDayNote = '',
+    this.lastDayNote = '',
+    required this.arrivalLabel,
+    required this.arrival,
+    this.arrivalNote = '',
+    required this.departureLabel,
+    this.departure,
+    this.departureNote = '',
+  });
+
+  final bool hasCustomHours;
+
+  /// The days the date rows show: the member's own, or the event's.
+  final DateTime firstDay;
+  final DateTime lastDay;
+
+  /// `' (האירוע מ-<d.M>)'` when [firstDay] is not the event's first day, else
+  /// empty. Shown after the date.
+  final String firstDayNote;
+
+  /// `' (האירוע עד <d.M>)'` when [lastDay] is not the event's last day, else
+  /// empty. Shown after the date.
+  final String lastDayNote;
+
+  final String arrivalLabel;
+  final String arrival;
+
+  /// What follows [arrival] in brackets, with its leading space; may be empty.
+  final String arrivalNote;
+
+  final String departureLabel;
+
+  /// Null when there is nothing to show (no hours, and no team end time).
+  final String? departure;
+
+  /// What follows [departure] in brackets, with its leading space; may be
+  /// empty.
+  final String departureNote;
+
+  String get arrivalLine => '$arrivalLabel $arrival$arrivalNote';
+
+  String? get departureLine =>
+      departure == null ? null : '$departureLabel $departure$departureNote';
+
+  @override
+  List<Object?> get props => [
+        hasCustomHours,
+        firstDay,
+        lastDay,
+        firstDayNote,
+        lastDayNote,
+        arrivalLabel,
+        arrival,
+        arrivalNote,
+        departureLabel,
+        departure,
+        departureNote,
+      ];
+}
+
+/// The wording of a member's card rows for [event], given the [window] of
+/// their own hours (null when they have none, or none that can be read).
+///
+/// Without a window: the event's days, `שעת התייצבות: <assembly>` and, when
+/// the event has a team end time, `סיום צוות משוער: <time>`. With one:
+/// - the days are the member's ([windowDays]), each end that differs from the
+///   event's naming the event's own day;
+/// - `ההגעה שלך: <HH:mm> (התייצבות צוות <assembly>)`, the arrival prefixed with
+///   its day when it is not the event's first day, the bracket dropped when
+///   the event has no assembly time;
+/// - `היציאה שלך: <d.M HH:mm> (סיום צוות <d.M HH:mm>)`, the bracket the end of
+///   the event's stretch, dropped when the event gives neither a team end nor
+///   a show end (the stretch would only be a day edge). A departure at exactly
+///   00:00 reads as the next day's 00:00.
+MemberCardTimeRows memberCardTimeRows(Event event, WallInterval? window) {
+  if (window == null) {
+    return MemberCardTimeRows(
+      hasCustomHours: false,
+      firstDay: event.startDate,
+      lastDay: event.endDate,
+      arrivalLabel: 'שעת התייצבות:',
+      arrival: event.assemblyTime.isNotEmpty ? event.assemblyTime : 'טרם נקבעה',
+      departureLabel: 'סיום צוות משוער:',
+      departure: event.teamEndTime.isNotEmpty ? event.teamEndTime : null,
+    );
+  }
+
+  final own = windowDays(window);
+  final whole = eventDays(event);
+  final arrivesOnFirstDay = own.first == whole.first;
+  final assembly = event.assemblyTime.trim();
+
+  final stretchEnd = eventStretch(event).end;
+  final eventHasAnEnd = wallTimeMinutes(event.teamEndTime) != null ||
+      wallTimeMinutes(event.endTime) != null;
+
+  return MemberCardTimeRows(
+    hasCustomHours: true,
+    firstDay: own.first,
+    lastDay: own.last,
+    firstDayNote: own.first == whole.first
+        ? ''
+        : ' (האירוע מ-${formatWallDay(whole.first)})',
+    lastDayNote: own.last == whole.last
+        ? ''
+        : ' (האירוע עד ${formatWallDay(whole.last)})',
+    arrivalLabel: 'ההגעה שלך:',
+    arrival: arrivesOnFirstDay
+        ? formatWallTime(window.start)
+        : '${formatWallDay(window.start)} ${formatWallTime(window.start)}',
+    arrivalNote: assembly.isEmpty ? '' : ' (התייצבות צוות $assembly)',
+    departureLabel: 'היציאה שלך:',
+    departure: '${formatWallDay(window.end)} ${formatWallTime(window.end)}',
+    departureNote: eventHasAnEnd
+        ? ' (סיום צוות ${formatWallDay(stretchEnd)} ${formatWallTime(stretchEnd)})'
+        : '',
+  );
 }

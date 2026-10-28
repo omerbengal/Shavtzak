@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
+import 'package:shavtzak/core/utils/event_stretch.dart';
 import 'package:shavtzak/core/utils/same_day_assignments.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
@@ -314,6 +315,25 @@ void main() {
           range(DateTime(2026, 10, 25)),
         ),
         isTrue,
+      );
+    });
+  });
+
+  group('windowDays', () {
+    WallInterval window(DateTime start, DateTime end) =>
+        WallInterval(start, end);
+
+    test('is the day of the start to the day of the last minute', () {
+      expect(
+        windowDays(window(DateTime.utc(2026, 10, 27, 14), DateTime.utc(2026, 10, 28, 2))),
+        DayRange(DateTime(2026, 10, 27), DateTime(2026, 10, 28)),
+      );
+    });
+
+    test('an end at exactly midnight stays on the day before', () {
+      expect(
+        windowDays(window(DateTime.utc(2026, 10, 27, 18), DateTime.utc(2026, 10, 28))),
+        DayRange(DateTime(2026, 10, 27), DateTime(2026, 10, 27)),
       );
     });
   });

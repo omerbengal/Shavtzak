@@ -4,8 +4,10 @@
 // warning lines.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/constants/constraint_status.dart';
+import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/utils/custom_hours.dart';
 import 'package:shavtzak/core/utils/event_stretch.dart';
+import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 
@@ -49,6 +51,66 @@ void main() {
         )),
         '5.3 09:05–10:00',
       );
+    });
+  });
+
+  group('formatWallDay and formatWallTime', () {
+    test('a day is d.M with no padding; a time is HH:mm with it', () {
+      final moment = DateTime.utc(2026, 3, 5, 9, 7);
+      expect(formatWallDay(moment), '5.3');
+      expect(formatWallTime(moment), '09:07');
+    });
+
+    test('a local date reads the same way', () {
+      expect(formatWallDay(DateTime(2026, 10, 27)), '27.10');
+    });
+  });
+
+  group('firstCustomWindow', () {
+    Assignment held(String id, {String? start, String? end}) => Assignment(
+          id: id,
+          eventId: 'e1',
+          teamMemberId: 'm1',
+          roleType: 'medic',
+          slotIndex: 0,
+          status: AssignmentStatus.confirmed,
+          notes: '',
+          customStartAt: start,
+          customEndAt: end,
+          createdAt: DateTime(2026, 10, 1),
+          updatedAt: DateTime(2026, 10, 1),
+        );
+
+    test('is the first assignment\'s window, in the order given', () {
+      final window = firstCustomWindow([
+        held('a1'),
+        held('a2', start: '2026-10-27T14:00', end: '2026-10-27T23:00'),
+        held('a3', start: '2026-10-28T08:00', end: '2026-10-28T12:00'),
+      ]);
+
+      expect(
+        window,
+        WallInterval(DateTime.utc(2026, 10, 27, 14), DateTime.utc(2026, 10, 27, 23)),
+      );
+    });
+
+    test('skips hours that cannot be read or end before they start', () {
+      final window = firstCustomWindow([
+        held('a1', start: 'garbage', end: '2026-10-27T23:00'),
+        held('a2', start: '2026-10-27T23:00', end: '2026-10-27T14:00'),
+        held('a3', start: '2026-10-28T08:00', end: '2026-10-28T12:00'),
+      ]);
+
+      expect(
+        window,
+        WallInterval(DateTime.utc(2026, 10, 28, 8), DateTime.utc(2026, 10, 28, 12)),
+      );
+    });
+
+    test('is null when no assignment has usable hours', () {
+      expect(firstCustomWindow([held('a1'), held('a2', start: 'x', end: 'y')]),
+          isNull);
+      expect(firstCustomWindow(const []), isNull);
     });
   });
 

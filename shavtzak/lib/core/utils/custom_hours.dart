@@ -1,6 +1,7 @@
 // Small helpers around an assignment's custom hours: how they read as text,
 // whole-day arithmetic, whether an event save moves the event in time, and the
 // warning lines for constraints that fall inside a member's hours.
+import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import 'constraint_labels.dart';
@@ -10,9 +11,13 @@ const String _dash = '–';
 
 String _two(int value) => value.toString().padLeft(2, '0');
 
-String _day(DateTime moment) => '${moment.day}.${moment.month}';
+/// A day as d.M, '27.10'. Reads the fields as they are, so it serves a wall
+/// moment and a local date alike.
+String formatWallDay(DateTime moment) => '${moment.day}.${moment.month}';
 
-String _time(DateTime moment) => '${_two(moment.hour)}:${_two(moment.minute)}';
+/// A time of day as HH:mm, '09:05'.
+String formatWallTime(DateTime moment) =>
+    '${_two(moment.hour)}:${_two(moment.minute)}';
 
 /// A window as the admin reads it:
 /// - '27.10 14:00–23:00' when the start and the end fall on the same day;
@@ -26,9 +31,26 @@ String formatCustomHours(WallInterval window) {
   final sameDay =
       start.year == end.year && start.month == end.month && start.day == end.day;
   if (sameDay) {
-    return '${_day(start)} ${_time(start)}$_dash${_time(end)}';
+    return '${formatWallDay(start)} ${formatWallTime(start)}$_dash'
+        '${formatWallTime(end)}';
   }
-  return '${_day(start)} ${_time(start)} $_dash ${_day(end)} ${_time(end)}';
+  return '${formatWallDay(start)} ${formatWallTime(start)} $_dash '
+      '${formatWallDay(end)} ${formatWallTime(end)}';
+}
+
+/// The first usable custom window among [assignments], in the order given;
+/// null when none has one.
+///
+/// One member holds one set of hours across their roles in an event (the
+/// backend enforces it, except for members flagged `allowMultipleAssignments`,
+/// who may differ); the screens that show a member's hours once take the first.
+/// Hours that cannot be read count as no hours.
+WallInterval? firstCustomWindow(Iterable<Assignment> assignments) {
+  for (final assignment in assignments) {
+    final window = assignment.customWindow;
+    if (window != null) return window;
+  }
+  return null;
 }
 
 /// Whole calendar days from [from] to [to], negative when [to] is earlier.
