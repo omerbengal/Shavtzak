@@ -84,7 +84,14 @@ mixin TaskScreenActions<T extends StatefulWidget> on State<T> {
 
   Future<void> importFromExcel(Event event, TeamMember user) async {
     Logger.action('tap:tasksImport');
-    final file = await importFiles.pickXlsx();
+    final PickedImportFile? file;
+    try {
+      file = await importFiles.pickXlsx();
+    } catch (error) {
+      Logger.warning('tasksImport:readFailed', {'error': '$error'});
+      if (mounted) _showError(importFileReadError);
+      return;
+    }
     if (file == null || !mounted) return;
     final result = await showTaskImportDialog(
       context,

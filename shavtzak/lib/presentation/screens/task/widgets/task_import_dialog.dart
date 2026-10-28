@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/debug/logger.dart';
 import '../../../../core/services/task_import_files.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/task_import/task_import_parser.dart';
@@ -10,6 +11,10 @@ import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/imported_stage.dart';
 import '../../../../domain/entities/team_member.dart';
+
+/// Shown when the browser could not hand over the picked file's contents.
+const String importFileReadError =
+    'לא ניתן היה לקרוא את הקובץ. אם הוא פתוח באקסל, סגרו אותו ונסו שוב.';
 
 /// Checks [file] against [event] and, when it is clean, imports it.
 ///
@@ -111,20 +116,37 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
   TaskImportResult? _parse() {
     final members = _members;
     if (members == null) return null;
-    return parseTaskImport(
-      _file.bytes,
-      event: widget.event,
-      candidates: members,
-      currentUserId: widget.currentUserId,
-      now: widget.now,
-    );
+    try {
+      return parseTaskImport(
+        _file.bytes,
+        event: widget.event,
+        candidates: members,
+        currentUserId: widget.currentUserId,
+        now: widget.now,
+      );
+    } catch (error) {
+      // A file the parser did not expect must not leave the spinner up.
+      Logger.warning('tasksImport:parseFailed', {'error': '$error'});
+      return const TaskImportResult(
+        stages: [],
+        problems: [ImportProblem('לא ניתן היה לקרוא את הקובץ')],
+      );
+    }
   }
 
   Future<void> _pickAgain() async {
-    final picked = await widget.files.pickXlsx();
-    if (picked == null || !mounted) return;
+    PickedImportFile? picked;
+    try {
+      picked = await widget.files.pickXlsx();
+    } catch (error) {
+      Logger.warning('tasksImport:readFailed', {'error': '$error'});
+      if (mounted) setState(() => _importError = importFileReadError);
+      return;
+    }
+    final file = picked;
+    if (file == null || !mounted) return;
     setState(() {
-      _file = picked;
+      _file = file;
       _importError = null;
       _wasSent = false;
       _result = _parse();
