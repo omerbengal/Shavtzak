@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {Timestamp} from 'firebase-admin/firestore';
 import {
+  eventTimesChanged,
   findSharedHoursViolations,
   hoursAfterWrites,
   inheritedHours,
+  planEventHoursResolution,
   validateCustomHoursPair,
+  type HoursResolution,
   type HoursRow,
 } from './assignment_hours';
 
@@ -172,5 +176,234 @@ test('hoursAfterWrites: an update of an unknown row overlays nothing', () => {
   assert.deepEqual(
     hoursAfterWrites({live: [], updates: [{id: 'a1', doc: doc('e', 'm')}]}),
     [row('a1', 'm', null, null)],
+  );
+});
+
+// eventTimesChanged: the stored event against the one a save writes.
+
+// Events store each day as the UTC instant of Israel midnight (UTC+2 in
+// December): 2026-11-30T22:00Z is 1 December in Israel.
+const israelMidnight = (iso: string) => Timestamp.fromDate(new Date(iso));
+
+const storedEvent = (): Record<string, unknown> => ({
+  name: 'הופעה',
+  location: 'תל אביב',
+  startDate: israelMidnight('2026-11-30T22:00:00Z'),
+  endDate: israelMidnight('2026-11-30T22:00:00Z'),
+  assemblyTime: '17:00',
+  startTime: '19:00',
+  actualShowStartTime: '19:30',
+  endTime: '22:00',
+  teamEndTime: '23:00',
+});
+
+test('eventTimesChanged: only teamEndTime changed is a change', () => {
+  assert.equal(eventTimesChanged(storedEvent(), {...storedEvent(), teamEndTime: '23:30'}), true);
+});
+
+test('eventTimesChanged: every other time field counts too', () => {
+  for (const field of ['assemblyTime', 'startTime', 'actualShowStartTime', 'endTime']) {
+    assert.equal(eventTimesChanged(storedEvent(), {...storedEvent(), [field]: '20:15'}), true, field);
+  }
+});
+
+test('eventTimesChanged: only the name or the location changed is no change', () => {
+  assert.equal(eventTimesChanged(storedEvent(), {...storedEvent(), name: 'הופעה חדשה'}), false);
+  assert.equal(eventTimesChanged(storedEvent(), {...storedEvent(), location: 'חיפה'}), false);
+});
+
+test('eventTimesChanged: the start date moved by one day is a change', () => {
+  assert.equal(
+    eventTimesChanged(storedEvent(), {...storedEvent(), startDate: israelMidnight('2026-12-01T22:00:00Z')}),
+    true,
+  );
+});
+
+test('eventTimesChanged: the end date moved by one day is a change', () => {
+  assert.equal(
+    eventTimesChanged(storedEvent(), {...storedEvent(), endDate: israelMidnight('2026-12-01T22:00:00Z')}),
+    true,
+  );
+});
+
+test('eventTimesChanged: dates compare by Israel day, not by instant', () => {
+  // 30 November 22:00Z and 1 December 10:00Z are both 1 December in Israel,
+  // while 30 November 21:59Z is still 30 November there.
+  assert.equal(
+    eventTimesChanged(storedEvent(), {...storedEvent(), startDate: Timestamp.fromDate(new Date('2026-12-01T10:00:00Z'))}),
+    false,
+  );
+  assert.equal(
+    eventTimesChanged(storedEvent(), {...storedEvent(), startDate: Timestamp.fromDate(new Date('2026-11-30T21:59:00Z'))}),
+    true,
+  );
+});
+
+test('eventTimesChanged: an absent time is the empty string, and times are trimmed', () => {
+  const before = {...storedEvent(), actualShowStartTime: undefined};
+  assert.equal(eventTimesChanged(before, {...storedEvent(), actualShowStartTime: ''}), false);
+  assert.equal(eventTimesChanged(storedEvent(), {...storedEvent(), startTime: ' 19:00 '}), false);
+});
+
+// planEventHoursResolution: the hours an event save writes when its times change.
+
+const HOURS: [string, string] = ['2026-12-01T17:00', '2026-12-02T01:00'];
+const NEW_HOURS: [string, string] = ['2026-12-02T17:00', '2026-12-03T01:00'];
+
+const resolution = (
+  assignmentId: string,
+  customStartAt: string | null,
+  customEndAt: string | null,
+): HoursResolution => ({assignmentId, customStartAt, customEndAt});
+
+test('planEventHoursResolution: times unchanged ignores hours and resolutions (an old client edits a name)', () => {
+  const live = [row('a1', 'm', ...HOURS), row('a2', 'n', null, null)];
+  assert.deepEqual(
+    planEventHoursResolution({timesChanged: false, live, resolutions: [], exemptMemberIds: new Set()}),
+    {ok: true, updates: []},
+  );
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: false,
+      live,
+      resolutions: [resolution('a1', '2026-12-01T17:00', null)],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: true, updates: []},
+  );
+});
+
+test('planEventHoursResolution: times changed with no hours in the event needs no resolution (an old client)', () => {
+  const live = [row('a1', 'm', null, null), row('a2', 'n', null, null)];
+  assert.deepEqual(
+    planEventHoursResolution({timesChanged: true, live, resolutions: [], exemptMemberIds: new Set()}),
+    {ok: true, updates: []},
+  );
+});
+
+test('planEventHoursResolution: times changed and a row with hours left unresolved is uncovered', () => {
+  const live = [row('a1', 'm', ...HOURS), row('a2', 'n', null, null)];
+  assert.deepEqual(
+    planEventHoursResolution({timesChanged: true, live, resolutions: [], exemptMemberIds: new Set()}),
+    {ok: false, reason: 'uncovered'},
+  );
+});
+
+test('planEventHoursResolution: stored hours that cannot be read still need a resolution', () => {
+  const live = [row('a1', 'm', '2026-12-01 17:00', null)];
+  assert.deepEqual(
+    planEventHoursResolution({timesChanged: true, live, resolutions: [], exemptMemberIds: new Set()}),
+    {ok: false, reason: 'uncovered'},
+  );
+});
+
+test('planEventHoursResolution: a resolution for every row with hours gives exactly those updates', () => {
+  const live = [row('a1', 'm', ...HOURS), row('b1', 'n', ...HOURS), row('c1', 'p', null, null)];
+  const resolutions = [resolution('a1', ...NEW_HOURS), resolution('b1', null, null)];
+  assert.deepEqual(
+    planEventHoursResolution({timesChanged: true, live, resolutions, exemptMemberIds: new Set()}),
+    {ok: true, updates: resolutions},
+  );
+});
+
+test('planEventHoursResolution: a resolution for an assignment no longer in the event is dropped', () => {
+  const live = [row('a1', 'm', ...HOURS)];
+  const kept = resolution('a1', ...NEW_HOURS);
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: true,
+      live,
+      resolutions: [kept, resolution('deleted', ...NEW_HOURS)],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: true, updates: [kept]},
+  );
+});
+
+test('planEventHoursResolution: of two resolutions for one assignment, the later is the one written', () => {
+  const live = [row('a1', 'm', ...HOURS)];
+  const later = resolution('a1', null, null);
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: true,
+      live,
+      resolutions: [resolution('a1', ...NEW_HOURS), later],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: true, updates: [later]},
+  );
+});
+
+test('planEventHoursResolution: a resolution with half a pair is invalid', () => {
+  const live = [row('a1', 'm', ...HOURS)];
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: true,
+      live,
+      resolutions: [resolution('a1', '2026-12-01T17:00', null)],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: false, reason: 'invalid'},
+  );
+});
+
+test('planEventHoursResolution: a resolution whose end is not after its start is invalid', () => {
+  const live = [row('a1', 'm', ...HOURS)];
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: true,
+      live,
+      resolutions: [resolution('a1', '2026-12-02T01:00', '2026-12-01T17:00')],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: false, reason: 'invalid'},
+  );
+});
+
+test('planEventHoursResolution: one of a member\'s two rows with hours resolved and the other not is uncovered', () => {
+  const live = [row('a1', 'm', ...HOURS), row('a2', 'm', ...HOURS)];
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: true,
+      live,
+      resolutions: [resolution('a1', ...NEW_HOURS)],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: false, reason: 'uncovered'},
+  );
+});
+
+test('planEventHoursResolution: a member\'s two rows resolved to different hours is shared', () => {
+  const live = [row('a1', 'm', ...HOURS), row('a2', 'm', ...HOURS)];
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: true,
+      live,
+      resolutions: [resolution('a1', ...NEW_HOURS), resolution('a2', ...HOURS)],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: false, reason: 'shared'},
+  );
+});
+
+test('planEventHoursResolution: resolving one row to hours its unresolved sibling without hours lacks is shared', () => {
+  const live = [row('a1', 'm', ...HOURS), row('a2', 'm', null, null)];
+  assert.deepEqual(
+    planEventHoursResolution({
+      timesChanged: true,
+      live,
+      resolutions: [resolution('a1', ...NEW_HOURS)],
+      exemptMemberIds: new Set(),
+    }),
+    {ok: false, reason: 'shared'},
+  );
+});
+
+test('planEventHoursResolution: an exempt member may end with different hours on each row', () => {
+  const live = [row('a1', 'm', ...HOURS), row('a2', 'm', ...HOURS)];
+  const resolutions = [resolution('a1', ...NEW_HOURS), resolution('a2', null, null)];
+  assert.deepEqual(
+    planEventHoursResolution({timesChanged: true, live, resolutions, exemptMemberIds: new Set(['m'])}),
+    {ok: true, updates: resolutions},
   );
 });

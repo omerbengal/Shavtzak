@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   __testAssignmentDocFromJson as assignmentDocFromJson,
+  __testHoursResolutionError as hoursResolutionError,
+  __testReadHoursResolutions as readHoursResolutions,
   __testRequireValidCustomHours as requireValidCustomHours,
   planAssignmentSaveBatch,
   planCreatedAssignmentHours,
@@ -201,4 +203,73 @@ test('planAssignmentSaveBatch: hours sent on a create or an update are kept', ()
   assert.equal(plan.creates[0].doc['customEndAt'], '2026-12-02T01:00');
   assert.equal(plan.updates[0].doc['customStartAt'], null);
   assert.equal(plan.updates[0].doc['customEndAt'], null);
+});
+
+// event.update's customHoursResolutions: reading the payload, and the refusals.
+
+const UNCOVERED = 'לחלק מהצוות נוספו שעות מותאמות בינתיים — יש לפתוח את האירוע מחדש';
+
+test('readHoursResolutions: an absent field (an old client) is no resolutions', () => {
+  assert.deepEqual(readHoursResolutions(undefined), []);
+  assert.deepEqual(readHoursResolutions(null), []);
+});
+
+test('readHoursResolutions: entries with hours or explicit nulls are read as sent', () => {
+  assert.deepEqual(
+    readHoursResolutions([
+      {assignmentId: 'a1', customStartAt: '2026-12-01T17:00', customEndAt: '2026-12-02T01:00'},
+      {assignmentId: 'a2', customStartAt: null, customEndAt: null},
+    ]),
+    [
+      {assignmentId: 'a1', customStartAt: '2026-12-01T17:00', customEndAt: '2026-12-02T01:00'},
+      {assignmentId: 'a2', customStartAt: null, customEndAt: null},
+    ],
+  );
+});
+
+test('readHoursResolutions: a field that is not a list is refused', () => {
+  assert.throws(() => readHoursResolutions({assignmentId: 'a1'}), (error: unknown) => {
+    assert.equal((error as {status?: number}).status, 400);
+    return true;
+  });
+});
+
+test('readHoursResolutions: an entry missing a key, or holding a non-string, is incomplete', () => {
+  assert.throws(
+    () => readHoursResolutions([{assignmentId: 'a1', customStartAt: '2026-12-01T17:00'}]),
+    httpError(400, INCOMPLETE),
+  );
+  assert.throws(
+    () => readHoursResolutions([{assignmentId: 'a1', customStartAt: 17, customEndAt: null}]),
+    httpError(400, INCOMPLETE),
+  );
+});
+
+test('readHoursResolutions: an entry without an assignment id is refused', () => {
+  assert.throws(() => readHoursResolutions([{customStartAt: null, customEndAt: null}]));
+});
+
+test('hoursResolutionError: uncovered is a 409 asking to reopen the event', () => {
+  assert.throws(() => {
+    throw hoursResolutionError('uncovered', [], []);
+  }, httpError(409, UNCOVERED));
+});
+
+test('hoursResolutionError: shared is a 400 with the shared-hours message', () => {
+  assert.throws(() => {
+    throw hoursResolutionError('shared', [], []);
+  }, httpError(400, SHARED));
+});
+
+test('hoursResolutionError: invalid names the problem of a resolution for a row still in the event', () => {
+  const live = [row('a1', 'm', '2026-12-01T17:00', '2026-12-02T01:00')];
+  const half = {assignmentId: 'a1', customStartAt: '2026-12-01T17:00', customEndAt: null};
+  const backwards = {assignmentId: 'a1', customStartAt: '2026-12-02T01:00', customEndAt: '2026-12-01T17:00'};
+  const droppedHalf = {assignmentId: 'deleted', customStartAt: '2026-12-01T17:00', customEndAt: null};
+  assert.throws(() => {
+    throw hoursResolutionError('invalid', [half], live);
+  }, httpError(400, INCOMPLETE));
+  assert.throws(() => {
+    throw hoursResolutionError('invalid', [droppedHalf, backwards], live);
+  }, httpError(400, ORDER));
 });

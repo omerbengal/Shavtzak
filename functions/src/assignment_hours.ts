@@ -8,7 +8,10 @@
 // whose slots are different people). Pure: index.ts reads Firestore and
 // throws.
 
+import {Timestamp} from 'firebase-admin/firestore';
+
 import {customHoursInterval, parseWallMoment} from './event_stretch';
+import {eventLocalDays} from './stages';
 
 /** One assignment, reduced to what the shared-hours rule looks at. */
 export interface HoursRow {
@@ -145,4 +148,83 @@ export function hoursAfterWrites(args: {
     });
   }
   return Array.from(rows.values());
+}
+
+/** The five times of an event; with its two dates they place it in time. */
+const EVENT_TIME_FIELDS = ['assemblyTime', 'startTime', 'actualShowStartTime', 'endTime', 'teamEndTime'];
+
+/**
+ * Whether a save moves the event in time: its first or last day, or any of
+ * its five times, differs. Days compare as Israel calendar days (an event
+ * stores a day as the Timestamp of Israel midnight); times as trimmed strings,
+ * an absent one being ''. The name, location and every other field never count.
+ */
+export function eventTimesChanged(before: Record<string, unknown>, after: Record<string, unknown>): boolean {
+  if (israelDayKey(before['startDate']) !== israelDayKey(after['startDate'])) return true;
+  if (israelDayKey(before['endDate']) !== israelDayKey(after['endDate'])) return true;
+  return EVENT_TIME_FIELDS.some((field) => trimmedText(before[field]) !== trimmedText(after[field]));
+}
+
+/** A stored day as its Israel 'yyyy-MM-dd', or '' when it is not a Timestamp. */
+function israelDayKey(value: unknown): string {
+  return value instanceof Timestamp ? eventLocalDays(value.toMillis(), null)[0] : '';
+}
+
+function trimmedText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/** The hours an event save gives one assignment; null clears them. */
+export interface HoursResolution {
+  assignmentId: string;
+  customStartAt: string | null;
+  customEndAt: string | null;
+}
+
+/** Whether a row stores hours, readable or not. */
+export function rowHasHours(row: HoursRow): boolean {
+  return row.customStartAt != null || row.customEndAt != null;
+}
+
+/**
+ * The assignment hours an event.update writes along with the event. `live` is
+ * every assignment of the event, read in the same transaction.
+ * - Times unchanged: nothing, and the resolutions are ignored.
+ * - Times changed: every row that stores hours needs a resolution, else
+ *   'uncovered' (hours were added after the client opened the event).
+ *   Resolutions for rows no longer in the event are dropped; of two for one
+ *   row, the later wins. Each pair must be 'none' or 'ok', else 'invalid', and
+ *   the rows after them must pass findSharedHoursViolations, else 'shared'.
+ */
+export function planEventHoursResolution(args: {
+  timesChanged: boolean;
+  live: HoursRow[];
+  resolutions: HoursResolution[];
+  exemptMemberIds: ReadonlySet<string>;
+}): {ok: true; updates: HoursResolution[]} | {ok: false; reason: 'uncovered' | 'invalid' | 'shared'} {
+  if (!args.timesChanged) return {ok: true, updates: []};
+  const liveIds = new Set(args.live.map((row) => row.id));
+  const resolved = new Map<string, HoursResolution>();
+  for (const resolution of args.resolutions) {
+    if (liveIds.has(resolution.assignmentId)) resolved.set(resolution.assignmentId, resolution);
+  }
+  if (args.live.some((row) => rowHasHours(row) && !resolved.has(row.id))) {
+    return {ok: false, reason: 'uncovered'};
+  }
+  const updates = Array.from(resolved.values());
+  const invalid = updates.some((resolution) => {
+    const verdict = validateCustomHoursPair(resolution.customStartAt, resolution.customEndAt);
+    return verdict !== 'none' && verdict !== 'ok';
+  });
+  if (invalid) return {ok: false, reason: 'invalid'};
+  const after = args.live.map((row) => {
+    const resolution = resolved.get(row.id);
+    return resolution == null
+      ? row
+      : {...row, customStartAt: resolution.customStartAt, customEndAt: resolution.customEndAt};
+  });
+  if (findSharedHoursViolations(after, args.exemptMemberIds).length > 0) {
+    return {ok: false, reason: 'shared'};
+  }
+  return {ok: true, updates};
 }

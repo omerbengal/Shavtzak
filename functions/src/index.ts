@@ -9,6 +9,7 @@ import {
   Firestore,
   QueryDocumentSnapshot,
   Timestamp,
+  Transaction,
   WriteBatch,
   getFirestore,
 } from 'firebase-admin/firestore';
@@ -82,11 +83,15 @@ import {
   type WallInterval,
 } from './event_stretch';
 import {
+  eventTimesChanged,
   findSharedHoursViolations,
   hoursAfterWrites,
   hoursRowFromDoc,
   inheritedHours,
+  planEventHoursResolution,
+  rowHasHours,
   validateCustomHoursPair,
+  type HoursResolution,
   type HoursRow,
 } from './assignment_hours';
 
@@ -315,26 +320,30 @@ async function executeCalendarActionWithQuotaCircuit(
 }
 
 function markEventCalendarJob(
-  batch: WriteBatch,
+  writer: WriteBatch | Transaction,
   collections: Collections,
   eventId: string,
   actor: CalendarJobActor,
 ): void {
-  batch.set(
-    db.collection(collections.eventCalendarJobs).doc(eventId),
-    {
-      eventId,
-      revision: FieldValue.increment(1),
-      dirty: true,
-      status: 'pending',
-      dueAt: Timestamp.fromMillis(Date.now() + EVENT_SYNC_DEBOUNCE_SECONDS * 1000),
-      requestedByMemberId: actor.memberId,
-      requestedByIsAdmin: actor.isAdmin,
-      updatedAt: FieldValue.serverTimestamp(),
-      lastError: FieldValue.delete(),
-    },
-    {merge: true},
-  );
+  const jobRef = db.collection(collections.eventCalendarJobs).doc(eventId);
+  const job = {
+    eventId,
+    revision: FieldValue.increment(1),
+    dirty: true,
+    status: 'pending',
+    dueAt: Timestamp.fromMillis(Date.now() + EVENT_SYNC_DEBOUNCE_SECONDS * 1000),
+    requestedByMemberId: actor.memberId,
+    requestedByIsAdmin: actor.isAdmin,
+    updatedAt: FieldValue.serverTimestamp(),
+    lastError: FieldValue.delete(),
+  };
+  // Both take the same arguments, but TypeScript cannot call through a union
+  // of their overloaded set methods, so narrow first.
+  if (writer instanceof Transaction) {
+    writer.set(jobRef, job, {merge: true});
+  } else {
+    writer.set(jobRef, job, {merge: true});
+  }
 }
 
 async function enqueueCalendarTask(
@@ -2973,6 +2982,7 @@ function assignmentDocFromJson(assignment: Record<string, unknown>): Record<stri
 const CUSTOM_HOURS_INCOMPLETE_MESSAGE = 'שעות מותאמות חייבות לכלול תאריך ושעה של הגעה ושל עזיבה';
 const CUSTOM_HOURS_ORDER_MESSAGE = 'שעת העזיבה חייבת להיות אחרי שעת ההגעה';
 const SHARED_HOURS_MESSAGE = 'לחבר/ת צוות חייבות להיות אותן שעות מותאמות בכל התפקידים באירוע';
+const CUSTOM_HOURS_UNCOVERED_MESSAGE = 'לחלק מהצוות נוספו שעות מותאמות בינתיים — יש לפתוח את האירוע מחדש';
 
 // The shape of the custom hours an assignment payload carries. Nothing to
 // check when neither key is present (an old build). Both keys travel
@@ -3042,6 +3052,82 @@ async function readEventHoursRowsInTransaction(
   return snapshot.docs
     .map((doc) => hoursRowFromDoc(doc.id, doc.data()))
     .filter((row): row is HoursRow => row != null);
+}
+
+// The members among `memberIds` with allowMultipleAssignments, read inside
+// the transaction that relies on them. A missing member is not exempt.
+async function readExemptMemberIdsInTransaction(
+  transaction: FirebaseFirestore.Transaction,
+  collections: Collections,
+  memberIds: Iterable<string>,
+): Promise<Set<string>> {
+  const ids = Array.from(new Set(memberIds));
+  if (ids.length === 0) return new Set();
+  const snapshots = await transaction.getAll(
+    ...ids.map((id) => db.collection(collections.teamMembers).doc(id)),
+  );
+  return new Set(
+    snapshots
+      .filter((snapshot) => snapshot.data()?.['allowMultipleAssignments'] === true)
+      .map((snapshot) => snapshot.id),
+  );
+}
+
+// The stored event an event.update writes over: 404 when it is gone, 409
+// while its deletion is pending.
+function requireUpdatableEvent(
+  snapshot: FirebaseFirestore.DocumentSnapshot,
+): Record<string, unknown> {
+  if (!snapshot.exists) {
+    throw new HttpError(404, 'Event not found');
+  }
+  const data = snapshot.data() ?? {};
+  if (data[EVENT_DELETION_PENDING_FIELD] === true) {
+    throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
+  }
+  return data;
+}
+
+// event.update's optional customHoursResolutions: absent (an old client) is
+// none. Each entry names an assignment and states both hours keys, each a
+// string or null; a missing or non-string value is refused as incomplete,
+// like a lone key on an assignment (requireValidCustomHours).
+function readHoursResolutions(raw: unknown): HoursResolution[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new HttpError(400, 'customHoursResolutions must be an array');
+  }
+  const isHoursValue = (value: unknown): value is string | null =>
+    value === null || typeof value === 'string';
+  return raw.map((entry) => {
+    const e = (entry ?? {}) as Record<string, unknown>;
+    const assignmentId = requireString(e['assignmentId'], 'customHoursResolution.assignmentId');
+    const customStartAt = e['customStartAt'];
+    const customEndAt = e['customEndAt'];
+    if (!isHoursValue(customStartAt) || !isHoursValue(customEndAt)) {
+      throw new HttpError(400, CUSTOM_HOURS_INCOMPLETE_MESSAGE);
+    }
+    return {assignmentId, customStartAt, customEndAt};
+  });
+}
+
+// The refusal for an event.update that planEventHoursResolution turned down.
+// 'invalid' is judged on the resolutions the plan kept (those for rows still
+// in `live`): incomplete when any of them is, else the order message.
+function hoursResolutionError(
+  reason: 'uncovered' | 'invalid' | 'shared',
+  resolutions: HoursResolution[],
+  live: HoursRow[],
+): HttpError {
+  if (reason === 'uncovered') return new HttpError(409, CUSTOM_HOURS_UNCOVERED_MESSAGE);
+  if (reason === 'shared') return new HttpError(400, SHARED_HOURS_MESSAGE);
+  const liveIds = new Set(live.map((row) => row.id));
+  const incomplete = resolutions.some(
+    (resolution) =>
+      liveIds.has(resolution.assignmentId) &&
+      validateCustomHoursPair(resolution.customStartAt, resolution.customEndAt) === 'incomplete',
+  );
+  return new HttpError(400, incomplete ? CUSTOM_HOURS_INCOMPLETE_MESSAGE : CUSTOM_HOURS_ORDER_MESSAGE);
 }
 
 // Pure planning step for assignment.saveBatch: partitions the raw payload
@@ -4404,14 +4490,7 @@ async function executeMutation(
       const event = payload['event'] as Record<string, unknown>;
       const eventId = requireString(event['id'], 'event.id');
       const eventRef = db.collection(collections.events).doc(eventId);
-      const existingDoc = await eventRef.get();
-      if (!existingDoc.exists) {
-        throw new HttpError(404, 'Event not found');
-      }
-      const existing = existingDoc.data() ?? {};
-      if (existing[EVENT_DELETION_PENDING_FIELD] === true) {
-        throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
-      }
+      const existing = requireUpdatableEvent(await eventRef.get());
       const existingParkingEditorIds = Array.isArray(existing['parkingEditorIds'])
         ? existing['parkingEditorIds'].map((value) => String(value))
         : [];
@@ -4467,14 +4546,49 @@ async function executeMutation(
         throw new HttpError(400, 'כבר קיים אירוע בשם זה בתאריך זה');
       }
       const nextEvent = eventDocFromJson(event);
-      const eventBatch = db.batch();
-      eventBatch.update(eventRef, nextEvent);
-      markEventCalendarJob(eventBatch, collections, eventId, actor);
-      await eventBatch.commit();
+      const resolutions = readHoursResolutions(payload['customHoursResolutions']);
+      // When the save moves the event in time, every assignment with custom
+      // hours must be resolved in the same request (the client asks the admin
+      // first); the event and those hours commit together. An assignment that
+      // gained hours after the client opened the event is uncovered: 409.
+      let stored: Record<string, unknown> = {};
+      let resolvedHours: HoursResolution[] = [];
+      await db.runTransaction(async (transaction) => {
+        stored = requireUpdatableEvent(await transaction.get(eventRef));
+        const timesChanged = eventTimesChanged(stored, nextEvent);
+        const live = timesChanged
+          ? await readEventHoursRowsInTransaction(transaction, collections, eventId)
+          : [];
+        // Only a member with stored hours or a resolution here can end up with
+        // split hours, so only theirs are read.
+        const resolvedIds = new Set(resolutions.map((resolution) => resolution.assignmentId));
+        const exemptMemberIds = await readExemptMemberIdsInTransaction(
+          transaction,
+          collections,
+          live
+            .filter((row) => rowHasHours(row) || resolvedIds.has(row.id))
+            .map((row) => row.teamMemberId),
+        );
+        const plan = planEventHoursResolution({timesChanged, live, resolutions, exemptMemberIds});
+        if (!plan.ok) throw hoursResolutionError(plan.reason, resolutions, live);
+        resolvedHours = plan.updates;
+
+        transaction.update(eventRef, nextEvent);
+        for (const resolution of plan.updates) {
+          transaction.update(db.collection(collections.assignments).doc(resolution.assignmentId), {
+            customStartAt: resolution.customStartAt,
+            customEndAt: resolution.customEndAt,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+        markEventCalendarJob(transaction, collections, eventId, actor);
+      });
       await enqueueEventCalendarJob(environment, eventId, actor);
       await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name}, {
-        before: existing,
-        after: nextEvent,
+        before: stored,
+        after: resolvedHours.length === 0
+          ? nextEvent
+          : {...nextEvent, customHoursResolutionCount: resolvedHours.length},
       });
       return {ok: true};
     }
@@ -7278,4 +7392,6 @@ export {
   teamMemberDocFromJson as __testTeamMemberDocFromJson,
   assignmentDocFromJson as __testAssignmentDocFromJson,
   requireValidCustomHours as __testRequireValidCustomHours,
+  readHoursResolutions as __testReadHoursResolutions,
+  hoursResolutionError as __testHoursResolutionError,
 };
