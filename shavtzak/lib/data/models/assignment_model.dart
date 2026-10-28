@@ -17,6 +17,8 @@ class AssignmentModel {
   final String notes;
   final String? semanticLabelId;
   final String? alternativePhoneNumber;
+  final String? customStartAt; // Custom hours: 'yyyy-MM-ddTHH:mm', Israel wall clock
+  final String? customEndAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -30,6 +32,8 @@ class AssignmentModel {
     required this.notes,
     this.semanticLabelId,
     this.alternativePhoneNumber,
+    this.customStartAt,
+    this.customEndAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -46,6 +50,8 @@ class AssignmentModel {
       notes: entity.notes,
       semanticLabelId: entity.semanticLabelId,
       alternativePhoneNumber: entity.alternativePhoneNumber,
+      customStartAt: entity.customStartAt,
+      customEndAt: entity.customEndAt,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     );
@@ -63,6 +69,8 @@ class AssignmentModel {
       notes: notes,
       semanticLabelId: semanticLabelId,
       alternativePhoneNumber: alternativePhoneNumber,
+      customStartAt: customStartAt,
+      customEndAt: customEndAt,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -82,6 +90,8 @@ class AssignmentModel {
       notes: data['notes'] as String? ?? '',
       semanticLabelId: data['semanticLabelId'] as String?,
       alternativePhoneNumber: data['alternativePhoneNumber'] as String?,
+      customStartAt: _hoursText(data['customStartAt']),
+      customEndAt: _hoursText(data['customEndAt']),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
     );
@@ -99,6 +109,8 @@ class AssignmentModel {
       'notes': notes,
       'semanticLabelId': semanticLabelId,
       'alternativePhoneNumber': alternativePhoneNumber ?? FieldValue.delete(),
+      'customStartAt': customStartAt ?? FieldValue.delete(),
+      'customEndAt': customEndAt ?? FieldValue.delete(),
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
@@ -116,6 +128,8 @@ class AssignmentModel {
       notes: json['notes'] as String? ?? '',
       semanticLabelId: json['semanticLabelId'] as String?,
       alternativePhoneNumber: json['alternativePhoneNumber'] as String?,
+      customStartAt: _hoursText(json['customStartAt']),
+      customEndAt: _hoursText(json['customEndAt']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -133,8 +147,16 @@ class AssignmentModel {
       'notes': notes,
       'semanticLabelId': semanticLabelId,
       if (alternativePhoneNumber != null) 'alternativePhoneNumber': alternativePhoneNumber,
+      // Both keys are always sent, null included: the backend keeps stored
+      // hours when a key is absent (an old build) and clears them on null.
+      'customStartAt': customStartAt,
+      'customEndAt': customEndAt,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
   }
+
+  /// A stored hours value: the string, or null for anything else. Hours that
+  /// cannot be read must never make an assignment unreadable.
+  static String? _hoursText(Object? value) => value is String ? value : null;
 }

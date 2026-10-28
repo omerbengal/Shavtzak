@@ -245,6 +245,333 @@ void main() {
       expect(index, isEmpty);
     });
   });
+
+  group('eventDays', () {
+    test('a single-day event is one local date', () {
+      expect(
+        eventDays(_event(id: 'a', start: DateTime(2026, 10, 27, 18))),
+        DayRange(DateTime(2026, 10, 27), DateTime(2026, 10, 27)),
+      );
+    });
+
+    test('a multi-day event runs from its first to its last date', () {
+      expect(
+        eventDays(_event(
+          id: 'a',
+          start: DateTime(2026, 12, 1, 20),
+          end: DateTime(2026, 12, 2, 3),
+        )),
+        DayRange(DateTime(2026, 12, 1), DateTime(2026, 12, 2)),
+      );
+    });
+  });
+
+  group('dayRangesOverlap', () {
+    DayRange range(DateTime first, [DateTime? last]) =>
+        DayRange(first, last ?? first);
+
+    test('is inclusive: a shared edge day overlaps', () {
+      expect(
+        dayRangesOverlap(
+          range(DateTime(2026, 7, 5), DateTime(2026, 7, 7)),
+          range(DateTime(2026, 7, 7)),
+        ),
+        isTrue,
+      );
+    });
+
+    test('back-to-back ranges do not overlap', () {
+      expect(
+        dayRangesOverlap(
+          range(DateTime(2026, 7, 5), DateTime(2026, 7, 6)),
+          range(DateTime(2026, 7, 7)),
+        ),
+        isFalse,
+      );
+    });
+
+    test('a range inside another overlaps, both ways', () {
+      final outer = range(DateTime(2026, 7, 1), DateTime(2026, 7, 31));
+      final inner = range(DateTime(2026, 7, 12));
+      expect(dayRangesOverlap(outer, inner), isTrue);
+      expect(dayRangesOverlap(inner, outer), isTrue);
+    });
+
+    test('adjacent days around the October DST change do not overlap', () {
+      // Israel's clocks go back on 2026-10-25. Adding 24 hours to a local
+      // midnight would drift; `!isAfter` on date-only values has no such
+      // hazard.
+      expect(
+        dayRangesOverlap(
+          range(DateTime(2026, 10, 24)),
+          range(DateTime(2026, 10, 25)),
+        ),
+        isFalse,
+      );
+      expect(
+        dayRangesOverlap(
+          range(DateTime(2026, 10, 24), DateTime(2026, 10, 25)),
+          range(DateTime(2026, 10, 25)),
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('assignmentDays', () {
+    final event = _event(
+      id: 'a',
+      start: DateTime(2026, 10, 27),
+      end: DateTime(2026, 10, 28),
+    );
+
+    test("without hours it is the event's days", () {
+      expect(
+        assignmentDays(
+            _assignment(id: 'a1', eventId: 'a', memberId: 'm1'), event),
+        eventDays(event),
+      );
+    });
+
+    test('hours ending exactly at midnight stay on the first day', () {
+      final assignment = _assignment(
+        id: 'a1',
+        eventId: 'a',
+        memberId: 'm1',
+        customStartAt: '2026-10-27T18:00',
+        customEndAt: '2026-10-28T00:00',
+      );
+      expect(
+        assignmentDays(assignment, event),
+        DayRange(DateTime(2026, 10, 27), DateTime(2026, 10, 27)),
+      );
+    });
+
+    test('hours ending a minute past midnight reach the next day', () {
+      final assignment = _assignment(
+        id: 'a1',
+        eventId: 'a',
+        memberId: 'm1',
+        customStartAt: '2026-10-27T18:00',
+        customEndAt: '2026-10-28T00:01',
+      );
+      expect(
+        assignmentDays(assignment, event),
+        DayRange(DateTime(2026, 10, 27), DateTime(2026, 10, 28)),
+      );
+    });
+
+    test('hours across the DST change run from the start day to the end day',
+        () {
+      final assignment = _assignment(
+        id: 'a1',
+        eventId: 'a',
+        memberId: 'm1',
+        customStartAt: '2026-10-24T22:00',
+        customEndAt: '2026-10-26T02:00',
+      );
+      expect(
+        assignmentDays(assignment, event),
+        DayRange(DateTime(2026, 10, 24), DateTime(2026, 10, 26)),
+      );
+    });
+
+    test("hours may lie outside the event's own days", () {
+      final assignment = _assignment(
+        id: 'a1',
+        eventId: 'a',
+        memberId: 'm1',
+        customStartAt: '2026-10-26T22:00',
+        customEndAt: '2026-10-27T06:00',
+      );
+      expect(
+        assignmentDays(assignment, event),
+        DayRange(DateTime(2026, 10, 26), DateTime(2026, 10, 27)),
+      );
+    });
+
+    test("hours that cannot be read fall back to the event's days", () {
+      final assignment = _assignment(
+        id: 'a1',
+        eventId: 'a',
+        memberId: 'm1',
+        customStartAt: 'soon',
+        customEndAt: '2026-10-28T00:00',
+      );
+      expect(assignmentDays(assignment, event), eventDays(event));
+    });
+  });
+
+  group('same-day detection with custom hours', () {
+    final first = _event(
+        id: 'A', start: DateTime(2026, 12, 1), end: DateTime(2026, 12, 2));
+    final second = _event(id: 'B', start: DateTime(2026, 12, 2));
+
+    test('hours on day 1 only: neither event names the other', () {
+      final assignments = [
+        _assignment(
+          id: 'a1',
+          eventId: 'A',
+          memberId: 'm1',
+          customStartAt: '2026-12-01T10:00',
+          customEndAt: '2026-12-01T20:00',
+        ),
+        _assignment(id: 'a2', eventId: 'B', memberId: 'm1'),
+      ];
+
+      expect(
+        sameDayOtherEventsByMember(
+          event: first,
+          allEvents: [first, second],
+          allAssignments: assignments,
+        ),
+        isEmpty,
+      );
+      expect(
+        sameDayOtherEventsByMember(
+          event: second,
+          allEvents: [first, second],
+          allAssignments: assignments,
+        ),
+        isEmpty,
+      );
+      expect(
+        buildSameDayOtherEventsIndex(
+          events: [first, second],
+          assignments: assignments,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('without the hours, both name each other', () {
+      final assignments = [
+        _assignment(id: 'a1', eventId: 'A', memberId: 'm1'),
+        _assignment(id: 'a2', eventId: 'B', memberId: 'm1'),
+      ];
+
+      final fromFirst = sameDayOtherEventsByMember(
+        event: first,
+        allEvents: [first, second],
+        allAssignments: assignments,
+      );
+      final fromSecond = sameDayOtherEventsByMember(
+        event: second,
+        allEvents: [first, second],
+        allAssignments: assignments,
+      );
+
+      expect(fromFirst['m1']!.map((e) => e.id), ['B']);
+      expect(fromSecond['m1']!.map((e) => e.id), ['A']);
+    });
+
+    test("hours that reach into the other event's day name it, both ways", () {
+      final assignments = [
+        _assignment(
+          id: 'a1',
+          eventId: 'A',
+          memberId: 'm1',
+          customStartAt: '2026-12-01T20:00',
+          customEndAt: '2026-12-02T02:00',
+        ),
+        _assignment(id: 'a2', eventId: 'B', memberId: 'm1'),
+      ];
+
+      final index = buildSameDayOtherEventsIndex(
+        events: [first, second],
+        assignments: assignments,
+      );
+
+      expect(index['A']!['m1']!.map((e) => e.id), ['B']);
+      expect(index['B']!['m1']!.map((e) => e.id), ['A']);
+    });
+
+    test("the other event's own hours decide its days", () {
+      Map<String, List<Event>> namedFromA(String start, String end) =>
+          sameDayOtherEventsByMember(
+            event: first,
+            allEvents: [first, second],
+            allAssignments: [
+              _assignment(id: 'a1', eventId: 'A', memberId: 'm1'),
+              _assignment(
+                id: 'a2',
+                eventId: 'B',
+                memberId: 'm1',
+                customStartAt: start,
+                customEndAt: end,
+              ),
+            ],
+          );
+
+      // A holds the member on 1-2 December. B's own dates are the 2nd, but
+      // its hours say the 3rd: no shared day.
+      expect(namedFromA('2026-12-03T08:00', '2026-12-03T12:00'), isEmpty);
+      // B's hours start on the 1st: a shared day.
+      expect(
+        namedFromA('2026-12-01T22:00', '2026-12-02T04:00')['m1']!
+            .map((e) => e.id),
+        ['B'],
+      );
+    });
+
+    test("hours outside the event's own days still find another event", () {
+      // Arriving the evening before the event: the member is booked on the
+      // 30th, which the event's own dates do not cover.
+      final earlier = _event(id: 'earlier', start: DateTime(2026, 11, 30));
+      final assignments = [
+        _assignment(
+          id: 'a1',
+          eventId: 'A',
+          memberId: 'm1',
+          customStartAt: '2026-11-30T21:00',
+          customEndAt: '2026-12-01T05:00',
+        ),
+        _assignment(id: 'a2', eventId: 'earlier', memberId: 'm1'),
+      ];
+
+      expect(
+        sameDayOtherEventsByMember(
+          event: first,
+          allEvents: [first, earlier],
+          allAssignments: assignments,
+        )['m1']!
+            .map((e) => e.id),
+        ['earlier'],
+      );
+    });
+
+    test('a member with two roles in the event is judged by the union of '
+        'their days', () {
+      final assignments = [
+        _assignment(
+          id: 'a1',
+          eventId: 'A',
+          memberId: 'm1',
+          customStartAt: '2026-12-01T10:00',
+          customEndAt: '2026-12-01T20:00',
+        ),
+        _assignment(
+          id: 'a1b',
+          eventId: 'A',
+          memberId: 'm1',
+          roleType: 'driver',
+          customStartAt: '2026-12-02T10:00',
+          customEndAt: '2026-12-02T20:00',
+        ),
+        _assignment(id: 'a2', eventId: 'B', memberId: 'm1'),
+      ];
+
+      expect(
+        sameDayOtherEventsByMember(
+          event: first,
+          allEvents: [first, second],
+          allAssignments: assignments,
+        )['m1']!
+            .map((e) => e.id),
+        ['B'],
+      );
+    });
+  });
 }
 
 Event _event({
@@ -277,6 +604,8 @@ Assignment _assignment({
   required String memberId,
   String roleType = 'medic',
   int slotIndex = 0,
+  String? customStartAt,
+  String? customEndAt,
 }) {
   final now = DateTime(2026, 7, 1);
   return Assignment(
@@ -289,5 +618,7 @@ Assignment _assignment({
     notes: '',
     createdAt: now,
     updatedAt: now,
+    customStartAt: customStartAt,
+    customEndAt: customEndAt,
   );
 }

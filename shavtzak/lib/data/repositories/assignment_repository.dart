@@ -365,6 +365,8 @@ class AssignmentRepository {
       notes: assignment.notes,
       semanticLabelId: assignment.semanticLabelId,
       alternativePhoneNumber: assignment.alternativePhoneNumber,
+      customStartAt: assignment.customStartAt,
+      customEndAt: assignment.customEndAt,
       createdAt: assignment.createdAt,
       updatedAt: DateTime.now(),
       event: assignment.event,

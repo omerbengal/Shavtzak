@@ -950,6 +950,9 @@ class EventSummaryTile extends StatelessWidget {
                   status: AssignmentStatus.pending,
                   notes: annotation?.note ?? '',
                   semanticLabelId: annotation?.labelId,
+                  // No custom hours: a create sends both keys as null, and
+                  // the backend gives the member the hours they already have
+                  // in this event, if any.
                   createdAt: now,
                   updatedAt: now,
                 );

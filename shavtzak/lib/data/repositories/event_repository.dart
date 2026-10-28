@@ -330,6 +330,8 @@ class EventRepository {
               notes: assignment.notes,
               semanticLabelId: assignment.semanticLabelId,
               alternativePhoneNumber: assignment.alternativePhoneNumber,
+              // Custom hours are not copied: they sit on the original event's
+              // days, and the duplicate is on others.
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
               teamMember: assignment.teamMember,
@@ -374,6 +376,8 @@ class EventRepository {
         notes: assignment.notes,
         semanticLabelId: assignment.semanticLabelId,
         alternativePhoneNumber: assignment.alternativePhoneNumber,
+        // Custom hours are not copied: they sit on the original event's
+        // days, and the duplicate is on others.
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         teamMember: assignment.teamMember,

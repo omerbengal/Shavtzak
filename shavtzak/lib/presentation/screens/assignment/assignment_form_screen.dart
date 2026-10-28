@@ -109,6 +109,10 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
       slotIndex: slotIndex,
       status: _status,
       notes: _notesController.text.trim(),
+      // Editing keeps the hours the member already has; saving a null pair
+      // would clear them.
+      customStartAt: _isEditMode ? widget.assignment!.customStartAt : null,
+      customEndAt: _isEditMode ? widget.assignment!.customEndAt : null,
       createdAt: _isEditMode ? widget.assignment!.createdAt : now,
       updatedAt: now,
       event: _selectedEvent,
@@ -426,6 +430,8 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
       slotIndex: _isEditMode ? widget.assignment!.slotIndex : 0,
       status: _status,
       notes: _notesController.text.trim(),
+      customStartAt: _isEditMode ? widget.assignment!.customStartAt : null,
+      customEndAt: _isEditMode ? widget.assignment!.customEndAt : null,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
       event: _selectedEvent,
