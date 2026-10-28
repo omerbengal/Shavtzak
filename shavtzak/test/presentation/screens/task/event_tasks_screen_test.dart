@@ -22,6 +22,7 @@ import 'package:shavtzak/presentation/screens/task/widgets/calendar_tab.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/day_calendar.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/stage_block.dart';
+import 'package:shavtzak/presentation/screens/task/widgets/task_import_dialog.dart';
 
 import '../../../support/event_tasks_harness.dart';
 import '../../../support/fake_task_import_files.dart';
@@ -1406,6 +1407,24 @@ void main() {
       await tester.tap(find.byKey(const Key('tasks-import')));
       await tester.pump();
       expect(files.pickCalls, 1);
+      expect(find.byKey(const Key('task-import-confirm')), findsNothing);
+    });
+
+    testWidgets('a file the browser cannot read is reported, not ignored',
+        (tester) async {
+      final files = FakeTaskImportFiles()
+        ..failNextPick = StateError('NotReadableError');
+      await pumpScreen(
+        tester,
+        user: admin,
+        tasks: const [],
+        stages: const [],
+        importFiles: files,
+      );
+      await tester.tap(find.byKey(const Key('tasks-import')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text(importFileReadError), findsOneWidget);
       expect(find.byKey(const Key('task-import-confirm')), findsNothing);
     });
 

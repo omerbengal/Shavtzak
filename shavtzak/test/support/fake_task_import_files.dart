@@ -6,9 +6,18 @@ class FakeTaskImportFiles implements TaskImportFiles {
   final List<(List<int>, String)> saved = [];
   int pickCalls = 0;
 
+  /// When set, the next pick fails with it, as when the browser cannot read
+  /// the file.
+  Object? failNextPick;
+
   @override
   Future<PickedImportFile?> pickXlsx() async {
     pickCalls++;
+    final failure = failNextPick;
+    if (failure != null) {
+      failNextPick = null;
+      throw failure;
+    }
     return picks.isEmpty ? null : picks.removeAt(0);
   }
 

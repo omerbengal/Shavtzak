@@ -104,6 +104,19 @@ void main() {
     expect(find.byKey(const Key('task-import-summary')), findsOneWidget);
   });
 
+  testWidgets('a file that cannot be read says so and keeps the dialog',
+      (tester) async {
+    await open(tester, broken);
+    files.failNextPick = StateError('NotReadableError');
+    await tester.tap(find.byKey(const Key('task-import-pick-again')));
+    await tester.pump();
+    expect(
+      tester.widget<Text>(find.byKey(const Key('task-import-error'))).data,
+      importFileReadError,
+    );
+    expect(find.text('שלבים, שורה 2: חסר שם לשלב'), findsOneWidget);
+  });
+
   testWidgets('importing shows a spinner, sends once, and closes on success',
       (tester) async {
     await open(tester, clean);

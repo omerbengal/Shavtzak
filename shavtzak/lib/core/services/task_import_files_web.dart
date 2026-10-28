@@ -14,9 +14,19 @@ Future<PickedImportFile?> pickXlsxFile() {
   final input = web.HTMLInputElement()
     ..type = 'file'
     ..accept = '.xlsx,$_xlsxMime';
+  // Safari only reports the pick for an input that is in the page, and a
+  // detached one may be collected while the picker is still open.
+  input.style.display = 'none';
+  web.document.body!.appendChild(input);
 
   void finish(PickedImportFile? file) {
+    input.remove();
     if (!completer.isCompleted) completer.complete(file);
+  }
+
+  void fail(Object error) {
+    input.remove();
+    if (!completer.isCompleted) completer.completeError(error);
   }
 
   input.addEventListener(
@@ -31,9 +41,7 @@ Future<PickedImportFile?> pickXlsxFile() {
         (buffer) => finish(
           PickedImportFile(name: file.name, bytes: buffer.toDart.asUint8List()),
         ),
-        onError: (Object error) {
-          if (!completer.isCompleted) completer.completeError(error);
-        },
+        onError: fail,
       );
     }).toJS,
   );
