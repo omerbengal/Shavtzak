@@ -2253,13 +2253,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// with only the hours put back. A change whose hours equal its baseline,
   /// and a member who may hold several roles with hours of their own, touch
   /// nothing else.
+  ///
+  /// Both members the discarded slot could have been edited under are
+  /// restored: the one it was staged to ([StagedAssignmentChange.desiredMemberId])
+  /// and the one it goes back to ([StagedAssignmentChange.baselineMemberId]).
+  /// They differ when the slot was staged as cleared or replaced after the
+  /// hours were edited; the original member's other roles carry the edited
+  /// hours too, and undoing the slot brings that member back.
   Future<void> _restoreSiblingHoursAfterDiscard(
       StagedAssignmentChange discarded) async {
     final hoursEdited =
         discarded.desiredCustomStartAt != discarded.baselineCustomStartAt ||
             discarded.desiredCustomEndAt != discarded.baselineCustomEndAt;
-    final memberId = discarded.desiredMemberId;
-    if (!hoursEdited || memberId == null) return;
+    if (!hoursEdited) return;
 
     final ownKey = discarded.slotKey;
     TeamMember? knownMember;
@@ -2269,24 +2275,30 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         break;
       }
     }
-    final siblings = _otherSlotsHeldBy(
-      memberId,
-      eventId: discarded.eventId,
-      ownKey: ownKey,
-      knownMember: knownMember,
-    );
-    for (final sibling in siblings) {
-      final siblingKey = _slotKey(sibling);
-      // No staged change: the slot already shows its stored hours.
-      final staged = _stagedChanges[siblingKey];
-      if (staged == null) continue;
-      await _commitStaged(
-        siblingKey,
-        staged.copyWith(
-          desiredCustomStartAt: () => staged.baselineCustomStartAt,
-          desiredCustomEndAt: () => staged.baselineCustomEndAt,
-        ),
+    final memberIds = <String>{
+      if (discarded.desiredMemberId != null) discarded.desiredMemberId!,
+      if (discarded.baselineMemberId != null) discarded.baselineMemberId!,
+    };
+    for (final memberId in memberIds) {
+      final siblings = _otherSlotsHeldBy(
+        memberId,
+        eventId: discarded.eventId,
+        ownKey: ownKey,
+        knownMember: knownMember,
       );
+      for (final sibling in siblings) {
+        final siblingKey = _slotKey(sibling);
+        // No staged change: the slot already shows its stored hours.
+        final staged = _stagedChanges[siblingKey];
+        if (staged == null) continue;
+        await _commitStaged(
+          siblingKey,
+          staged.copyWith(
+            desiredCustomStartAt: () => staged.baselineCustomStartAt,
+            desiredCustomEndAt: () => staged.baselineCustomEndAt,
+          ),
+        );
+      }
     }
   }
 

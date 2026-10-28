@@ -829,6 +829,74 @@ void main() {
       expect((await cachedBySlot())['e1_paramedic_0']!['desiredNotes'], 'ב');
     });
 
+    // The hours are edited on medic (m1), so medic and paramedic both carry
+    // them; medic is then cleared / replaced, and that is undone. The
+    // paramedic row belongs to m1 and must go back with it.
+    Future<AssignmentBloc> hoursEditedThenMedicChanged(
+      Future<void> Function(AssignmentBloc bloc, AssignmentSlot medic)
+          changeMedic,
+    ) async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(
+            start: at(day1, '10:00'), end: at(day1, '16:00')),
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'medic'),
+        notes: 'חובש',
+        customStartAt: at(day1, '11:00'),
+        customEndAt: at(day1, '15:00'),
+      ));
+      await pumpEventQueue();
+      expect(current(bloc).stagedSlotKeys, {'e1_medic_0', 'e1_paramedic_0'});
+
+      await changeMedic(bloc, slotOf(current(bloc), 'e1', 'medic'));
+      await pumpEventQueue();
+      bloc.add(const DiscardStagedSlot('e1_medic_0'));
+      await pumpEventQueue();
+      return bloc;
+    }
+
+    /// Both roles are back at the stored hours; a notes edit on the paramedic
+    /// row afterwards is the only thing a Save sends, with the stored hours.
+    Future<void> expectBothAtBaseline(AssignmentBloc bloc) async {
+      expect(current(bloc).stagedSlotKeys, isEmpty);
+      expect(await cachedBySlot(), isEmpty);
+
+      bloc.add(StageNotesChange(
+        slot: slotOf(current(bloc), 'e1', 'paramedic'),
+        notes: 'פראמדיק (נערך)',
+      ));
+      await pumpEventQueue();
+      final saved = await save(bloc);
+      expect(saved.updates.map((u) => u.id), ['a2']);
+      expect(saved.updates.single.customStartAt, at(day1, '10:00'));
+      expect(saved.updates.single.customEndAt, at(day1, '16:00'));
+    }
+
+    test('a slot cleared after the hours edit and then undone takes its '
+        'original member\'s other roles back', () async {
+      final bloc = await hoursEditedThenMedicChanged(
+        (bloc, medic) async =>
+            bloc.add(StageMemberChange(slot: medic, member: null)),
+      );
+
+      await expectBothAtBaseline(bloc);
+    });
+
+    test('a slot replaced after the hours edit and then undone takes its '
+        'original member\'s other roles back', () async {
+      final bloc = await hoursEditedThenMedicChanged(
+        (bloc, medic) async =>
+            bloc.add(StageMemberChange(slot: medic, member: members[1])),
+      );
+
+      await expectBothAtBaseline(bloc);
+    });
+
     test('Save after undoing one role never sends a split', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
