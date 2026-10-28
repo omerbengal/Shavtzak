@@ -1,4 +1,5 @@
 import {Firestore, Timestamp} from 'firebase-admin/firestore';
+import {customHoursInterval, wallDayKeysTouched} from './event_stretch';
 
 export type DriveAction =
   | 'createFolder'
@@ -855,7 +856,10 @@ type AssignmentOnlyRow = {
   notes: string;
 };
 
-function eventDayRange(eventData: Record<string, unknown>): [string, string] | null {
+/** First and last calendar day as 'YYYY-MM-DD' keys, both inclusive. */
+type DayRange = [string, string];
+
+function eventDayRange(eventData: Record<string, unknown>): DayRange | null {
   const start = parseDate(eventData['startDate']);
   const end = parseDate(eventData['endDate']);
   if (start == null || end == null) return null;
@@ -865,14 +869,25 @@ function eventDayRange(eventData: Record<string, unknown>): [string, string] | n
   return [startKey, endKey];
 }
 
+/**
+ * The days one assignment occupies: the days its custom hours touch (from the
+ * start's day to the day of the last minute, so an end at exactly 00:00 does
+ * not touch the next day), else the event's days. Hours that cannot be read,
+ * or whose end is not after the start, count as no hours.
+ */
+function assignmentDayRange(
+  assignmentData: Record<string, unknown>,
+  eventData: Record<string, unknown>,
+): DayRange | null {
+  const customHours = customHoursInterval(
+    assignmentData['customStartAt'],
+    assignmentData['customEndAt'],
+  );
+  return customHours == null ? eventDayRange(eventData) : wallDayKeysTouched(customHours);
+}
+
 /** Day-precision overlap. Date keys are 'YYYY-MM-DD', so string order is date order. */
-function eventsShareDay(
-  first: Record<string, unknown>,
-  second: Record<string, unknown>,
-): boolean {
-  const a = eventDayRange(first);
-  const b = eventDayRange(second);
-  if (a == null || b == null) return false;
+function dayRangesOverlap(a: DayRange, b: DayRange): boolean {
   return a[0] <= b[1] && b[0] <= a[1];
 }
 
@@ -880,6 +895,12 @@ function eventsShareDay(
  * memberId -> eventId -> names of the OTHER events sharing a calendar day with
  * that event to which the member is also assigned, sorted by start date then
  * name.
+ *
+ * "Sharing a day" is judged on the member's own days. Each assignment
+ * occupies the days its custom hours touch, or the event's days without
+ * hours; a member's days in an event are the union over their assignments
+ * there. Two events share a day when any of the member's days in one fall on
+ * any of their days in the other. The sort and the names are the events' own.
  *
  * `eventsData` here is the ANNOTATION pool — future events only. It is
  * deliberately NOT the row pool: a perEvent export may contain explicitly
@@ -899,30 +920,40 @@ function buildSameDayOtherEventNames(
   assignments: FirestoreDoc[],
   eventsData: Record<string, Record<string, unknown>>,
 ): Map<string, Map<string, string[]>> {
-  const eventIdsByMember = new Map<string, Set<string>>();
+  // The member's days in each event, one range per assignment. An assignment
+  // with no readable days (an event without dates, no hours) adds none.
+  const daysByMember = new Map<string, Map<string, DayRange[]>>();
   for (const doc of assignments) {
     const memberId = asString(doc.data['teamMemberId']);
     const eventId = asString(doc.data['eventId']);
     if (memberId.length === 0 || eventId.length === 0) continue;
     const eventData = eventsData[eventId];
     if (eventData == null || eventData['isDeactivated'] === true) continue;
-    const ids = eventIdsByMember.get(memberId) ?? new Set<string>();
-    ids.add(eventId);
-    eventIdsByMember.set(memberId, ids);
+    const daysByEvent = daysByMember.get(memberId) ?? new Map<string, DayRange[]>();
+    const days = daysByEvent.get(eventId) ?? [];
+    const range = assignmentDayRange(doc.data, eventData);
+    if (range != null) days.push(range);
+    daysByEvent.set(eventId, days);
+    daysByMember.set(memberId, daysByEvent);
   }
 
   const result = new Map<string, Map<string, string[]>>();
-  for (const [memberId, eventIdSet] of eventIdsByMember) {
-    const eventIds = Array.from(eventIdSet);
+  for (const [memberId, daysByEvent] of daysByMember) {
+    const eventIds = Array.from(daysByEvent.keys());
     if (eventIds.length < 2) continue;
 
     const perEvent = new Map<string, string[]>();
     for (const eventId of eventIds) {
+      const days = daysByEvent.get(eventId) ?? [];
       const others = eventIds
         .filter(
           (otherId) =>
             otherId !== eventId &&
-            eventsShareDay(eventsData[eventId], eventsData[otherId]),
+            days.some((range) =>
+              (daysByEvent.get(otherId) ?? []).some((otherRange) =>
+                dayRangesOverlap(range, otherRange),
+              ),
+            ),
         )
         .sort((first, second) => {
           const byDate = (eventDayRange(eventsData[first])?.[0] ?? '').localeCompare(

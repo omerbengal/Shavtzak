@@ -537,3 +537,227 @@ test('buildMemberFeedParts warns with the event id when an event document is mal
   const [message] = calls[0];
   assert.ok(typeof message === 'string' && message.includes('evt-broken-2'));
 });
+
+const CUSTOM_ROLE_NAMES = {entryScreening: 'סינון כניסה', investigation: 'תחקור'};
+
+test('buildMemberFeedParts emits one main part for custom hours, no assembly part', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{
+      eventId: 'evt-1',
+      roleType: 'entryScreening',
+      customStartAt: '2026-08-15T14:00',
+      customEndAt: '2026-08-15T21:00',
+    }],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].uid, 'evt-1-main-mem-1@shavtzak');
+  assert.equal(parts[0].title, 'היכל התרבות');
+  assert.equal(parts[0].start, '2026-08-15T14:00');
+  assert.equal(parts[0].end, '2026-08-15T21:00');
+  assert.equal(parts[0].allDayStart, null);
+  assert.equal(parts[0].location, 'תל אביב');
+  assert.ok(parts[0].description.includes('סינון כניסה'));
+});
+
+test('buildMemberFeedParts renders custom hours as a timed part even for an all-day event', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{
+      eventId: 'evt-1',
+      roleType: 'entryScreening',
+      customStartAt: '2026-08-15T14:00',
+      customEndAt: '2026-08-16T02:00',
+    }],
+    eventsById: new Map([['evt-1', timedEvent({assemblyTime: '', endTime: ''})]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].uid, 'evt-1-main-mem-1@shavtzak');
+  assert.equal(parts[0].allDayStart, null);
+  assert.equal(parts[0].allDayEnd, null);
+  assert.equal(parts[0].start, '2026-08-15T14:00');
+  assert.equal(parts[0].end, '2026-08-16T02:00');
+});
+
+test('buildMemberFeedParts titles a custom-hours part like the event main title in test mode', () => {
+  const normal = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'test',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+  const custom = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'test',
+    assignments: [{
+      eventId: 'evt-1',
+      roleType: 'entryScreening',
+      customStartAt: '2026-08-15T14:00',
+      customEndAt: '2026-08-15T21:00',
+    }],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(custom[0].title, normal.find((part) => part.uid.includes('-main-'))!.title);
+});
+
+test('buildMemberFeedParts merges two roles with the same hours into one part', () => {
+  const hours = {customStartAt: '2026-08-15T14:00', customEndAt: '2026-08-15T21:00'};
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [
+      {eventId: 'evt-1', roleType: 'entryScreening', ...hours},
+      {eventId: 'evt-1', roleType: 'investigation', ...hours},
+    ],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(parts.length, 1);
+  assert.ok(parts[0].description.includes('סינון כניסה'));
+  assert.ok(parts[0].description.includes('תחקור'));
+  assert.equal(parts[0].start, '2026-08-15T14:00');
+  assert.equal(parts[0].end, '2026-08-15T21:00');
+});
+
+test('buildMemberFeedParts spans the earliest start to the latest end across differing hours', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [
+      {
+        eventId: 'evt-1',
+        roleType: 'entryScreening',
+        customStartAt: '2026-08-15T16:00',
+        customEndAt: '2026-08-15T21:00',
+      },
+      {
+        eventId: 'evt-1',
+        roleType: 'investigation',
+        customStartAt: '2026-08-15T14:00',
+        customEndAt: '2026-08-15T18:00',
+      },
+    ],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].start, '2026-08-15T14:00');
+  assert.equal(parts[0].end, '2026-08-15T21:00');
+});
+
+test('buildMemberFeedParts spans only the assignments that carry valid hours', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [
+      {eventId: 'evt-1', roleType: 'entryScreening'},
+      {
+        eventId: 'evt-1',
+        roleType: 'investigation',
+        customStartAt: '2026-08-15T14:00',
+        customEndAt: '2026-08-15T21:00',
+      },
+    ],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].start, '2026-08-15T14:00');
+  assert.equal(parts[0].end, '2026-08-15T21:00');
+  assert.ok(parts[0].description.includes('סינון כניסה'));
+  assert.ok(parts[0].description.includes('תחקור'));
+});
+
+test('buildMemberFeedParts ignores unreadable custom hours and keeps the assembly + main pair', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{
+      eventId: 'evt-1',
+      roleType: 'entryScreening',
+      customStartAt: '2026-08-15 14:00',
+      customEndAt: '2026-08-15T21:00',
+    }],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.deepEqual(
+    parts.map((part) => part.uid).sort(),
+    ['evt-1-assembly-mem-1@shavtzak', 'evt-1-main-mem-1@shavtzak'],
+  );
+});
+
+test('buildMemberFeedParts ignores custom hours whose end is not after the start', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{
+      eventId: 'evt-1',
+      roleType: 'entryScreening',
+      customStartAt: '2026-08-15T21:00',
+      customEndAt: '2026-08-15T21:00',
+    }],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(parts.length, 2);
+});
+
+test('buildMemberFeedParts treats null custom hours like absent ones', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{
+      eventId: 'evt-1',
+      roleType: 'entryScreening',
+      customStartAt: null,
+      customEndAt: null,
+    }],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.equal(parts.length, 2);
+});
+
+test('buildMemberFeedParts applies custom hours per event, leaving other events alone', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [
+      {
+        eventId: 'evt-1',
+        roleType: 'entryScreening',
+        customStartAt: '2026-08-15T14:00',
+        customEndAt: '2026-08-15T21:00',
+      },
+      {eventId: 'evt-2', roleType: 'entryScreening'},
+    ],
+    eventsById: new Map([['evt-1', timedEvent()], ['evt-2', timedEvent()]]),
+    roleHebrewNames: CUSTOM_ROLE_NAMES,
+  });
+
+  assert.deepEqual(
+    parts.map((part) => part.uid),
+    [
+      'evt-1-main-mem-1@shavtzak',
+      'evt-2-assembly-mem-1@shavtzak',
+      'evt-2-main-mem-1@shavtzak',
+    ],
+  );
+});

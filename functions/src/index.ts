@@ -7076,6 +7076,10 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
         eventId: typeof data['eventId'] === 'string' ? data['eventId'] : '',
         roleType: typeof data['roleType'] === 'string' ? data['roleType'] : '',
         notes: typeof data['notes'] === 'string' ? data['notes'] : '',
+        // Absent or non-string hours are null; buildMemberFeedParts ignores
+        // hours it cannot read.
+        customStartAt: typeof data['customStartAt'] === 'string' ? data['customStartAt'] : null,
+        customEndAt: typeof data['customEndAt'] === 'string' ? data['customEndAt'] : null,
       };
     }).filter((assignment) => assignment.eventId.length > 0);
 
