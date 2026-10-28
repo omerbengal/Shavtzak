@@ -1582,15 +1582,32 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   List<AssignmentSlot> otherSlotsOfSameMember(AssignmentSlot slot) {
     final memberId = _effectiveOccupantId(slot);
     if (memberId == null) return const [];
-    final stored = slot.currentAssignment?.teamMember;
+    return _otherSlotsHeldBy(
+      memberId,
+      eventId: slot.event.id,
+      ownKey: _slotKey(slot),
+      knownMember: slot.currentAssignment?.teamMember,
+    );
+  }
+
+  /// The slots of [eventId], other than the one keyed [ownKey], whose
+  /// effective occupant is [memberId]; empty for a member who may hold several
+  /// roles with hours of their own. [knownMember] is looked at only when the
+  /// window's member list does not have [memberId].
+  List<AssignmentSlot> _otherSlotsHeldBy(
+    String memberId, {
+    required String eventId,
+    required String ownKey,
+    TeamMember? knownMember,
+  }) {
     final member = _windowMembersMap[memberId] ??
-        (stored?.id == memberId ? stored : null);
+        (knownMember?.id == memberId ? knownMember : null);
     if (member?.allowMultipleAssignments ?? false) return const [];
 
-    final seenKeys = {_slotKey(slot)};
+    final seenKeys = {ownKey};
     return [
       for (final other in lastLoadedSlots)
-        if (other.event.id == slot.event.id &&
+        if (other.event.id == eventId &&
             _effectiveOccupantId(other) == memberId &&
             seenKeys.add(_slotKey(other)))
           other,
@@ -2226,6 +2243,53 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
+  /// Undoing one slot must not leave its member with different hours in the
+  /// roles they hold in the event: the hours were staged on every one of them
+  /// together (see [_upsertStagedNotes]) and the backend refuses a Save that
+  /// splits them. So when the [discarded] change had hours of its own to
+  /// undo, each other slot of that member goes back to ITS OWN baseline hours,
+  /// through [_commitStaged]: a slot with no other staged edit stops being
+  /// dirty, one with its own notes / label / phone / occupant edit stays dirty
+  /// with only the hours put back. A change whose hours equal its baseline,
+  /// and a member who may hold several roles with hours of their own, touch
+  /// nothing else.
+  Future<void> _restoreSiblingHoursAfterDiscard(
+      StagedAssignmentChange discarded) async {
+    final hoursEdited =
+        discarded.desiredCustomStartAt != discarded.baselineCustomStartAt ||
+            discarded.desiredCustomEndAt != discarded.baselineCustomEndAt;
+    final memberId = discarded.desiredMemberId;
+    if (!hoursEdited || memberId == null) return;
+
+    final ownKey = discarded.slotKey;
+    TeamMember? knownMember;
+    for (final slot in lastLoadedSlots) {
+      if (_slotKey(slot) == ownKey) {
+        knownMember = slot.currentAssignment?.teamMember;
+        break;
+      }
+    }
+    final siblings = _otherSlotsHeldBy(
+      memberId,
+      eventId: discarded.eventId,
+      ownKey: ownKey,
+      knownMember: knownMember,
+    );
+    for (final sibling in siblings) {
+      final siblingKey = _slotKey(sibling);
+      // No staged change: the slot already shows its stored hours.
+      final staged = _stagedChanges[siblingKey];
+      if (staged == null) continue;
+      await _commitStaged(
+        siblingKey,
+        staged.copyWith(
+          desiredCustomStartAt: () => staged.baselineCustomStartAt,
+          desiredCustomEndAt: () => staged.baselineCustomEndAt,
+        ),
+      );
+    }
+  }
+
   Future<void> _onDiscardStagedSlot(
       DiscardStagedSlot event, Emitter<AssignmentState> emit) async {
     // A discard must not race an in-flight Save: SaveStagedChanges already
@@ -2247,6 +2311,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     }
     _stagedSlotAnnotations.remove(event.slotKey);
+    if (removed != null) {
+      await _restoreSiblingHoursAfterDiscard(removed);
+    }
     await _persistStaged();
     Logger.action('stage:discardSlot', {
       'slot': event.slotKey,

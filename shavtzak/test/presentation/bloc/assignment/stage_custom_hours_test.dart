@@ -566,6 +566,297 @@ void main() {
     });
   });
 
+  group('reverting the hours when one role is edited with a sibling dirty', () {
+    test('a sibling with its own staged notes stays dirty, hours back to baseline',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(
+            start: at(day1, '10:00'), end: at(day1, '16:00')),
+      );
+
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'paramedic'),
+        notes: 'כבר שונה',
+      ));
+      await pumpEventQueue();
+      bloc.add(StageNotesChange(
+        slot: slotOf(current(bloc), 'e1', 'medic'),
+        notes: 'חובש',
+        customStartAt: at(day1, '11:00'),
+        customEndAt: at(day1, '15:00'),
+      ));
+      await pumpEventQueue();
+      expect(current(bloc).stagedSlotKeys, {'e1_medic_0', 'e1_paramedic_0'});
+
+      bloc.add(StageNotesChange(
+        slot: slotOf(current(bloc), 'e1', 'medic'),
+        notes: 'חובש',
+        customStartAt: at(day1, '10:00'),
+        customEndAt: at(day1, '16:00'),
+      ));
+      await pumpEventQueue();
+
+      expect(current(bloc).stagedSlotKeys, {'e1_paramedic_0'});
+      final sibling = (await cachedBySlot())['e1_paramedic_0']!;
+      expect(sibling['desiredNotes'], 'כבר שונה');
+      expect(sibling['desiredCustomStartAt'], at(day1, '10:00'));
+      expect(sibling['desiredCustomEndAt'], at(day1, '16:00'));
+    });
+  });
+
+  group('the edited slot has a replaced occupant', () {
+    test(
+        'the new occupant\'s other slot is staged, the old occupant\'s is not',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      // medic 0: stored m1, about to be staged to m2. medic 1: stored m2.
+      // paramedic 0: stored m1 (the old occupant's other role).
+      final loaded = await load(
+        bloc,
+        events: [
+          event('e1', roles: const {'medic': 2, 'paramedic': 1}),
+        ],
+        assignments: [
+          assignment('a1', 'e1', 'm1', 'medic'),
+          assignment('a2', 'e1', 'm2', 'medic', slotIndex: 1),
+          assignment('a3', 'e1', 'm1', 'paramedic'),
+        ],
+      );
+
+      bloc.add(StageMemberChange(
+          slot: slotOf(loaded, 'e1', 'medic'), member: members[1]));
+      await pumpEventQueue();
+      bloc.add(StageNotesChange(
+        slot: slotOf(current(bloc), 'e1', 'medic'),
+        notes: '',
+        customStartAt: at(day1, '10:00'),
+        customEndAt: at(day1, '16:00'),
+      ));
+      await pumpEventQueue();
+
+      final staged = await cachedBySlot();
+      expect(staged.keys, unorderedEquals(['e1_medic_0', 'e1_medic_1']));
+      expect(staged['e1_medic_0']!['desiredMemberId'], 'm2');
+      expect(staged['e1_medic_1']!['desiredCustomStartAt'], at(day1, '10:00'));
+      expect(staged['e1_medic_1']!['desiredCustomEndAt'], at(day1, '16:00'));
+      expect(staged.containsKey('e1_paramedic_0'), isFalse);
+    });
+  });
+
+  group('StageNotesChange guards its hours', () {
+    test('a half pair is refused', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(),
+      );
+      final slot = slotOf(loaded, 'e1', 'medic');
+
+      expect(
+        () => StageNotesChange(
+            slot: slot, notes: '', customStartAt: at(day1, '10:00')),
+        throwsAssertionError,
+      );
+      expect(
+        () => StageNotesChange(
+            slot: slot, notes: '', customEndAt: at(day1, '16:00')),
+        throwsAssertionError,
+      );
+    });
+  });
+
+  group('undoing one role puts the member\'s hours back on every role', () {
+    test('discarding one slot restores each role to its own baseline',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(
+            start: at(day1, '10:00'), end: at(day1, '16:00')),
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'medic'),
+        notes: 'חובש',
+        customStartAt: at(day1, '11:00'),
+        customEndAt: at(day1, '15:00'),
+      ));
+      await pumpEventQueue();
+      expect(current(bloc).stagedSlotKeys, {'e1_medic_0', 'e1_paramedic_0'});
+
+      bloc.add(const DiscardStagedSlot('e1_medic_0'));
+      await pumpEventQueue();
+
+      expect(current(bloc).stagedSlotKeys, isEmpty);
+      expect(bloc.hasStagedChanges, isFalse);
+      expect(await cachedBySlot(), isEmpty);
+    });
+
+    test('a sibling with its own staged edit stays dirty with only the hours '
+        'put back', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(),
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'paramedic'),
+        notes: 'כבר שונה',
+        semanticLabelId: 'label-1',
+        alternativePhoneNumber: '050-1234567',
+      ));
+      await pumpEventQueue();
+      bloc.add(StageNotesChange(
+        slot: slotOf(current(bloc), 'e1', 'medic'),
+        notes: 'חובש',
+        customStartAt: at(day1, '10:00'),
+        customEndAt: at(day1, '16:00'),
+      ));
+      await pumpEventQueue();
+      expect(current(bloc).stagedSlotKeys, {'e1_medic_0', 'e1_paramedic_0'});
+
+      bloc.add(const DiscardStagedSlot('e1_medic_0'));
+      await pumpEventQueue();
+
+      expect(current(bloc).stagedSlotKeys, {'e1_paramedic_0'});
+      final sibling = (await cachedBySlot())['e1_paramedic_0']!;
+      expect(sibling['desiredNotes'], 'כבר שונה');
+      expect(sibling['desiredSemanticLabelId'], 'label-1');
+      expect(sibling['desiredAltPhone'], '050-1234567');
+      expect(sibling['desiredCustomStartAt'], isNull);
+      expect(sibling['desiredCustomEndAt'], isNull);
+    });
+
+    test('the sibling can be the one undone: the edited slot goes back too',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(),
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'medic'),
+        notes: 'חובש (נערך)',
+        customStartAt: at(day1, '10:00'),
+        customEndAt: at(day1, '16:00'),
+      ));
+      await pumpEventQueue();
+
+      // The row that merely followed along is the one the admin undoes.
+      bloc.add(const DiscardStagedSlot('e1_paramedic_0'));
+      await pumpEventQueue();
+
+      final staged = await cachedBySlot();
+      // The edited slot keeps its own notes edit but not the hours.
+      expect(staged.keys, ['e1_medic_0']);
+      expect(staged['e1_medic_0']!['desiredNotes'], 'חובש (נערך)');
+      expect(staged['e1_medic_0']!['desiredCustomStartAt'], isNull);
+      expect(staged['e1_medic_0']!['desiredCustomEndAt'], isNull);
+    });
+
+    test('an exempt member: undoing one slot touches only that slot', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: [
+          assignment('a1', 'e1', 'pool', 'medic'),
+          assignment('a2', 'e1', 'pool', 'paramedic'),
+        ],
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'medic'),
+        notes: '',
+        customStartAt: at(day1, '10:00'),
+        customEndAt: at(day1, '16:00'),
+      ));
+      await pumpEventQueue();
+      bloc.add(StageNotesChange(
+        slot: slotOf(current(bloc), 'e1', 'paramedic'),
+        notes: '',
+        customStartAt: at(day1, '12:00'),
+        customEndAt: at(day1, '18:00'),
+      ));
+      await pumpEventQueue();
+      expect(current(bloc).stagedSlotKeys, {'e1_medic_0', 'e1_paramedic_0'});
+
+      bloc.add(const DiscardStagedSlot('e1_medic_0'));
+      await pumpEventQueue();
+
+      expect(current(bloc).stagedSlotKeys, {'e1_paramedic_0'});
+      final kept = (await cachedBySlot())['e1_paramedic_0']!;
+      expect(kept['desiredCustomStartAt'], at(day1, '12:00'));
+      expect(kept['desiredCustomEndAt'], at(day1, '18:00'));
+    });
+
+    test('undoing a change whose hours were not edited touches nothing else',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(),
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'medic'),
+        notes: 'א',
+      ));
+      await pumpEventQueue();
+      bloc.add(StageNotesChange(
+        slot: slotOf(current(bloc), 'e1', 'paramedic'),
+        notes: 'ב',
+      ));
+      await pumpEventQueue();
+
+      bloc.add(const DiscardStagedSlot('e1_medic_0'));
+      await pumpEventQueue();
+
+      expect(current(bloc).stagedSlotKeys, {'e1_paramedic_0'});
+      expect((await cachedBySlot())['e1_paramedic_0']!['desiredNotes'], 'ב');
+    });
+
+    test('Save after undoing one role never sends a split', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      final loaded = await load(
+        bloc,
+        events: [event('e1')],
+        assignments: twoRolesOfM1(),
+      );
+      bloc.add(StageNotesChange(
+        slot: slotOf(loaded, 'e1', 'medic'),
+        notes: 'חובש (נערך)',
+        customStartAt: at(day1, '10:00'),
+        customEndAt: at(day1, '16:00'),
+      ));
+      await pumpEventQueue();
+      bloc.add(const DiscardStagedSlot('e1_paramedic_0'));
+      await pumpEventQueue();
+
+      final saved = await save(bloc);
+
+      // Only the notes edit is left, and it carries the baseline hours (none)
+      // like the role that was undone.
+      expect(saved.updates.map((u) => u.id), ['a1']);
+      expect(saved.updates.single.customStartAt, isNull);
+      expect(saved.updates.single.customEndAt, isNull);
+    });
+  });
+
   group('Save', () {
     test('sends the hours of every role in the one batch', () async {
       final bloc = buildBloc();

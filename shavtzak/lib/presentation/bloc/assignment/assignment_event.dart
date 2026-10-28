@@ -402,7 +402,11 @@ class StageNotesChange extends AssignmentEvent {
     this.customStartAt,
     this.customEndAt,
     bool? setsCustomHours,
-  }) : setsCustomHours =
+  })  : assert(
+          (customStartAt == null) == (customEndAt == null),
+          'custom hours are both set or both null',
+        ),
+        setsCustomHours =
             setsCustomHours ?? (customStartAt != null || customEndAt != null);
   @override
   List<Object?> get props => [
