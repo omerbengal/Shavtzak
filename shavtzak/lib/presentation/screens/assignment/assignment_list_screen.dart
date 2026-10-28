@@ -32,6 +32,7 @@ import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import 'widgets/assignment_save_bar.dart';
 import 'widgets/member_picker_field.dart';
+import 'widgets/replacement_hours_dialog.dart';
 import 'widgets/staged_save_conflict_flow.dart';
 import 'widgets/unsaved_changes_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
@@ -2934,17 +2935,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return Color(int.parse(buffer.toString(), radix: 16));
   }
 
+  /// The member assigned to [slot]:
+  /// - first from the assignment object itself (handles deactivated members);
+  /// - then from the available/alreadyAssigned lists (handles active members).
+  TeamMember? _currentMemberOf(AssignmentSlot slot) =>
+      slot.currentAssignment?.teamMember ??
+      slot.availableMembers.firstWhereOrNull(
+        (m) => m.id == slot.currentAssignment?.teamMemberId,
+      ) ??
+      slot.alreadyAssignedMembers.firstWhereOrNull(
+        (m) => m.id == slot.currentAssignment?.teamMemberId,
+      );
+
   Widget _buildAssignmentCell(AssignmentSlot slot, {required bool isDirty}) {
-    // Get current assigned member:
-    // - First try from assignment object itself (handles deactivated members)
-    // - Then try from available/alreadyAssigned lists (handles active members)
-    final currentMember = slot.currentAssignment?.teamMember ??
-        slot.availableMembers.firstWhereOrNull(
-          (m) => m.id == slot.currentAssignment?.teamMemberId,
-        ) ??
-        slot.alreadyAssignedMembers.firstWhereOrNull(
-          (m) => m.id == slot.currentAssignment?.teamMemberId,
-        );
+    final currentMember = _currentMemberOf(slot);
 
     // Pickable members. A current member taken from the already-assigned
     // list goes on top, so the menu can still show them as selected.
@@ -3281,6 +3285,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Show dialog with constrained/unavailable team members for the event
   /// Allows admin to force-assign them despite constraints
   Future<void> _showConstrainedMembersDialog(AssignmentSlot slot) async {
+    // The list judges the event's hours. When the slot's occupant has hours of
+    // their own, a member free during those hours gets a green note.
+    final previousHours =
+        context.read<AssignmentBloc>().effectiveCustomWindow(slot);
+    final previousFirstName =
+        memberFirstName(_currentMemberOf(slot)?.name ?? '');
+    final previousName =
+        previousFirstName.isEmpty ? 'חבר/ת הצוות' : previousFirstName;
+
     // Get all active team members
     final teamRepo = context.read<TeamRepository>();
     final allMembers = await teamRepo.getActiveTeamMembers();
@@ -3407,6 +3420,16 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         final sameDayEvents =
                             slot.sameDayEventInfo[member.id] ?? [];
                         final isSameDayAssigned = sameDayEvents.isNotEmpty;
+                        // One line per reason: approved and pending
+                        // constraints each get their own.
+                        final reasons = ConstrainedMemberReasons(
+                          member: member,
+                          event: slot.event,
+                          sameDayEvents: sameDayEvents,
+                        );
+                        final fitsPreviousHours = previousHours != null &&
+                            member.isAvailableForEventWithTime(slot.event,
+                                window: previousHours);
 
                         return ListTile(
                           leading: Icon(
@@ -3420,13 +3443,23 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             alignment: Alignment.centerRight,
                             child: _buildMemberNameWithPermanentShield(member),
                           ),
-                          // One line per reason: approved and pending
-                          // constraints each get their own.
-                          subtitle: ConstrainedMemberReasons(
-                            member: member,
-                            event: slot.event,
-                            sameDayEvents: sameDayEvents,
-                          ),
+                          subtitle: fitsPreviousHours
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    reasons,
+                                    Text(
+                                      'פנוי בשעות של $previousName',
+                                      style: TextStyle(
+                                        color: Colors.green.shade700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : reasons,
                           trailing: ElevatedButton(
                             onPressed: () {
                               Logger.action('tap:assignConstrainedAnyway', {
@@ -3500,12 +3533,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return;
     }
 
-    // Stage the change instantly (no write yet). Conflict handling (bypass
-    // or not) now happens at Save time, so the bypass distinction is moot
-    // here — both handlers stage the same way.
-    context.read<AssignmentBloc>().add(
-          StageMemberChange(slot: slot, member: selectedMember),
-        );
+    // Stage the change (no write yet). Conflict handling (bypass or not) now
+    // happens at Save time, so the bypass distinction is moot here — both
+    // handlers stage the same way.
+    await _stageIncomingMember(slot, selectedMember);
   }
 
   Future<void> _handleAssignmentChange(
@@ -3519,11 +3550,48 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return;
     }
 
-    // Stage the change instantly (no write yet); the actual write happens
-    // later when the admin saves all staged changes.
-    context.read<AssignmentBloc>().add(
-          StageMemberChange(slot: slot, member: selectedMember),
-        );
+    // Stage the change (no write yet); the actual write happens later when
+    // the admin saves all staged changes.
+    await _stageIncomingMember(slot, selectedMember);
+  }
+
+  /// Stage [incoming] into [slot], first asking which hours they get when
+  /// custom hours are involved: the slot's occupant had hours of their own, or
+  /// [incoming] already has hours on another role of the event. Otherwise
+  /// staged at once, without hours. "ביטול" stages nothing, so the previous
+  /// occupant stays.
+  Future<void> _stageIncomingMember(
+      AssignmentSlot slot, TeamMember incoming) async {
+    final bloc = context.read<AssignmentBloc>();
+    final previousHours = bloc.effectiveCustomWindow(slot);
+    final existingHours = bloc.hoursHeldElsewhere(incoming, slot);
+    if (previousHours == null && existingHours == null) {
+      bloc.add(StageMemberChange(slot: slot, member: incoming));
+      return;
+    }
+
+    final choice = await ReplacementHoursDialog.show(
+      context,
+      event: slot.event,
+      incoming: incoming,
+      previous: _currentMemberOf(slot),
+      previousHours: previousHours,
+      incomingExistingHours: existingHours,
+      incomingHasOtherRoles: bloc.otherSlotsHeldBy(incoming, slot).isNotEmpty,
+    );
+    if (!mounted) return;
+    if (choice == null) {
+      _resetDropdown(slot);
+      return;
+    }
+    final hours = choice.hours;
+    bloc.add(StageMemberChange(
+      slot: slot,
+      member: incoming,
+      setsCustomHours: true,
+      customStartAt: hours == null ? null : formatWallMoment(hours.start),
+      customEndAt: hours == null ? null : formatWallMoment(hours.end),
+    ));
   }
 
   String _formatDate(DateTime date) {

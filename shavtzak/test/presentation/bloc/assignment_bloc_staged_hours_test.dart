@@ -346,8 +346,9 @@ void main() {
     });
 
     test(
-        'a staged replacement of the occupant keeps the seeded hours for now '
-        '(interim: Task 11 decides what a new occupant gets)', () async {
+        'a plain staged replacement of the occupant clears the hours: they '
+        'belong to the one who left, and Save sends an explicit null pair',
+        () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       final loaded = await load(
@@ -366,8 +367,10 @@ void main() {
 
       final update = saved.updates.single;
       expect(update.teamMemberId, 'm2');
-      expect(update.customStartAt, at(day1, '10:00'));
-      expect(update.customEndAt, at(day1, '16:00'));
+      final wire = AssignmentModel.fromEntity(update).toJson();
+      expect(wire.containsKey('customStartAt'), isTrue);
+      expect(wire['customStartAt'], isNull);
+      expect(wire['customEndAt'], isNull);
     });
   });
 
