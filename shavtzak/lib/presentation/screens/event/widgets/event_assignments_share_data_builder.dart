@@ -19,7 +19,7 @@ class EventAssignmentsShareDataBuilder {
 
     EventAssignmentsShareRow buildRow(Assignment assignment) {
       final memberName = assignment.teamMember!.name;
-      final noteText = _noteText(assignment);
+      final noteText = _noteText(assignment, event);
       int? noteNumber;
 
       if (noteText != null) {
@@ -70,16 +70,17 @@ class EventAssignmentsShareDataBuilder {
   /// member, or null when it has nothing to say.
   ///
   /// A member with hours of their own gets a note even without one: 'שעות
-  /// 27.10 14:00–23:00', followed by ' · ' and the assignment's note when it
-  /// has one. Hours that cannot be read count as no hours.
-  static String? _noteText(Assignment assignment) {
+  /// 14:00–23:00' (days by weekday, see [formatCustomHoursByWeekday]),
+  /// followed by ' · ' and the assignment's note when it has one. Hours that
+  /// cannot be read count as no hours.
+  static String? _noteText(Assignment assignment, Event event) {
     final trimmedNote = assignment.notes.trim();
     final window = assignment.customWindow;
     if (window == null) {
       return trimmedNote.isEmpty ? null : trimmedNote;
     }
 
-    final hours = 'שעות ${formatCustomHours(window)}';
+    final hours = 'שעות ${formatCustomHoursByWeekday(window, event)}';
     return trimmedNote.isEmpty ? hours : '$hours · $trimmedNote';
   }
 

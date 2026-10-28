@@ -1421,9 +1421,9 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return dateStr;
   }
 
-  /// Marks what the member's own hours changed on the card, as in the
-  /// approved mockup: a light wash behind the text.
-  static const Color _ownHoursHighlight = Color(0x99FFFFFF);
+  /// Marks what the member's own hours changed on the card: a light yellow
+  /// wash behind the text.
+  static const Color _ownHoursHighlight = Color(0xFFFFF9C4);
 
   /// The bracket after a value: what the event itself does.
   TextStyle _eventBracketStyle(bool isUpcoming, double fontSize) {
@@ -2176,8 +2176,8 @@ class MemberCardTimeRows extends Equatable {
 /// - `ההגעה שלך: <HH:mm> (התייצבות צוות <assembly>)`, the arrival prefixed with
 ///   its day when it is not the event's first day, the bracket dropped when
 ///   the event has no assembly time;
-/// - `היציאה שלך: <d.M HH:mm> (סיום צוות <d.M HH:mm>)`, the bracket the end of
-///   the event's stretch: `סיום צוות` at the team end, `סיום המופע` when the
+/// - `היציאה שלך: <d.M HH:mm> (סיום צוות משוער <d.M HH:mm>)`, the bracket the end of
+///   the event's stretch: `סיום צוות משוער` at the team end, `סיום מופע משוער` when the
 ///   event has no team end and the stretch ends at the show end, dropped when
 ///   it gives neither (the stretch would only be a day edge). A departure at
 ///   exactly 00:00 reads as the next day's 00:00.
@@ -2203,9 +2203,9 @@ MemberCardTimeRows memberCardTimeRows(Event event, WallInterval? window) {
   // The bracket names the time the stretch ends on: the team end, else the
   // show end (read as eventStretch reads them).
   final String? stretchEndLabel = wallTimeMinutes(event.teamEndTime) != null
-      ? 'סיום צוות'
+      ? 'סיום צוות משוער'
       : wallTimeMinutes(event.endTime) != null
-          ? 'סיום המופע'
+          ? 'סיום מופע משוער'
           : null;
 
   return MemberCardTimeRows(

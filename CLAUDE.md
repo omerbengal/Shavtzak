@@ -468,7 +468,7 @@ _subscription = _repository.watchItems().listen(
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (1907 passing as of 2026-10-28; Functions: 431). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
+- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (1921 passing as of 2026-10-28; Functions: 440). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
 

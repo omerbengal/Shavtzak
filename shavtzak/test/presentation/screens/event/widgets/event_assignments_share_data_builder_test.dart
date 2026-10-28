@@ -143,7 +143,10 @@ void main() {
 
       EventAssignmentsShareData buildFor(List<Assignment> assignments) =>
           EventAssignmentsShareDataBuilder.build(
-            event: _event(DateTime(2026, 5, 4, 10)),
+            event: _event(DateTime(2026, 5, 4, 10)).copyWith(
+              startDate: DateTime(2026, 10, 27),
+              endDate: DateTime(2026, 10, 27),
+            ),
             assignments: assignments,
             activeRoles: roles,
             labels: const [],
@@ -166,7 +169,7 @@ void main() {
         expect(data.sections.single.rows.single.noteNumber, 1);
         expect(data.notes.single.number, 1);
         expect(data.notes.single.memberName, 'דנה כהן');
-        expect(data.notes.single.text, 'שעות 27.10 14:00–23:00 · מביא ציוד');
+        expect(data.notes.single.text, 'שעות 14:00–23:00 · מביא ציוד');
       });
 
       test('a member with hours but no notes still gets a numbered note', () {
@@ -182,7 +185,7 @@ void main() {
         ]);
 
         expect(data.sections.single.rows.single.noteNumber, 1);
-        expect(data.notes.single.text, 'שעות 27.10 14:00 – 28.10 02:00');
+        expect(data.notes.single.text, 'שעות 14:00–02:00');
       });
 
       test('notes are numbered in visual order across members with and '
@@ -219,7 +222,7 @@ void main() {
         );
         expect(
           data.notes.map((note) => '${note.number}:${note.text}'),
-          ['1:מגיע מוקדם', '2:שעות 27.10 14:00–23:00'],
+          ['1:מגיע מוקדם', '2:שעות 14:00–23:00'],
         );
       });
 

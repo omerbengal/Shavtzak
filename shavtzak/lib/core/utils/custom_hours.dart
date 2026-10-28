@@ -6,6 +6,7 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import 'constraint_labels.dart';
 import 'event_stretch.dart';
+import 'same_day_assignments.dart';
 
 const String _dash = '–';
 
@@ -36,6 +37,47 @@ String formatCustomHours(WallInterval window) {
   }
   return '${formatWallDay(start)} ${formatWallTime(start)} $_dash '
       '${formatWallDay(end)} ${formatWallTime(end)}';
+}
+
+/// A window as the team reads it on [event]'s picture, days by weekday name:
+/// - times only, '14:00–23:00', when [event] is one day and the hours start on
+///   it and are over by the end of the next day ('22:00–01:00');
+/// - otherwise each end gets its weekday: "יום ג' 14:00–23:00" on one day,
+///   "יום ג' 22:00 – יום ד' 02:00" across two;
+/// - an event longer than a week adds the date after the weekday, since a
+///   weekday alone would repeat: "יום ג' 27.10 14:00–23:00".
+///
+/// An end at exactly 00:00 belongs to the next day, as in [formatCustomHours].
+String formatCustomHoursByWeekday(WallInterval window, Event event) {
+  final start = window.start;
+  final end = window.end;
+  final eventDay = event.startDate;
+  final oneDayEvent = calendarDaysBetween(eventDay, event.endDate) == 0;
+  if (oneDayEvent &&
+      calendarDaysBetween(eventDay, start) == 0 &&
+      calendarDaysBetween(eventDay, windowDays(window).last) <= 1) {
+    return '${formatWallTime(start)}$_dash${formatWallTime(end)}';
+  }
+
+  final withDate = calendarDaysBetween(eventDay, event.endDate) >= 7;
+  String day(DateTime moment) => withDate
+      ? '${_weekdayName(moment)} ${formatWallDay(moment)}'
+      : _weekdayName(moment);
+  final sameDay =
+      start.year == end.year && start.month == end.month && start.day == end.day;
+  if (sameDay) {
+    return '${day(start)} ${formatWallTime(start)}$_dash${formatWallTime(end)}';
+  }
+  return '${day(start)} ${formatWallTime(start)} $_dash '
+      '${day(end)} ${formatWallTime(end)}';
+}
+
+/// "יום א'" to "יום ו'", and 'שבת'.
+String _weekdayName(DateTime moment) {
+  if (moment.weekday == DateTime.saturday) return 'שבת';
+  const letters = ['א', 'ב', 'ג', 'ד', 'ה', 'ו'];
+  // DateTime.sunday is 7, so Sunday lands on index 0.
+  return "יום ${letters[moment.weekday % 7]}'";
 }
 
 /// The first usable custom window among [assignments], in the order given;

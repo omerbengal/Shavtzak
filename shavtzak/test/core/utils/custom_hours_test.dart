@@ -54,6 +54,84 @@ void main() {
     });
   });
 
+  group('formatCustomHoursByWeekday', () {
+    // 27.10.2026 is a Tuesday.
+    WallInterval hours(DateTime start, DateTime end) =>
+        WallInterval(start, end);
+
+    test('a one-day event: times only', () {
+      expect(
+        formatCustomHoursByWeekday(
+          hours(DateTime.utc(2026, 10, 27, 12), DateTime.utc(2026, 10, 27, 14, 30)),
+          _event(),
+        ),
+        '12:00–14:30',
+      );
+    });
+
+    test('a one-day event, hours past midnight: still times only', () {
+      expect(
+        formatCustomHoursByWeekday(
+          hours(DateTime.utc(2026, 10, 27, 22), DateTime.utc(2026, 10, 28, 1)),
+          _event(),
+        ),
+        '22:00–01:00',
+      );
+    });
+
+    test('a one-day event, hours on another day: each end gets its weekday',
+        () {
+      expect(
+        formatCustomHoursByWeekday(
+          hours(DateTime.utc(2026, 10, 26, 20), DateTime.utc(2026, 10, 27, 2)),
+          _event(),
+        ),
+        "יום ב' 20:00 – יום ג' 02:00",
+      );
+    });
+
+    test('a multi-day event, hours within one day: the weekday once', () {
+      expect(
+        formatCustomHoursByWeekday(
+          hours(DateTime.utc(2026, 10, 28, 14), DateTime.utc(2026, 10, 28, 23)),
+          _event(endDate: DateTime(2026, 10, 29)),
+        ),
+        "יום ד' 14:00–23:00",
+      );
+    });
+
+    test('a multi-day event, hours across days: each end gets its weekday',
+        () {
+      expect(
+        formatCustomHoursByWeekday(
+          hours(DateTime.utc(2026, 10, 30, 22), DateTime.utc(2026, 10, 31, 2)),
+          _event(endDate: DateTime(2026, 11, 1)),
+        ),
+        "יום ו' 22:00 – שבת 02:00",
+      );
+    });
+
+    test('Sunday is יום א\'', () {
+      expect(
+        formatCustomHoursByWeekday(
+          hours(DateTime.utc(2026, 11, 1, 9), DateTime.utc(2026, 11, 1, 12)),
+          _event(endDate: DateTime(2026, 11, 1)),
+        ),
+        "יום א' 09:00–12:00",
+      );
+    });
+
+    test('an event longer than a week adds the date to the weekday', () {
+      expect(
+        formatCustomHoursByWeekday(
+          hours(DateTime.utc(2026, 11, 3, 14), DateTime.utc(2026, 11, 3, 23)),
+          _event(endDate: DateTime(2026, 11, 3)),
+        ),
+        "יום ג' 3.11 14:00–23:00",
+      );
+    });
+  });
+
   group('formatWallDay and formatWallTime', () {
     test('a day is d.M with no padding; a time is HH:mm with it', () {
       final moment = DateTime.utc(2026, 3, 5, 9, 7);

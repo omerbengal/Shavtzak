@@ -270,7 +270,7 @@ void main() {
         'סיום מופע משוער:',
         '22:30',
         'היציאה שלך:',
-        '${dm(day(0))} 23:00 (סיום צוות ${dm(day(1))} 23:30)',
+        '${dm(day(0))} 23:00 (סיום צוות משוער ${dm(day(1))} 23:30)',
         'מי איתי באירוע?',
         'אירועים שעברו',
         '0',
@@ -295,7 +295,7 @@ void main() {
       expect(texts, contains('ההגעה שלך:'));
       expect(texts, contains('${dm(day(1))} 09:00 (התייצבות צוות 12:00)'));
       expect(texts,
-          contains('${dm(day(1))} 20:00 (סיום צוות ${dm(day(1))} 23:30)'));
+          contains('${dm(day(1))} 20:00 (סיום צוות משוער ${dm(day(1))} 23:30)'));
       expect(texts, isNot(contains('תאריך התחלה:')));
     });
 
@@ -321,7 +321,7 @@ void main() {
           ]));
       expect(texts, contains('14:00 (התייצבות צוות 12:00)'));
       expect(texts,
-          contains('${dm(day(1))} 20:00 (סיום צוות ${dm(day(1))} 23:30)'));
+          contains('${dm(day(1))} 20:00 (סיום צוות משוער ${dm(day(1))} 23:30)'));
       expect(texts.where((t) => t.contains('(האירוע')), isEmpty);
     });
 
@@ -429,7 +429,7 @@ void main() {
       expect(rows.hasCustomHours, isTrue);
       expect(rows.arrivalLine, 'ההגעה שלך: 14:00 (התייצבות צוות 12:00)');
       expect(rows.departureLine,
-          'היציאה שלך: 27.10 23:00 (סיום צוות 28.10 23:30)');
+          'היציאה שלך: 27.10 23:00 (סיום צוות משוער 28.10 23:30)');
       expect(rows.firstDay, firstDay);
       expect(rows.lastDay, firstDay);
       expect(rows.firstDayNote, '');
@@ -442,7 +442,7 @@ void main() {
 
       expect(rows.arrivalLine, 'ההגעה שלך: 28.10 09:00 (התייצבות צוות 12:00)');
       expect(rows.departureLine,
-          'היציאה שלך: 28.10 20:00 (סיום צוות 28.10 23:30)');
+          'היציאה שלך: 28.10 20:00 (סיום צוות משוער 28.10 23:30)');
       expect(rows.firstDay, lastDay);
       expect(rows.lastDay, lastDay);
       expect(rows.firstDayNote, ' (האירוע מ-27.10)');
@@ -482,7 +482,7 @@ void main() {
       expect(rows.lastDay, firstDay);
       expect(rows.lastDayNote, '');
       expect(rows.departureLine,
-          'היציאה שלך: 28.10 00:00 (סיום צוות 27.10 23:30)');
+          'היציאה שלך: 28.10 00:00 (סיום צוות משוער 27.10 23:30)');
     });
 
     test('hours that start before the event\'s first day are marked', () {
@@ -519,7 +519,7 @@ void main() {
       );
 
       expect(rows.departureLine,
-          'היציאה שלך: 27.10 22:00 (סיום צוות 28.10 23:30)');
+          'היציאה שלך: 27.10 22:00 (סיום צוות משוער 28.10 23:30)');
     });
 
     test(
@@ -531,7 +531,7 @@ void main() {
       );
 
       expect(rows.departureLine,
-          'היציאה שלך: 27.10 22:00 (סיום המופע 28.10 22:30)');
+          'היציאה שלך: 27.10 22:00 (סיום מופע משוער 28.10 22:30)');
     });
 
     test(
@@ -543,7 +543,7 @@ void main() {
       );
 
       expect(rows.departureLine,
-          'היציאה שלך: 27.10 22:00 (סיום המופע 28.10 22:30)');
+          'היציאה שלך: 27.10 22:00 (סיום מופע משוער 28.10 22:30)');
     });
 
     test('without hours: the rows are the ones the card always had', () {
