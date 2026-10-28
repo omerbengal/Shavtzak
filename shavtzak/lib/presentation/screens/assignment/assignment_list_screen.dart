@@ -1994,8 +1994,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         .read<AssignmentBloc>()
         .otherSlotsOfSameMember(slot)
         .isNotEmpty;
-    var customHoursOn = assignment.hasCustomHours;
-    var hoursSeed = assignment.customWindow ?? eventStretch(slot.event);
+    // The hours the dialog opened with (null: none). The conflict question is
+    // about NEW hours, so it is only asked when what is saved differs.
+    final initialHours = assignment.customWindow;
+    var customHoursOn = initialHours != null;
+    var hoursSeed = initialHours ?? eventStretch(slot.event);
     WallInterval? hoursValue = hoursSeed;
 
     await showDialog<void>(
@@ -2274,7 +2277,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       if (customHoursOn && window == null) {
                         return;
                       }
-                      if (window != null && assignedMember != null) {
+                      // Ask only about hours that are new or changed: a notes,
+                      // label or phone edit on hours the admin already
+                      // accepted saves without a prompt.
+                      if (window != null &&
+                          window != initialHours &&
+                          assignedMember != null) {
                         final warnings =
                             customHoursWarningLines(assignedMember, window);
                         if (warnings.isNotEmpty) {

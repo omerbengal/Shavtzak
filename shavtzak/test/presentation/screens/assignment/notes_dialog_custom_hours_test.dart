@@ -452,6 +452,87 @@ void main() {
           findsOneWidget);
     });
 
+    // An assignment whose stored hours already overlap the all-day constraint.
+    Assignment hoursOverlappingConstraint() => assignmentFor(
+          memberWith(constraints: [dayConstraint(ConstraintStatus.approved)]),
+          customStartAt: '2026-07-01T18:30',
+          customEndAt: '2026-07-01T21:00',
+        );
+
+    testWidgets(
+        'a notes edit on unchanged hours that overlap a constraint saves '
+        'without asking', (tester) async {
+      final bloc =
+          await pumpScreen(tester, assignment: hoursOverlappingConstraint());
+      await openNotesDialog(tester);
+
+      await tester.enterText(
+        find.byWidgetPredicate(
+            (w) => w is TextField && w.decoration?.hintText == 'הכנס הערות...'),
+        'הערה חדשה',
+      );
+      await tester.pump();
+      await tapSave(tester);
+
+      expect(find.text('⚠️ התנגשות עם אילוצים'), findsNothing);
+      expect(find.text('הערות לשיבוץ'), findsNothing);
+      final staged = bloc.staged.single;
+      expect(staged.notes, 'הערה חדשה');
+      expect(staged.customStartAt, '2026-07-01T18:30');
+      expect(staged.customEndAt, '2026-07-01T21:00');
+      expect(staged.setsCustomHours, isTrue);
+    });
+
+    testWidgets(
+        'turning the hours off and on again without changing them is not '
+        'a change', (tester) async {
+      final bloc =
+          await pumpScreen(tester, assignment: hoursOverlappingConstraint());
+      await openNotesDialog(tester);
+
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      await tapSave(tester);
+
+      expect(find.text('⚠️ התנגשות עם אילוצים'), findsNothing);
+      expect(bloc.staged.single.customStartAt, '2026-07-01T18:30');
+    });
+
+    testWidgets('changing existing hours that overlap a constraint asks',
+        (tester) async {
+      final bloc =
+          await pumpScreen(tester, assignment: hoursOverlappingConstraint());
+      await openNotesDialog(tester);
+
+      await tester.enterText(hoursTimeField(1), '2130');
+      await tester.pump();
+      await tapSave(tester);
+
+      expect(find.text('⚠️ התנגשות עם אילוצים'), findsOneWidget);
+      expect(bloc.staged, isEmpty);
+
+      await tester.tap(find.text('שמור בכל זאת'));
+      await tester.pumpAndSettle();
+      expect(bloc.staged.single.customEndAt, '2026-07-01T21:30');
+    });
+
+    testWidgets('switching overlapping hours off never asks', (tester) async {
+      final bloc =
+          await pumpScreen(tester, assignment: hoursOverlappingConstraint());
+      await openNotesDialog(tester);
+
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      await tapSave(tester);
+
+      expect(find.text('⚠️ התנגשות עם אילוצים'), findsNothing);
+      final staged = bloc.staged.single;
+      expect(staged.customStartAt, isNull);
+      expect(staged.customEndAt, isNull);
+    });
+
     testWidgets('with the hours off there is nothing to ask', (tester) async {
       final bloc = await pumpScreen(
         tester,
