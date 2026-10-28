@@ -98,6 +98,14 @@ class _EventFormModalState extends State<EventFormModal> {
   late final FocusNode _parkingLocationFocusNode;
   late final FocusNode _commentsFocusNode;
   bool _duplicateAssignments = false; // For duplication mode checkbox
+  // Duplication mode: also copy the members' custom hours, moved to the new
+  // dates. Offered only while [_sourceHasCustomHours] is true.
+  bool _duplicateCustomHours = true;
+  // Whether the event being duplicated has an assignment with custom hours.
+  // Unknown (false) until the first value of its assignments arrives, and
+  // false for good when that cannot be read: the duplication then behaves as
+  // it does without custom hours.
+  bool _sourceHasCustomHours = false;
   String?
       _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
   String?
@@ -188,6 +196,8 @@ class _EventFormModalState extends State<EventFormModal> {
       }
     }
 
+    if (widget.isDuplication) unawaited(_loadSourceHasCustomHours());
+
     _nameController.addListener(() => _isDirty = true);
     _locationController.addListener(() => _isDirty = true);
     _parkingLocationController.addListener(() => _isDirty = true);
@@ -218,6 +228,26 @@ class _EventFormModalState extends State<EventFormModal> {
           _scrollToRole(roleType);
         });
       }
+    }
+  }
+
+  /// Whether the event being duplicated has custom hours, from the first value
+  /// of its assignments stream (never an awaited one-shot get, which can park
+  /// for tens of seconds). Anything that goes wrong leaves the sub-switch
+  /// hidden, so the duplication carries no hours.
+  Future<void> _loadSourceHasCustomHours() async {
+    try {
+      final assignments = await context
+          .read<AssignmentRepository>()
+          .watchAssignmentsByEvent(widget.event!.id)
+          .first
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      if (assignments.any((assignment) => assignment.hasCustomHours)) {
+        setState(() => _sourceHasCustomHours = true);
+      }
+    } catch (_) {
+      Logger.action('duplicate:hoursLoadFailed', {'event': widget.event!.id});
     }
   }
 
@@ -438,6 +468,9 @@ class _EventFormModalState extends State<EventFormModal> {
             newRequiresArmed: _requiresArmed,
             newRoleRequirements: Map.from(_roleRequirements),
             duplicateAssignments: _duplicateAssignments,
+            duplicateCustomHours: _duplicateAssignments &&
+                _sourceHasCustomHours &&
+                _duplicateCustomHours,
             categoryId: _selectedCategoryId,
             newRelevantForExtendedTeam:
                 !_relevantForExtendedTeam, // Invert back for database
@@ -1232,14 +1265,14 @@ class _EventFormModalState extends State<EventFormModal> {
                                     });
                                   }
                                   // Show the unified conflict resolution dialog
-                                  final excludedIds =
+                                  final choice =
                                       await DuplicationConflictResolutionDialog
                                           .show(
                                     context,
                                     state,
                                   );
 
-                                  if (excludedIds != null) {
+                                  if (choice != null) {
                                     // User confirmed - dispatch confirmation event with exclusions
                                     if (context.mounted) {
                                       setState(() {
@@ -1251,12 +1284,17 @@ class _EventFormModalState extends State<EventFormModal> {
                                           .add(ConfirmDuplicationWithExclusions(
                                             originalEvent: state.originalEvent,
                                             proposedEvent: state.proposedEvent,
-                                            assignmentIdsToExclude: excludedIds,
+                                            assignmentIdsToExclude:
+                                                choice.excluded,
                                             originalAssignmentIds: state
                                                 .assignmentInfos
                                                 .map((info) =>
                                                     info.assignment.id)
                                                 .toList(),
+                                            duplicateCustomHours:
+                                                state.copiesCustomHours,
+                                            customHoursDropped:
+                                                choice.hoursDropped,
                                           ));
                                     }
                                   } else {
@@ -2337,6 +2375,34 @@ class _EventFormModalState extends State<EventFormModal> {
                                               });
                                             },
                                           ),
+                                          // Custom hours: only when there are
+                                          // assignments to copy and some of
+                                          // them have hours.
+                                          if (_duplicateAssignments &&
+                                              _sourceHasCustomHours)
+                                            Padding(
+                                              padding: const EdgeInsetsDirectional
+                                                  .only(start: 24),
+                                              child: SwitchListTile(
+                                                title: const Text(
+                                                    'שכפל שעות מותאמות'),
+                                                subtitle: Text(
+                                                  _duplicateCustomHours
+                                                      ? 'השעות יוזזו לימי האירוע החדש'
+                                                      : 'כולם יקבלו את שעות האירוע',
+                                                ),
+                                                value: _duplicateCustomHours,
+                                                onChanged: (v) {
+                                                  Logger.action(
+                                                      'toggle:duplicateCustomHours',
+                                                      {'on': v});
+                                                  setState(() {
+                                                    _duplicateCustomHours = v;
+                                                    _isDirty = true;
+                                                  });
+                                                },
+                                              ),
+                                            ),
                                           const SizedBox(height: 8),
                                         ],
 

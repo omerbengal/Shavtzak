@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../core/utils/constraint_labels.dart';
+import '../../../core/utils/event_stretch.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 
@@ -48,9 +49,14 @@ class DuplicationAvailability extends Equatable {
 ///
 /// Rules 1-3 are the ones the backend refuses even with the bypass, and no
 /// screen in the app assigns such a member either.
+///
+/// [window] is the stretch of time the copy would hold the member for: the
+/// custom hours moved to the new dates, or null for the new event's own
+/// stretch. Only rule 5 reads it, and only for a permanent member.
 DuplicationAvailability duplicationAvailability({
   required Assignment assignment,
   required Event proposedEvent,
+  WallInterval? window,
 }) {
   final member = assignment.teamMember;
   if (member == null) {
@@ -76,7 +82,7 @@ DuplicationAvailability duplicationAvailability({
   }
   if (member.allowMultipleAssignments) return DuplicationAvailability.clear;
 
-  if (member.isAvailableForEventWithTime(proposedEvent)) {
+  if (member.isAvailableForEventWithTime(proposedEvent, window: window)) {
     return DuplicationAvailability.clear;
   }
 
@@ -84,7 +90,7 @@ DuplicationAvailability duplicationAvailability({
     return DuplicationAvailability(
       flagged: true,
       reasons: member
-          .constraintsBlockingEvent(proposedEvent)
+          .constraintsBlockingWindow(window ?? eventStretch(proposedEvent))
           .map(constraintStatusLabel)
           .toList(),
     );

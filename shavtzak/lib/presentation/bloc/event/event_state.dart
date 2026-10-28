@@ -2,7 +2,9 @@ import 'package:equatable/equatable.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/utils/event_sorting.dart';
+import '../../../core/utils/event_stretch.dart';
 import '../../screens/event/quota_reduction_analyzer.dart';
+import 'duplication_availability.dart';
 
 /// Base state class for EventBloc
 abstract class EventState extends Equatable {
@@ -200,6 +202,11 @@ class DuplicationRequiresConflictResolution extends EventState {
   /// Check if there are any conflicts
   bool get hasConflicts => assignmentInfos.any((a) => a.hasAnyConflict);
 
+  /// Whether any copy would carry custom hours moved to the new dates: the
+  /// dialog then lists them for the admin to confirm.
+  bool get copiesCustomHours =>
+      assignmentInfos.any((a) => a.hasMovedCustomHours);
+
   /// Get all assignments with availability conflicts
   List<AssignmentDuplicationInfo> get availabilityConflicts =>
       assignmentInfos.where((a) => a.hasAvailabilityConflict).toList();
@@ -229,16 +236,39 @@ class AssignmentDuplicationInfo extends Equatable {
   /// locks the row to removal.
   final bool canKeep;
 
+  /// The hours the copy would carry when custom hours are duplicated: the
+  /// member's hours moved to the new dates (`yyyy-MM-ddTHH:mm`). Both null when
+  /// the copy would carry none. [hasAvailabilityConflict], [availabilityReason]
+  /// and [canKeep] are judged with these hours.
+  final String? movedCustomStartAt;
+  final String? movedCustomEndAt;
+
+  /// The same judgement made as if the admin did not copy the moved hours, so
+  /// the copy held the member for the whole new event. Null when the copy
+  /// carries no moved hours (there is only one judgement then).
+  final DuplicationAvailability? availabilityWithEventHours;
+
   const AssignmentDuplicationInfo({
     required this.assignment,
     required this.hasAvailabilityConflict,
     this.availabilityReason,
     required this.isInOverQuotaRole,
     this.canKeep = true,
+    this.movedCustomStartAt,
+    this.movedCustomEndAt,
+    this.availabilityWithEventHours,
   });
 
   /// True if this assignment has any type of conflict
   bool get hasAnyConflict => hasAvailabilityConflict || isInOverQuotaRole;
+
+  /// The moved hours as an interval; null when the copy carries none or they
+  /// cannot be read.
+  WallInterval? get movedCustomWindow =>
+      customHoursInterval(movedCustomStartAt, movedCustomEndAt);
+
+  /// Whether the copy would carry moved custom hours.
+  bool get hasMovedCustomHours => movedCustomWindow != null;
 
   @override
   List<Object?> get props => [
@@ -247,5 +277,8 @@ class AssignmentDuplicationInfo extends Equatable {
         availabilityReason,
         isInOverQuotaRole,
         canKeep,
+        movedCustomStartAt,
+        movedCustomEndAt,
+        availabilityWithEventHours,
       ];
 }

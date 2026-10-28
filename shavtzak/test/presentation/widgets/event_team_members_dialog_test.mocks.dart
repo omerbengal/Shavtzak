@@ -729,8 +729,9 @@ class MockEventRepository extends _i1.Mock implements _i8.EventRepository {
   _i5.Future<void> duplicateEvent(
     _i2.Event? originalEvent,
     _i2.Event? newEvent,
-    List<_i6.Assignment>? originalAssignments,
-  ) =>
+    List<_i6.Assignment>? originalAssignments, {
+    Map<String, ({String? end, String? start})>? hoursByAssignmentId = const {},
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
           #duplicateEvent,
@@ -739,6 +740,7 @@ class MockEventRepository extends _i1.Mock implements _i8.EventRepository {
             newEvent,
             originalAssignments,
           ],
+          {#hoursByAssignmentId: hoursByAssignmentId},
         ),
         returnValue: _i5.Future<void>.value(),
         returnValueForMissingStub: _i5.Future<void>.value(),

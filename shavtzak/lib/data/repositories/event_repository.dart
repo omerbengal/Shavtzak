@@ -315,11 +315,16 @@ class EventRepository {
 
   /// Duplicate an event with new date/time and copy all assignments
   /// Creates Drive folder for the new event and runs archive check
+  ///
+  /// A copy carries custom hours only when its source assignment's id is a key
+  /// of [hoursByAssignmentId]: the caller has already moved them to the new
+  /// event's dates. Every other copy carries none.
   Future<void> duplicateEvent(
     Event originalEvent,
     Event newEvent,
-    List<Assignment> originalAssignments,
-  ) async {
+    List<Assignment> originalAssignments, {
+    Map<String, ({String? start, String? end})> hoursByAssignmentId = const {},
+  }) async {
     // Insert event to database first (Drive folder created in background)
     await _database.insertEvent(newEvent);
 
@@ -340,8 +345,10 @@ class EventRepository {
               notes: assignment.notes,
               semanticLabelId: assignment.semanticLabelId,
               alternativePhoneNumber: assignment.alternativePhoneNumber,
-              // Custom hours are not copied: they sit on the original event's
-              // days, and the duplicate is on others.
+              // Custom hours sit on the original event's days, so only the
+              // ones the caller moved to the new days are carried.
+              customStartAt: hoursByAssignmentId[assignment.id]?.start,
+              customEndAt: hoursByAssignmentId[assignment.id]?.end,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
               teamMember: assignment.teamMember,
@@ -386,8 +393,9 @@ class EventRepository {
         notes: assignment.notes,
         semanticLabelId: assignment.semanticLabelId,
         alternativePhoneNumber: assignment.alternativePhoneNumber,
-        // Custom hours are not copied: they sit on the original event's
-        // days, and the duplicate is on others.
+        // Custom hours are not copied by this variant: they sit on the
+        // original event's days, and the duplicate is on others. Only
+        // [duplicateEvent] carries them, moved to the new days.
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         teamMember: assignment.teamMember,
