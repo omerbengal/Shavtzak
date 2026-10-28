@@ -33,6 +33,11 @@ class DualCalendarDatePicker extends StatefulWidget {
   /// Border color for highlighted dates
   final Color highlightedBorderColor;
 
+  /// What the frame around a highlighted date means, shown under the title.
+  /// Null keeps the original text ('מסגרת אדומה = יש אירוע בתאריך זה'); set it
+  /// when the highlighted dates mean something else.
+  final String? highlightLegend;
+
   const DualCalendarDatePicker({
     super.key,
     required this.isSingleDate,
@@ -43,6 +48,7 @@ class DualCalendarDatePicker extends StatefulWidget {
     this.dimBeforeDate,
     this.highlightedDates = const {},
     this.highlightedBorderColor = Colors.red,
+    this.highlightLegend,
   });
 
   @override
@@ -214,7 +220,7 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'מסגרת אדומה = יש אירוע בתאריך זה',
+                      widget.highlightLegend ?? 'מסגרת אדומה = יש אירוע בתאריך זה',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade700,

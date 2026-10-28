@@ -13,6 +13,8 @@ import '../../../data/repositories/team_repository.dart';
 import '../../../core/constants/assignment_label_palette.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/custom_hours.dart';
+import '../../../core/utils/event_stretch.dart';
 import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
@@ -36,6 +38,8 @@ import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/assignment_label_chip.dart';
+import '../../widgets/custom_hours_conflict_dialog.dart';
+import '../../widgets/custom_hours_fields.dart';
 import '../../widgets/name_search_field.dart';
 import '../../widgets/constrained_member_reasons.dart';
 import '../../../core/utils/validators.dart';
@@ -1101,19 +1105,43 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// ([_buildOffQuotaRow]) so a note / label / phone still shows when a row
   /// falls OUTSIDE its quota (e.g. after the role's quota was reduced). Returns
   /// null when the assignment has nothing extra to show.
+  ///
+  /// The member's custom hours, when they have usable ones, are the first line:
+  /// plain text, no icon and no card.
   Widget? _buildAssignmentExtraInfo(Assignment? assignment) {
     if (assignment == null) return null;
+    final customHours = assignment.customWindow;
     final hasNotes = assignment.notes.isNotEmpty;
     final hasSemanticLabel = assignment.semanticLabel != null;
     final hasAltPhone = assignment.alternativePhoneNumber != null &&
         assignment.alternativePhoneNumber!.isNotEmpty;
-    if (!hasNotes && !hasSemanticLabel && !hasAltPhone) return null;
+    if (customHours == null &&
+        !hasNotes &&
+        !hasSemanticLabel &&
+        !hasAltPhone) {
+      return null;
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: Column(
           children: [
+            if (customHours != null) ...[
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  'שעות מותאמות: ${formatCustomHours(customHours)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.indigo.shade800,
+                  ),
+                ),
+              ),
+              if (hasSemanticLabel || hasNotes || hasAltPhone)
+                const SizedBox(height: 4),
+            ],
             if (hasSemanticLabel) ...[
               Align(
                 alignment: Alignment.center,
@@ -1953,6 +1981,23 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     String? selectedSemanticLabelId = assignment.semanticLabelId;
     final inlineCreatedLabels = <AssignmentLabel>[];
 
+    // The member's own hours. The slot's assignment is the effective one (a
+    // staged edit is already laid over the stored row), so the switch starts
+    // on when it has usable hours; unreadable stored hours count as none.
+    // [hoursSeed] is what the fields open with: the hours it has, else the
+    // event's whole stretch, then the last valid edit if the switch is turned
+    // off and on again.
+    final assignedMember = assignment.teamMember;
+    final firstName = memberFirstName(assignedMember?.name ?? '');
+    final memberLabel = firstName.isEmpty ? 'חבר/ת הצוות' : firstName;
+    final sharesHoursAcrossRoles = context
+        .read<AssignmentBloc>()
+        .otherSlotsOfSameMember(slot)
+        .isNotEmpty;
+    var customHoursOn = assignment.hasCustomHours;
+    var hoursSeed = assignment.customWindow ?? eventStretch(slot.event);
+    WallInterval? hoursValue = hoursSeed;
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -2141,6 +2186,60 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               prefixIcon: const Icon(Icons.phone),
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          SwitchListTile(
+                            dense: true,
+                            // tileColor and shape, not a coloured Container
+                            // around the tile: ListTile paints its background
+                            // on the nearest Material and asserts otherwise.
+                            tileColor: Colors.blue.shade50,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide(color: Colors.blue.shade100),
+                            ),
+                            title: Text(
+                              'שעות מותאמות ל$memberLabel',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            value: customHoursOn,
+                            onChanged: (value) {
+                              Logger.action('toggle:customHours', {
+                                'assignmentId': assignment.id,
+                                'on': value,
+                              });
+                              setDialogState(() {
+                                customHoursOn = value;
+                                if (value) hoursValue = hoursSeed;
+                              });
+                            },
+                          ),
+                          if (sharesHoursAcrossRoles)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                'השעות יחולו על כל התפקידים של $memberLabel '
+                                'באירוע',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                          if (customHoursOn) ...[
+                            const SizedBox(height: 12),
+                            CustomHoursFields(
+                              key: const ValueKey('customHoursFields'),
+                              event: slot.event,
+                              initial: hoursSeed,
+                              onChanged: (window) {
+                                hoursValue = window;
+                                if (window != null) hoursSeed = window;
+                              },
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -2162,10 +2261,32 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     onPressed: () async {
                       Logger.action('tap:saveNotes', {
                         'assignmentId': assignment.id,
+                        'customHours': customHoursOn,
                       });
                       final assignmentBloc = context.read<AssignmentBloc>();
                       if (!formKey.currentState!.validate()) {
                         return;
+                      }
+
+                      // Hours switched on but not a usable interval: stay open,
+                      // the fields already say what is wrong.
+                      final window = customHoursOn ? hoursValue : null;
+                      if (customHoursOn && window == null) {
+                        return;
+                      }
+                      if (window != null && assignedMember != null) {
+                        final warnings =
+                            customHoursWarningLines(assignedMember, window);
+                        if (warnings.isNotEmpty) {
+                          final saveAnyway =
+                              await CustomHoursConflictDialog.show(
+                            dialogContext,
+                            lines: warnings,
+                          );
+                          if (!saveAnyway || !dialogContext.mounted) {
+                            return;
+                          }
+                        }
                       }
 
                       final phone = phoneController.text.trim();
@@ -2176,6 +2297,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                           semanticLabelId: selectedSemanticLabelId,
                           alternativePhoneNumber:
                               phone.isEmpty ? null : phone,
+                          customStartAt: window == null
+                              ? null
+                              : formatWallMoment(window.start),
+                          customEndAt: window == null
+                              ? null
+                              : formatWallMoment(window.end),
+                          setsCustomHours: true,
                         ),
                       );
 

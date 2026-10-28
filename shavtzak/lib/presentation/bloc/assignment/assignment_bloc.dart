@@ -1561,19 +1561,87 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     await _commitStaged(key, next);
   }
 
-  /// Stage a notes/label/alt-phone edit (member left unchanged).
-  Future<void> _upsertStagedNotes(AssignmentSlot slot, String notes,
-      String? labelId, String? altPhone) async {
+  /// Who will hold [slot] once the staged changes are saved: the staged
+  /// occupant when the slot has a staged change (none for a staged clear or a
+  /// staged deletion), else the stored one.
+  String? _effectiveOccupantId(AssignmentSlot slot) {
+    final staged = _stagedChanges[_slotKey(slot)];
+    if (staged == null) return slot.currentAssignment?.teamMemberId;
+    return staged.markedForDeletion ? null : staged.desiredMemberId;
+  }
+
+  /// The other slots of [slot]'s event that [slot]'s occupant holds as well, by
+  /// effective occupant (see [_effectiveOccupantId]), taken from the grid as
+  /// last emitted.
+  ///
+  /// These are the slots whose custom hours must change together with [slot]'s:
+  /// the backend refuses a Save that leaves one member with different hours in
+  /// the roles they hold in one event. Empty when the slot has no occupant, and
+  /// for a member who may hold several roles with hours of their own
+  /// (`allowMultipleAssignments`).
+  List<AssignmentSlot> otherSlotsOfSameMember(AssignmentSlot slot) {
+    final memberId = _effectiveOccupantId(slot);
+    if (memberId == null) return const [];
+    final stored = slot.currentAssignment?.teamMember;
+    final member = _windowMembersMap[memberId] ??
+        (stored?.id == memberId ? stored : null);
+    if (member?.allowMultipleAssignments ?? false) return const [];
+
+    final seenKeys = {_slotKey(slot)};
+    return [
+      for (final other in lastLoadedSlots)
+        if (other.event.id == slot.event.id &&
+            _effectiveOccupantId(other) == memberId &&
+            seenKeys.add(_slotKey(other)))
+          other,
+    ];
+  }
+
+  /// Stage a notes/label/alt-phone edit (member left unchanged). When
+  /// [setsHours] the slot's custom hours are set to [customStartAt] /
+  /// [customEndAt] (both null = no hours of their own) and so are those of the
+  /// member's other slots in the event ([otherSlotsOfSameMember]): they change
+  /// in the one staged Save, each keeping its own notes, label, phone and
+  /// occupant.
+  Future<void> _upsertStagedNotes(
+    AssignmentSlot slot,
+    String notes,
+    String? labelId,
+    String? altPhone, {
+    required bool setsHours,
+    String? customStartAt,
+    String? customEndAt,
+  }) async {
+    // Siblings are read before this slot is staged: they depend on the
+    // occupant, which this edit does not change.
+    final siblings =
+        setsHours ? otherSlotsOfSameMember(slot) : const <AssignmentSlot>[];
     final key = _slotKey(slot);
     final base = _stagedChanges[key] ?? _seedStaged(slot);
-    await _commitStaged(
-      key,
-      base.copyWith(
-        desiredNotes: notes,
-        desiredSemanticLabelId: () => labelId,
-        desiredAltPhone: () => altPhone,
-      ),
+    var next = base.copyWith(
+      desiredNotes: notes,
+      desiredSemanticLabelId: () => labelId,
+      desiredAltPhone: () => altPhone,
     );
+    if (setsHours) {
+      next = next.copyWith(
+        desiredCustomStartAt: () => customStartAt,
+        desiredCustomEndAt: () => customEndAt,
+      );
+    }
+    await _commitStaged(key, next);
+
+    for (final sibling in siblings) {
+      final siblingKey = _slotKey(sibling);
+      final siblingBase = _stagedChanges[siblingKey] ?? _seedStaged(sibling);
+      await _commitStaged(
+        siblingKey,
+        siblingBase.copyWith(
+          desiredCustomStartAt: () => customStartAt,
+          desiredCustomEndAt: () => customEndAt,
+        ),
+      );
+    }
   }
 
   /// Task 12: persists BOTH the staged-change list and the derived-quota
@@ -1823,10 +1891,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   Future<void> _onStageNotesChange(
       StageNotesChange event, Emitter<AssignmentState> emit) async {
-    await _upsertStagedNotes(event.slot, event.notes, event.semanticLabelId,
-        event.alternativePhoneNumber);
+    await _upsertStagedNotes(
+      event.slot,
+      event.notes,
+      event.semanticLabelId,
+      event.alternativePhoneNumber,
+      setsHours: event.setsCustomHours,
+      customStartAt: event.customStartAt,
+      customEndAt: event.customEndAt,
+    );
     Logger.action('stage:notes', {
       'slot': _slotKey(event.slot),
+      'setsHours': event.setsCustomHours,
       'stagedCount': _stagedChanges.length,
     });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
