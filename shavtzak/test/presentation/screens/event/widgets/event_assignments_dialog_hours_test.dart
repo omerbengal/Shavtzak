@@ -146,7 +146,7 @@ void main() {
       ),
     ]);
 
-    final hours = find.text('שעות: 27.10 14:00–23:00');
+    final hours = find.text("שעות: יום ג' 14:00–23:00");
     final notes = find.textContaining('הערות לשיבוץ');
     expect(hours, findsOneWidget);
     expect(notes, findsOneWidget);

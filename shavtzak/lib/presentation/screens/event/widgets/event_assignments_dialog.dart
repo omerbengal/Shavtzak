@@ -811,7 +811,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                 ),
               ),
             ),
-          AssignmentHoursLine(assignment: assignment),
+          AssignmentHoursLine(assignment: assignment, event: widget.event),
           if (assignment.notes.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(right: 26, top: 4),

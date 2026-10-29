@@ -33,6 +33,7 @@ import 'package:shavtzak/data/repositories/event_repository.dart';
 import 'package:shavtzak/data/repositories/role_repository.dart';
 import 'package:shavtzak/data/repositories/team_repository.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
+import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
@@ -256,6 +257,36 @@ void main() {
       ]);
 
       expect(find.text('שעות: 27.10 14:00 – 28.10 02:00'), findsOneWidget);
+    });
+
+    testWidgets('with the assignment\'s event attached, days read by weekday',
+        (tester) async {
+      await pumpDialog(tester);
+      await tester.pump();
+
+      // 27.10.2026 is a Tuesday.
+      final twoDayEvent = Event(
+        id: eventId,
+        name: 'כנס חורף',
+        startDate: DateTime(2026, 10, 27),
+        endDate: DateTime(2026, 10, 28),
+        startTime: '19:00',
+        endTime: '22:30',
+        assemblyTime: '12:00',
+        requiresArmed: false,
+        roleRequirements: const {'medic': 1},
+        createdAt: now,
+        updatedAt: now,
+      );
+      await emitAssignments(tester, [
+        assignmentFor('a1', memberFor('tm1', 'דני')).copyWith(
+          event: twoDayEvent,
+          customStartAt: () => '2026-10-27T22:00',
+          customEndAt: () => '2026-10-28T02:00',
+        ),
+      ]);
+
+      expect(find.text("שעות: יום ג' 22:00 – יום ד' 02:00"), findsOneWidget);
     });
 
     testWidgets('members without hours, or with hours that cannot be read, '
