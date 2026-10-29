@@ -4,6 +4,8 @@ import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
 
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/stage.dart';
+import '../task_progress.dart';
 import '../task_utils.dart';
 import 'task_import_parser.dart';
 
@@ -17,49 +19,157 @@ const String taskImportTemplateFileName = 'תבנית משימות דו יומי
 /// written one "*" item per line. A task's stage is picked from a drop-down
 /// of the stage names.
 List<int> buildTaskImportTemplate(Event event) {
-  final excel = Excel.createExcel();
-  excel.rename(excel.getDefaultSheet()!, stagesSheetName);
-  final stages = excel[stagesSheetName];
-  final tasks = excel[tasksSheetName];
-
-  _writeSheet(
-    stages,
-    headers: StageColumns.templateHeaders,
-    widths: const [34.25, 12.5, 13.7, 10.5, 52, 16.5, 26.7, 64.5],
-    listColumns: const {4, 7}, // requirements, contacts
-    example: [
-      TextCellValue(_exampleStage),
-      DateCellValue.fromDateTime(eventDays(event).first),
-      const TimeCellValue(hour: 9),
-      const TimeCellValue(hour: 10, minute: 30),
-      TextCellValue('* שולחן קליטה בלובי\n* עמדת כיבוד קל'),
-      TextCellValue('לובי המלון'),
-      TextCellValue('להגיע חצי שעה לפני'),
-      // Two of each list, so the "*" on its own line shows in the example.
-      TextCellValue(
-        '* שם: ישראל ישראלי, טלפון: 050-0000000, תפקיד: מנהל המלון\n'
-        '* שם: דנה כהן, טלפון: 052-0000000, תפקיד: קבלה',
-      ),
+  return _buildWorkbook(
+    stageRows: [
+      [
+        TextCellValue(_exampleStage),
+        DateCellValue.fromDateTime(eventDays(event).first),
+        const TimeCellValue(hour: 9),
+        const TimeCellValue(hour: 10, minute: 30),
+        TextCellValue('* שולחן קליטה בלובי\n* עמדת כיבוד קל'),
+        TextCellValue('לובי המלון'),
+        TextCellValue('להגיע חצי שעה לפני'),
+        // Two of each list, so the "*" on its own line shows in the example.
+        TextCellValue(
+          '* שם: ישראל ישראלי, טלפון: 050-0000000, תפקיד: מנהל המלון\n'
+          '* שם: דנה כהן, טלפון: 052-0000000, תפקיד: קבלה',
+        ),
+      ],
+    ],
+    taskRows: [
+      [
+        TextCellValue(_exampleStage),
+        TextCellValue('הקמת עמדת הקליטה'),
+        TextCellValue('לוודא שיש מדפסת ותגים'),
+        TextCellValue('* ישראל ישראלי\n* דנה כהן'),
+        const TimeCellValue(hour: 8, minute: 30),
+        TextCellValue('* חיבור מדפסות\n* סידור תגים'),
+      ],
     ],
   );
+}
+
+/// The file name of [event]'s export, without characters a file name cannot
+/// hold.
+String taskExportFileName(Event event) {
+  final name = event.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ').trim();
+  return 'משימות דו יומי - $name.xlsx';
+}
+
+/// [board]'s stages and tasks in the official import file, with the same
+/// look as [buildTaskImportTemplate]: one row per stage and per task, in
+/// screen order.
+///
+/// Tasks find their stage by name and the import refuses a name twice, so a
+/// repeated stage name is written with " (2)", " (3)" after it; the file then
+/// imports back as it is. Ticks, completion and the assignees' notes are not
+/// part of the format and are left out.
+List<int> buildTaskExport(EventTaskBoard board) {
+  final nameOf = <String, String>{};
+  final used = <String>{};
+  for (final stage in board.stages) {
+    final base = stage.title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    var name = base;
+    for (var copy = 2; !used.add(name); copy++) {
+      name = '$base ($copy)';
+    }
+    nameOf[stage.id] = name;
+  }
+
+  return _buildWorkbook(
+    stageRows: [
+      for (final stage in board.stages)
+        [
+          TextCellValue(nameOf[stage.id]!),
+          DateCellValue.fromDateTime(stage.date),
+          _time(stage.startTime),
+          _time(stage.endTime),
+          _text(stage.requirements),
+          _text(stage.hotelLocation),
+          _text(stage.notes),
+          _list([for (final contact in stage.contacts) _contactText(contact)]),
+        ],
+    ],
+    taskRows: [
+      for (final stage in board.stages)
+        for (final task in board.tasksOf(stage.id))
+          [
+            TextCellValue(nameOf[stage.id]!),
+            TextCellValue(task.title),
+            _text(task.description),
+            _list([for (final member in task.assignees) member.name]),
+            _time(task.assemblyTime),
+            _list([for (final subtask in task.subtasks) subtask.title]),
+          ],
+    ],
+  );
+}
+
+CellValue? _text(String text) => text.isEmpty ? null : TextCellValue(text);
+
+/// One "*" item per line, the way the import reads a list.
+CellValue? _list(List<String> items) =>
+    _text(items.map((item) => '* $item').join('\n'));
+
+final RegExp _hourMinute = RegExp(r'^(\d{1,2}):(\d{2})$');
+
+CellValue? _time(String? time) {
+  final match = _hourMinute.firstMatch(time ?? '');
+  if (match == null) return null;
+  return TimeCellValue(
+    hour: int.parse(match.group(1)!),
+    minute: int.parse(match.group(2)!),
+  );
+}
+
+String _contactText(StageContact contact) => [
+      'שם: ${contact.name}',
+      if (contact.phone.isNotEmpty) 'טלפון: ${contact.phone}',
+      if (contact.role.isNotEmpty) 'תפקיד: ${contact.role}',
+    ].join(', ');
+
+List<int> _buildWorkbook({
+  required List<List<CellValue?>> stageRows,
+  required List<List<CellValue?>> taskRows,
+}) {
+  final excel = Excel.createExcel();
+  excel.rename(excel.getDefaultSheet()!, stagesSheetName);
   _writeSheet(
-    tasks,
+    excel[stagesSheetName],
+    headers: StageColumns.templateHeaders,
+    widths: const [34.25, 12.5, 13.7, 10.5, 52, 16.5, 26.7, 64.5],
+    kinds: const [
+      _Kind.text,
+      _Kind.date,
+      _Kind.time,
+      _Kind.time,
+      _Kind.list, // requirements
+      _Kind.text,
+      _Kind.text,
+      _Kind.list, // contacts
+    ],
+    rows: stageRows,
+  );
+  _writeSheet(
+    excel[tasksSheetName],
     headers: TaskColumns.templateHeaders,
     widths: const [34.25, 49.6, 25, 50, 15, 52.5],
-    listColumns: const {3, 5}, // assignees, subtasks
-    example: [
-      TextCellValue(_exampleStage),
-      TextCellValue('הקמת עמדת הקליטה'),
-      TextCellValue('לוודא שיש מדפסת ותגים'),
-      TextCellValue('* ישראל ישראלי\n* דנה כהן'),
-      const TimeCellValue(hour: 8, minute: 30),
-      TextCellValue('* חיבור מדפסות\n* סידור תגים'),
+    kinds: const [
+      _Kind.text,
+      _Kind.text,
+      _Kind.text,
+      _Kind.list, // assignees
+      _Kind.time,
+      _Kind.list, // subtasks
     ],
+    rows: taskRows,
   );
 
   excel.setDefaultSheet(stagesSheetName);
   return _finishLook(excel.encode()!);
 }
+
+enum _Kind { text, list, date, time }
 
 const String _exampleStage = 'קליטה והתכנסות';
 
@@ -110,23 +220,29 @@ void _writeSheet(
   Sheet sheet, {
   required List<String> headers,
   required List<double> widths,
-  required Set<int> listColumns,
-  required List<CellValue> example,
+  required List<_Kind> kinds,
+  required List<List<CellValue?>> rows,
 }) {
   sheet.isRTL = true;
   sheet.appendRow([for (final header in headers) TextCellValue(header)]);
-  sheet.appendRow(example);
   sheet.setRowHeight(0, 40);
   for (var column = 0; column < headers.length; column++) {
     sheet.setColumnWidth(column, widths[column]);
     _cell(sheet, column, 0).cellStyle = _headerStyle;
-    // The whole column later takes this cell's style (see [_finishLook]).
-    _cell(sheet, column, 1).cellStyle = switch (example[column]) {
-      DateCellValue() => _dateStyle,
-      TimeCellValue() => _timeStyle,
-      _ when listColumns.contains(column) => _listStyle,
-      _ => _textStyle,
-    };
+  }
+  for (var row = 0; row < rows.length; row++) {
+    for (var column = 0; column < headers.length; column++) {
+      final cell = _cell(sheet, column, row + 1);
+      cell.value = rows[row][column];
+      // The whole column later takes its first row's style (see
+      // [_finishLook]), so empty cells are styled too.
+      cell.cellStyle = switch (kinds[column]) {
+        _Kind.date => _dateStyle,
+        _Kind.time => _timeStyle,
+        _Kind.list => _listStyle,
+        _Kind.text => _textStyle,
+      };
+    }
   }
 }
 
@@ -212,8 +328,8 @@ String _frozenHeader(String xml) => xml.replaceFirstMapped(
 
 final RegExp _column = RegExp(r'<col min="(\d+)" max="\1"(?![^>]*style=)');
 
-/// Each column takes the style of its example cell, so rows typed later are
-/// laid out the same.
+/// Each column takes the style of its first row's cell, so rows typed later
+/// are laid out the same.
 String _columnsStyledLikeExample(String xml) =>
     xml.replaceAllMapped(_column, (col) {
       final letter = String.fromCharCode(64 + int.parse(col.group(1)!));

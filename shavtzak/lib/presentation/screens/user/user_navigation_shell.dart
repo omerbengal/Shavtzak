@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
-import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
-import '../../widgets/navigation_menu.dart';
+import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../../widgets/settings_dialog.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
@@ -36,6 +35,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
     '/user/constraints',
     '/user/du-yomi',
   ];
+  static const int _kDuYomiTab = 2;
 
   int? _previousIndex;
 
@@ -89,7 +89,8 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        appBar: _buildAppBar(context),
+        // The דו יומי screens bring their own bar with these buttons in it.
+        appBar: currentIndex == _kDuYomiTab ? null : _buildAppBar(context),
         body: TestEnvironmentIndicator(
           child: SafeArea(
             child: widget.navigationShell,
@@ -137,34 +138,9 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               ),
             ),
             centerTitle: true,
-            leading: IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: 'הגדרות',
-              onPressed: () { Logger.action('open:settingsDialog'); _showSettingsDialog(context); },
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
+            leading: const MemberSettingsButton(),
             actions: [
-              // Show navigation menu (home + logout) for users with choice-screen access
-              if (state.user.isAdmin ||
-                  state.user.canAccessSummaryScreen ||
-                  state.user.canAccessShamapExport ||
-                  state.user.canAccessConstraintsExamining)
-                const NavigationMenu()
-              else
-                // Regular users get logout button with padding to balance the settings icon
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(width: 60),
-                    IconButton(
-                      icon: const Icon(Icons.logout),
-                      tooltip: 'התנתקות',
-                      onPressed: () { Logger.action('open:logoutDialog'); _showLogoutDialog(context); },
-                    ),
-                  ],
-                ),
+              MemberBarActions(user: state.user, balanceSettings: true),
             ],
           );
         },
@@ -228,42 +204,6 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
       context: context,
       builder: (BuildContext context) {
         return const SettingsDialog();
-      },
-    );
-  }
-
-  /// Show logout confirmation dialog
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('אישור התנתקות'),
-            content: const Text('האם את/ה בטוח/ה שברצונך להתנתק?'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Logger.action('tap:cancel:logoutDialog');
-                  Navigator.of(context).pop(); // Close dialog
-                },
-                child: const Text('ביטול'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Logger.action('tap:logout');
-                  Navigator.of(context).pop(); // Close dialog
-                  context.read<UserSelectionBloc>().add(const SignOut());
-                },
-                child: const Text(
-                  'התנתקות',
-                  style: TextStyle(color: Colors.red),
-                ),
-              ),
-            ],
-          ),
-        );
       },
     );
   }

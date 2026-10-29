@@ -12,6 +12,7 @@ import '../../../domain/entities/team_member.dart';
 import '../../bloc/task/task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
 import 'task_style.dart';
 import 'tasks_place.dart';
@@ -92,7 +93,8 @@ class _TasksScreenState extends State<TasksScreen> {
             appBar: AppBar(
               title: const Text('משימות דו יומי'),
               automaticallyImplyLeading: false,
-              // The tab has the bottom bar to leave by.
+              // In the tab this is the only bar on the screen, so it carries
+              // the member shell's settings, home and logout.
               leading: widget.place == TasksPlace.standalone
                   ? IconButton(
                       key: const Key('tasks-home'),
@@ -100,7 +102,10 @@ class _TasksScreenState extends State<TasksScreen> {
                       icon: const Icon(Icons.home_outlined),
                       onPressed: () => _goHome(user),
                     )
-                  : null,
+                  : const MemberSettingsButton(),
+              actions: [
+                if (widget.place == TasksPlace.tab) MemberBarActions(user: user),
+              ],
             ),
             body: _withBanner(
               BlocBuilder<TaskBloc, TaskState>(

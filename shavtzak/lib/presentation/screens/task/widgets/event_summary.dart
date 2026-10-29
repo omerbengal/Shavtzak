@@ -9,10 +9,18 @@ import 'progress_strip.dart';
 /// The event at a glance, above the calendar: its days and place, and how
 /// much of it is done.
 class EventSummary extends StatelessWidget {
-  const EventSummary({super.key, required this.event, required this.progress});
+  const EventSummary({
+    super.key,
+    required this.event,
+    required this.progress,
+    this.action,
+  });
 
   final Event event;
   final TaskProgress progress;
+
+  /// Sits at the end of the days line, such as the managers' download.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -24,10 +32,17 @@ class EventSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            event.location.isEmpty ? days : '$days · ${event.location}',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: TaskStyle.neutralText),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  event.location.isEmpty ? days : '$days · ${event.location}',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: TaskStyle.neutralText),
+                ),
+              ),
+              if (action != null) action!,
+            ],
           ),
           const SizedBox(height: 6),
           Row(

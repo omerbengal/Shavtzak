@@ -5,6 +5,9 @@ import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/task_import/task_import_parser.dart';
 import 'package:shavtzak/core/utils/task_import/task_import_template.dart';
+import 'package:shavtzak/core/utils/task_progress.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
+import 'package:shavtzak/domain/entities/subtask.dart';
 
 import '../../../support/task_fixtures.dart';
 
@@ -246,6 +249,126 @@ void main() {
           );
         }
       }
+    });
+  });
+
+  group('the export of an event\'s stages and tasks', () {
+    final dana = buildMember(id: 'd1', name: 'דנה כהן');
+    final yossi = buildMember(id: 'y1', name: 'יוסי לוי');
+    final arrival = buildStage(
+      id: 's1',
+      title: 'קליטה',
+      date: DateTime(2026, 6, 15),
+      startTime: '09:00',
+      endTime: '10:30',
+      requirements: '* שולחן בלובי\n* כיבוד',
+      hotelLocation: 'לובי',
+      notes: 'להגיע מוקדם',
+      contacts: const [
+        StageContact(id: 'c1', name: 'משה', phone: '050-1234567', role: 'מנהל'),
+        StageContact(id: 'c2', name: 'רינה'),
+      ],
+    );
+    final dinner1 = buildStage(
+      id: 's2',
+      title: 'ארוחת ערב',
+      date: DateTime(2026, 6, 15),
+      startTime: '19:00',
+    );
+    final dinner2 = buildStage(
+      id: 's3',
+      title: 'ארוחת ערב',
+      date: DateTime(2026, 6, 16),
+    );
+    final board = eventTaskBoard(
+      event,
+      stages: [dinner2, dinner1, arrival],
+      tasks: [
+        buildTask(
+          id: 't1',
+          stage: arrival,
+          title: 'הקמת עמדה',
+          description: 'עם מדפסת',
+          assemblyTime: '08:30',
+          assigneeIds: const ['d1', 'y1'],
+          assignees: [dana, yossi],
+          isComplete: true,
+          subtasks: const [
+            Subtask(id: 'x1', title: 'מדפסת', isDone: true),
+            Subtask(id: 'x2', title: 'תגים'),
+          ],
+        ),
+        buildTask(
+          id: 't2',
+          stage: dinner2,
+          title: 'שולחן צוות',
+          assigneeIds: const ['y1'],
+          assignees: [yossi],
+        ),
+      ],
+    );
+
+    test('imports back as the same stages and tasks', () {
+      final result = parseTaskImport(
+        buildTaskExport(board),
+        event: event,
+        candidates: [dana, yossi],
+        currentUserId: 'boss',
+        now: DateTime(2026, 6, 1),
+      );
+
+      expect(result.problems, isEmpty);
+      expect(
+        result.stages.map((s) => [s.stage.title, s.stage.date]),
+        [
+          ['קליטה', DateTime(2026, 6, 15)],
+          ['ארוחת ערב', DateTime(2026, 6, 15)],
+          // A repeated name is told apart, so its tasks find it.
+          ['ארוחת ערב (2)', DateTime(2026, 6, 16)],
+        ],
+      );
+      final first = result.stages.first.stage;
+      expect(first.startTime, '09:00');
+      expect(first.endTime, '10:30');
+      expect(first.requirements, '* שולחן בלובי\n* כיבוד');
+      expect(first.hotelLocation, 'לובי');
+      expect(first.notes, 'להגיע מוקדם');
+      expect(
+        first.contacts.map((c) => [c.name, c.phone, c.role]),
+        [
+          ['משה', '050-1234567', 'מנהל'],
+          ['רינה', '', ''],
+        ],
+      );
+      expect(result.stages[1].stage.endTime, isNull);
+      expect(result.stages[2].stage.startTime, isNull);
+
+      final task = result.stages.first.tasks.single;
+      expect(task.title, 'הקמת עמדה');
+      expect(task.description, 'עם מדפסת');
+      expect(task.assemblyTime, '08:30');
+      expect(task.assigneeIds, ['d1', 'y1']);
+      expect(task.subtasks.map((s) => s.title), ['מדפסת', 'תגים']);
+      expect(result.stages[1].tasks, isEmpty);
+      expect(result.stages[2].tasks.single.title, 'שולחן צוות');
+    });
+
+    test('keeps the template\'s look in every row', () {
+      final zip = ZipDecoder().decodeBytes(buildTaskExport(board));
+      final tasks = utf8.decode(
+          zip.findFile('xl/worksheets/sheet2.xml')!.content as List<int>);
+      expect(tasks, contains('rightToLeft="1"'));
+      expect(tasks, contains('<dataValidations'));
+      // An empty cell is still styled, so its column keeps the look.
+      expect(RegExp(r'<c r="C3" s="\d+"').hasMatch(tasks), isTrue,
+          reason: tasks);
+    });
+
+    test('the file is named after the event, without forbidden characters', () {
+      expect(
+        taskExportFileName(buildEvent(id: 'e2', name: 'דו יומי 162/143')),
+        'משימות דו יומי - דו יומי 162 143.xlsx',
+      );
     });
   });
 

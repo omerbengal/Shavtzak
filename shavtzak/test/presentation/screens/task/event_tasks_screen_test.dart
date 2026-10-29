@@ -207,6 +207,22 @@ void main() {
       expect(find.byType(DayCalendar), findsWidgets);
     });
 
+    testWidgets('in the tab the bar carries settings and logout; '
+        'on its own screen it does not', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      expect(find.byTooltip('הגדרות'), findsOneWidget);
+      expect(find.byTooltip('התנתקות'), findsOneWidget);
+
+      await pumpScreen(
+        tester,
+        user: admin,
+        tasks: [mine],
+        place: TasksPlace.standalone,
+      );
+      expect(find.byTooltip('הגדרות'), findsNothing);
+      expect(find.byKey(const ValueKey('nav_logout_button')), findsNothing);
+    });
+
     testWidgets('every member can open both tabs', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
@@ -1393,6 +1409,21 @@ void main() {
       await tester.tap(find.byKey(const Key('tasks-import-template')));
       expect(files.saved.single.$2, 'תבנית משימות דו יומי.xlsx');
       expect(files.saved.single.$1, isNotEmpty);
+    });
+
+    testWidgets('a manager downloads the event\'s stages and tasks',
+        (tester) async {
+      final files = FakeTaskImportFiles();
+      await pumpScreen(tester, user: admin, tasks: [mine], importFiles: files);
+      await tester.tap(find.byKey(const Key('tasks-export')));
+      expect(files.saved.single.$2, 'משימות דו יומי - ${event.name}.xlsx');
+      expect(files.saved.single.$1, isNotEmpty);
+    });
+
+    testWidgets('a member gets no download', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openTab(tester, 'כל השלבים');
+      expect(find.byKey(const Key('tasks-export')), findsNothing);
     });
 
     testWidgets('cancelling the picker opens nothing', (tester) async {

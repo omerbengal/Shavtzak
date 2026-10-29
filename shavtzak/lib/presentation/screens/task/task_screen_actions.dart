@@ -6,6 +6,7 @@ import '../../../core/debug/logger.dart';
 import '../../../core/services/task_import_files.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/task_import/task_import_template.dart';
+import '../../../core/utils/task_progress.dart';
 import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/stage.dart';
@@ -120,6 +121,18 @@ mixin TaskScreenActions<T extends StatefulWidget> on State<T> {
     importFiles.saveXlsx(
       buildTaskImportTemplate(event),
       taskImportTemplateFileName,
+    );
+  }
+
+  /// The event's stages and tasks, in the import file's format.
+  void downloadExport(EventTaskBoard board) {
+    Logger.action('tap:tasksExport', {
+      'stages': board.stages.length,
+      'tasks': board.tasks.length,
+    });
+    importFiles.saveXlsx(
+      buildTaskExport(board),
+      taskExportFileName(board.event),
     );
   }
 

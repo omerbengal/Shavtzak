@@ -21,6 +21,7 @@ import '../../../domain/entities/team_member.dart';
 import '../../bloc/task/task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
 import 'row_hold.dart';
 import 'sheet_view.dart';
@@ -308,7 +309,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                       tasks: loaded.tasks,
                     );
               return Scaffold(
-                appBar: _buildAppBar(event),
+                appBar: _buildAppBar(event, user),
                 body: _withBanner(
                   _buildBody(state, board, user),
                 ),
@@ -332,8 +333,12 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     );
   }
 
-  PreferredSizeWidget _buildAppBar(Event? event) {
+  /// In the tab this is the only bar on the screen, so it carries the member
+  /// shell's settings, home and logout too.
+  PreferredSizeWidget _buildAppBar(Event? event, TeamMember user) {
+    final isTab = widget.place == TasksPlace.tab;
     return AppBar(
+      leading: isTab && !_searching ? const MemberSettingsButton() : null,
       title: _searching
           ? TextField(
               key: const Key('tasks-search'),
@@ -366,6 +371,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             icon: const Icon(Icons.search),
             onPressed: _openSearch,
           ),
+        if (isTab && !_searching) MemberBarActions(user: user),
       ],
     );
   }
@@ -682,6 +688,18 @@ class _EventTasksScreenState extends State<EventTasksScreen>
           EventSummary(
             event: board.event,
             progress: taskProgress(board.tasks, _now),
+            action: canManageTasks(user)
+                ? TextButton.icon(
+                    key: const Key('tasks-export'),
+                    onPressed: () => downloadExport(board),
+                    icon: const Icon(Icons.download, size: 18),
+                    label: const Text('הורדה לאקסל'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
+                : null,
           ),
           if (removed.isNotEmpty)
             AssigneeCheckLine(
