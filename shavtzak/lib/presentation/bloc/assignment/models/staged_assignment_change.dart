@@ -51,6 +51,12 @@ class StagedAssignmentChange extends Equatable {
   /// can never make an ordinary fill misclassify as a manual add.
   final bool isManualAdd;
 
+  /// Pending constraints of [desiredMemberId] the admin chose to approve
+  /// together with this assignment ("שבץ ואשר מגבלה"). Approved by Save, after
+  /// the assignment write commits; dropped with the change, and replaced
+  /// whenever the slot's member changes.
+  final List<String> approveConstraintIds;
+
   const StagedAssignmentChange({
     required this.slotKey,
     required this.eventId,
@@ -73,6 +79,7 @@ class StagedAssignmentChange extends Equatable {
     required this.stagedAtMillis,
     this.markedForDeletion = false,
     this.isManualAdd = false,
+    this.approveConstraintIds = const [],
   });
 
   static String slotKeyFor(String eventId, String roleType, int slotIndex) =>
@@ -91,7 +98,8 @@ class StagedAssignmentChange extends Equatable {
       desiredSemanticLabelId == baselineSemanticLabelId &&
       desiredAltPhone == baselineAltPhone &&
       desiredCustomStartAt == baselineCustomStartAt &&
-      desiredCustomEndAt == baselineCustomEndAt;
+      desiredCustomEndAt == baselineCustomEndAt &&
+      approveConstraintIds.isEmpty;
 
   StagedAssignmentChange copyWith({
     String? Function()? desiredMemberId,
@@ -105,6 +113,7 @@ class StagedAssignmentChange extends Equatable {
     int? stagedAtMillis,
     bool? markedForDeletion,
     bool? isManualAdd,
+    List<String>? approveConstraintIds,
   }) {
     return StagedAssignmentChange(
       slotKey: slotKey,
@@ -139,6 +148,7 @@ class StagedAssignmentChange extends Equatable {
       stagedAtMillis: stagedAtMillis ?? this.stagedAtMillis,
       markedForDeletion: markedForDeletion ?? this.markedForDeletion,
       isManualAdd: isManualAdd ?? this.isManualAdd,
+      approveConstraintIds: approveConstraintIds ?? this.approveConstraintIds,
     );
   }
 
@@ -164,6 +174,7 @@ class StagedAssignmentChange extends Equatable {
         'stagedAtMillis': stagedAtMillis,
         'markedForDeletion': markedForDeletion,
         'isManualAdd': isManualAdd,
+        'approveConstraintIds': approveConstraintIds,
       };
 
   factory StagedAssignmentChange.fromJson(Map<String, dynamic> json) =>
@@ -190,6 +201,9 @@ class StagedAssignmentChange extends Equatable {
         stagedAtMillis: json['stagedAtMillis'] as int,
         markedForDeletion: (json['markedForDeletion'] as bool?) ?? false,
         isManualAdd: (json['isManualAdd'] as bool?) ?? false,
+        approveConstraintIds:
+            ((json['approveConstraintIds'] as List?) ?? const [])
+                .cast<String>(),
       );
 
   @override
@@ -215,5 +229,6 @@ class StagedAssignmentChange extends Equatable {
         stagedAtMillis,
         markedForDeletion,
         isManualAdd,
+        approveConstraintIds,
       ];
 }

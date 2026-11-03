@@ -29,7 +29,9 @@ import 'models/staged_assignment_change.dart';
 import 'models/staged_slot_annotation.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
 import '../../screens/assignment/models/assignment_slot_annotations.dart';
+import '../../../core/constants/constraint_status.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
+import '../calendar_sync/calendar_sync_event.dart';
 
 /// BLoC for managing assignments
 /// This is the KEY BLoC that solves the V1 sync problem
@@ -1310,8 +1312,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Check capability
           if (!member.canPerformRole(slot.role.key)) continue;
 
-          // Check availability for entire event duration (including time-based constraints)
-          final isAvailable = member.isAvailableForEventWithTime(slot.event);
+          // Available for the whole event, or blocked only by pending
+          // constraints (offered with a "!")
+          final isAvailable = member.isOfferableForEvent(slot.event);
 
           if (!member.allowMultipleAssignments && !isAvailable) {
             continue;
@@ -1555,12 +1558,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     required bool setsHours,
     String? customStartAt,
     String? customEndAt,
+    List<String> approveConstraintIds = const [],
   }) async {
     final memberId = member?.id;
     final key = _slotKey(slot);
     final existing = _stagedChanges[key];
     final base = existing ?? _seedStaged(slot);
-    var next = base.copyWith(desiredMemberId: () => memberId);
+    // Approvals belong to the member they were chosen for: a new pick
+    // replaces them, a clear drops them.
+    var next = base.copyWith(
+      desiredMemberId: () => memberId,
+      approveConstraintIds: memberId == null ? const [] : approveConstraintIds,
+    );
     if (setsHours) {
       next = next.copyWith(
         desiredCustomStartAt: () => customStartAt,
@@ -2032,6 +2041,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       setsHours: event.setsCustomHours,
       customStartAt: event.customStartAt,
       customEndAt: event.customEndAt,
+      approveConstraintIds: event.approveConstraintIds,
     );
     Logger.action('stage:member', {
       'slot': _slotKey(event.slot),
@@ -2988,6 +2998,47 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// the row was deleted from under the edit (e.g. a concurrent co-admin
   /// delete); that case is counted as a skip and surfaced in the completion
   /// message instead of silently vanishing behind `'נשמרו 0 שינויים'`.
+  /// Approves the pending constraints in [approvals] (member id → constraint
+  /// ids), as the constraints review does: the stored constraint with its
+  /// status set to approved, then its calendar sync. A constraint no longer
+  /// pending (approved or rejected meanwhile) is left as it is. True when any
+  /// approval failed.
+  Future<bool> _approveStagedConstraints(
+      Map<String, Set<String>> approvals) async {
+    var failed = false;
+    for (final entry in approvals.entries) {
+      try {
+        final member = await _teamRepository.getTeamMemberById(entry.key);
+        if (member == null) continue;
+        for (final constraint in member.constraints) {
+          if (!entry.value.contains(constraint.id) || !constraint.isPending()) {
+            continue;
+          }
+          final approved = constraint.copyWith(
+            status: ConstraintStatus.approved,
+            wasAutoRejectedFromCalendar: false,
+          );
+          await _teamRepository.database
+              .editConstraintById(member.id, constraint.id, approved);
+          Logger.action('save:approveConstraint',
+              {'memberId': member.id, 'constraintId': constraint.id});
+          if (approved.isUnavailability) {
+            _calendarSyncBloc?.add(SyncConstraintToCalendar(
+              constraintId: constraint.id,
+              teamMember: member,
+              constraint: approved,
+            ));
+          }
+        }
+      } catch (e) {
+        failed = true;
+        Logger.action('save:approveConstraintFail',
+            {'memberId': entry.key, 'error': e.toString()});
+      }
+    }
+    return failed;
+  }
+
   Future<void> _onSaveStagedChanges(
       SaveStagedChanges event, Emitter<AssignmentState> emit) async {
     // Phase 2 (staged gap annotations) can be the ONLY thing staged — this
@@ -3055,6 +3106,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // baseline-vs-db branch below. Surfaced in the success message so a real
     // staged edit never disappears behind a silent 'נשמרו 0 שינויים'.
     var skippedNotFound = 0;
+    // Pending constraints to approve once the batch commits, by member id
+    // ("שבץ ואשר מגבלה"). Only for slots this Save actually writes.
+    final constraintApprovals = <String, Set<String>>{};
 
     for (final entry in _stagedChanges.entries) {
       final key = entry.key;
@@ -3160,6 +3214,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             : update);
         touchedEventIds.add(c.eventId);
         decision = 'update';
+      }
+      if ((decision == 'create' || decision == 'update') &&
+          c.approveConstraintIds.isNotEmpty) {
+        constraintApprovals
+            .putIfAbsent(c.desiredMemberId!, () => <String>{})
+            .addAll(c.approveConstraintIds);
       }
       appliedKeys.add(key);
       Logger.action('save:slot', {
@@ -3498,14 +3558,22 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             staleKey: r.write.staleKey);
       }
 
+      // Phase 3: constraint approvals chosen with an assignment. Like phase 2,
+      // after the batch committed; a failure here never undoes the save, it
+      // is reported in the message instead.
+      final approvalsFailed = await _approveStagedConstraints(constraintApprovals);
+
       final written =
           creates.length + updates.length + deletes.length + annotationsWritten;
       // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
       // dropped for lack of a DB row: report the skip alongside the write
       // count instead of pretending nothing happened.
-      final successMessage = skippedNotFound == 0
+      var successMessage = skippedNotFound == 0
           ? 'נשמרו $written שינויים'
           : 'נשמרו $written שינויים · $skippedNotFound דולגו (השיבוץ כבר לא קיים)';
+      if (approvalsFailed) {
+        successMessage += ' · אישור מגבלה נכשל';
+      }
       _completeActionSuccess(event.completion, successMessage);
       add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
     } catch (e) {
@@ -4026,7 +4094,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 // the partitioning below.
                 sameDayEventInfoMap.putIfAbsent(memberId, () => []);
                 sameDayEventInfoMap[memberId]!.add(otherEvent.name);
-                if (member.isAvailableForEventWithTime(event)) {
+                if (member.isOfferableForEvent(event)) {
                   sameDayAssignedMembersMap[memberId] = member;
                 }
               }
@@ -4043,9 +4111,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             // Check capability
             if (!member.canPerformRole(role.key)) continue;
 
-            // Check availability for entire event duration (including time-based constraints)
+            // Available for the whole event, or blocked only by pending
+            // constraints (offered with a "!")
             // Skip availability check for members with allowMultipleAssignments
-            final isAvailable = member.isAvailableForEventWithTime(event);
+            final isAvailable = member.isOfferableForEvent(event);
             if (!member.allowMultipleAssignments && !isAvailable) {
               continue;
             }
@@ -4494,7 +4563,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                   // that map alone decides the partitioning below.
                   sameDayEventInfoMap.putIfAbsent(memberId, () => []);
                   sameDayEventInfoMap[memberId]!.add(otherEvent.name);
-                  if (member.isAvailableForEventWithTime(eventData)) {
+                  if (member.isOfferableForEvent(eventData)) {
                     sameDayAssignedMembersMap[memberId] = member;
                   }
                 }
@@ -4513,9 +4582,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 continue;
               }
 
-              // Check availability for entire event duration (including time-based constraints)
+              // Available for the whole event, or blocked only by pending
+              // constraints (offered with a "!")
               // Skip availability check for members with allowMultipleAssignments
-              final isAvailable = member.isAvailableForEventWithTime(eventData);
+              final isAvailable = member.isOfferableForEvent(eventData);
               if (!member.allowMultipleAssignments && !isAvailable) {
                 continue;
               }

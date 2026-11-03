@@ -63,6 +63,48 @@ void main() {
     );
     expect(member.constraintsBlockingEvent(event), isEmpty);
   });
+
+  // The assignments screen still offers (with a "!") a member blocked only
+  // by pending requests; an approved one sends them to "בעלי מגבלות".
+  group('isOfferableForEvent', () {
+    test('free member: offered, no pending blockers', () {
+      final member = _member(const []);
+      expect(member.isOfferableForEvent(event), isTrue);
+      expect(member.onlyPendingBlockersOf(event), isEmpty);
+    });
+
+    test('only pending: offered, names the pending constraint', () {
+      final member = _member([_unavailability(day, ConstraintStatus.pending)]);
+      expect(member.isOfferableForEvent(event), isTrue);
+      expect(member.onlyPendingBlockersOf(event), member.constraints);
+    });
+
+    test('approved: not offered', () {
+      final member = _member([_unavailability(day, ConstraintStatus.approved)]);
+      expect(member.isOfferableForEvent(event), isFalse);
+      expect(member.onlyPendingBlockersOf(event), isEmpty);
+    });
+
+    test('approved and pending together: not offered', () {
+      final member = _member([
+        _unavailability(day, ConstraintStatus.approved),
+        _unavailability(day, ConstraintStatus.pending),
+      ]);
+      expect(member.isOfferableForEvent(event), isFalse);
+      expect(member.onlyPendingBlockersOf(event), isEmpty);
+    });
+
+    test('inactive member with only pending: not offered', () {
+      final member = _member([_unavailability(day, ConstraintStatus.pending)])
+          .copyWith(isActive: false);
+      expect(member.isOfferableForEvent(event), isFalse);
+    });
+
+    test('non-permanent without availability: not offered', () {
+      final member = _member(const [], isPermanent: false);
+      expect(member.isOfferableForEvent(event), isFalse);
+    });
+  });
 }
 
 DateConstraint _unavailability(

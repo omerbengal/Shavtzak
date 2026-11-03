@@ -242,7 +242,7 @@ void main() {
   Future<void> pick(WidgetTester tester, String label) async {
     await tester.tap(find.byType(MemberPickerField));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(label).last);
+    await tester.tap(find.textContaining(label, findRichText: true).last);
     await tester.pumpAndSettle();
   }
 
@@ -292,7 +292,7 @@ void main() {
       expect(
         find.descendant(
             of: find.byType(MemberPickerField),
-            matching: find.text('דנה כהן')),
+            matching: find.textContaining('דנה כהן', findRichText: true)),
         findsOneWidget,
       );
     });

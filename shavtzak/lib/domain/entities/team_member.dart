@@ -493,6 +493,25 @@ class TeamMember extends Equatable {
   List<DateConstraint> constraintsBlockingEvent(Event event) =>
       constraintsBlockingWindow(eventStretch(event));
 
+  /// The pending constraints blocking [event] when nothing else does: no
+  /// approved one, and the member active. Empty otherwise. The assignments
+  /// screen offers such a member in its pick list with a "!" instead of
+  /// hiding them among "בעלי מגבלות".
+  List<DateConstraint> onlyPendingBlockersOf(Event event) {
+    if (isArchived || !isActive) return const [];
+    final blockers = constraintsBlockingEvent(event);
+    if (blockers.isEmpty || !blockers.every((c) => c.isPending())) {
+      return const [];
+    }
+    return blockers;
+  }
+
+  /// Whether the assignments screen's pick list offers this member for
+  /// [event]: available, or blocked only by pending constraints.
+  bool isOfferableForEvent(Event event) =>
+      isAvailableForEventWithTime(event) ||
+      onlyPendingBlockersOf(event).isNotEmpty;
+
   /// Get list of all role keys this team member can perform
   List<String> get availableRoleKeys {
     return roleCapabilities.entries

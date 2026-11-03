@@ -25,6 +25,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shavtzak/core/constants/constraint_status.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
@@ -37,7 +38,10 @@ import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
 import 'package:shavtzak/presentation/bloc/assignment/models/assignment_conflict.dart';
+import 'package:shavtzak/presentation/screens/assignment/models/assignment_slot.dart';
 
+import '../../data/repositories/assignment_repository_save_batch_test.mocks.dart'
+    show MockDatabaseInterface;
 import 'assignment_bloc_slots_refetch_test.mocks.dart';
 
 void main() {
@@ -1974,5 +1978,112 @@ void main() {
     expect(sets.single,
         (eventId: 'e1', roleType: 'medic', target: 1, expected: 2));
     expect(bloc.hasStagedChanges, isFalse);
+  });
+
+  group('"שבץ ואשר מגבלה": the constraint approval waits for Save', () {
+    final pendingConstraint = DateConstraint(
+      id: 'c1',
+      startDate: DateTime.now().add(const Duration(days: 30)),
+      status: ConstraintStatus.pending,
+      constraintType: ConstraintType.unavailability,
+    );
+    TeamMember withPending() =>
+        member('m1').copyWith(constraints: [pendingConstraint]);
+
+    late MockDatabaseInterface db;
+    setUp(() {
+      db = MockDatabaseInterface();
+      when(teamRepo.database).thenReturn(db);
+      when(teamRepo.getTeamMemberById('m1'))
+          .thenAnswer((_) async => withPending());
+      when(db.editConstraintById(any, any, any)).thenAnswer((_) async {});
+    });
+
+    Future<AssignmentBloc> loadedBloc() async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([futureEvent('e1')]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+      return bloc;
+    }
+
+    AssignmentSlot medicSlot(AssignmentBloc bloc) =>
+        (bloc.state as AssignmentSlotsLoaded)
+            .slots
+            .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    test('staging writes nothing; Save approves it after the batch', () async {
+      final bloc = await loadedBloc();
+      bloc.add(StageMemberChange(
+        slot: medicSlot(bloc),
+        member: withPending(),
+        approveConstraintIds: const ['c1'],
+      ));
+      await pumpEventQueue();
+      verifyNever(db.editConstraintById(any, any, any));
+
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+
+      final approved = verify(db.editConstraintById('m1', 'c1', captureAny))
+          .captured
+          .single as DateConstraint;
+      expect(approved.status, ConstraintStatus.approved);
+      expect(approved.startDate, pendingConstraint.startDate);
+    });
+
+    test('picking another member for the slot drops the approval', () async {
+      final bloc = await loadedBloc();
+      bloc.add(StageMemberChange(
+        slot: medicSlot(bloc),
+        member: withPending(),
+        approveConstraintIds: const ['c1'],
+      ));
+      await pumpEventQueue();
+      bloc.add(StageMemberChange(slot: medicSlot(bloc), member: member('m2')));
+      await pumpEventQueue();
+
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verifyNever(db.editConstraintById(any, any, any));
+    });
+
+    test('discarding drops the approval', () async {
+      final bloc = await loadedBloc();
+      bloc.add(StageMemberChange(
+        slot: medicSlot(bloc),
+        member: withPending(),
+        approveConstraintIds: const ['c1'],
+      ));
+      await pumpEventQueue();
+      bloc.add(const DiscardAllStagedChanges());
+      await pumpEventQueue();
+      expect(bloc.hasStagedChanges, isFalse);
+      verifyNever(db.editConstraintById(any, any, any));
+    });
+
+    test('a failed batch approves nothing', () async {
+      when(assignmentRepo.saveAssignmentsBatch(
+        creates: anyNamed('creates'),
+        updates: anyNamed('updates'),
+        deletes: anyNamed('deletes'),
+        eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      )).thenThrow(Exception('boom'));
+      final bloc = await loadedBloc();
+      bloc.add(StageMemberChange(
+        slot: medicSlot(bloc),
+        member: withPending(),
+        approveConstraintIds: const ['c1'],
+      ));
+      await pumpEventQueue();
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verifyNever(db.editConstraintById(any, any, any));
+      expect(bloc.hasStagedChanges, isTrue);
+    });
   });
 }

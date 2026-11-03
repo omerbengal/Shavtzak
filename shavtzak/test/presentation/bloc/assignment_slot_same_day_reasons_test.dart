@@ -208,14 +208,17 @@ void main() {
     expect(slot.sameDayEventInfo.containsKey('C'), isFalse,
         reason: '$path: C is booked on another day only');
 
-    // Partitioning untouched: blocked members are neither offered nor
-    // listed as same-day candidates; the free one is the same-day candidate.
+    // Approved-blocked members are neither offered nor listed as same-day
+    // candidates. The free one and the pending-only one (offered with a "!"
+    // when free that day) are the same-day candidates, so neither is offered.
     expect(
         slot.availableMembers.map((m) => m.id),
         isNot(
             anyOf(contains('T'), contains('P'), contains('C'), contains('A'))),
         reason: path);
-    expect(slot.sameDayAssignedMembers.map((m) => m.id), ['A'], reason: path);
+    expect(slot.sameDayAssignedMembers.map((m) => m.id),
+        unorderedEquals(['A', 'P']),
+        reason: path);
   }
 
   test(

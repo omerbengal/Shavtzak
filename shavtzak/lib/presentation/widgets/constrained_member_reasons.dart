@@ -67,11 +67,8 @@ class ConstrainedMemberReasons extends StatelessWidget {
 
 /// True when every constraint that blocks [event] for [member] is still
 /// pending, so the row says "waiting" rather than "blocked".
-bool _onlyPendingBlocks(TeamMember member, Event event) {
-  if (!member.isPermanent) return false;
-  final blockers = member.constraintsBlockingEvent(event);
-  return blockers.isNotEmpty && blockers.every((c) => c.isPending());
-}
+bool _onlyPendingBlocks(TeamMember member, Event event) =>
+    member.onlyPendingBlockersOf(event).isNotEmpty;
 
 /// The leading icon of a row: another event the same days, the hourglass when
 /// the member's only blockers are pending, the calendar when any constraint is

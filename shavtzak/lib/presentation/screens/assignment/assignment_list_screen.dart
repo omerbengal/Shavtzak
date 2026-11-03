@@ -32,6 +32,7 @@ import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import 'widgets/assignment_save_bar.dart';
 import 'widgets/member_picker_field.dart';
+import 'widgets/pending_constraint_assign_dialog.dart';
 import 'widgets/replacement_hours_dialog.dart';
 import 'widgets/staged_save_conflict_flow.dart';
 import 'widgets/unsaved_changes_dialog.dart';
@@ -42,6 +43,7 @@ import '../../widgets/assignment_label_chip.dart';
 import '../../widgets/custom_hours_conflict_dialog.dart';
 import '../../widgets/custom_hours_fields.dart';
 import '../../widgets/name_search_field.dart';
+import '../../../core/utils/constraint_labels.dart';
 import '../../widgets/constrained_member_reasons.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
@@ -2959,6 +2961,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       ...slot.availableMembers,
     ];
 
+    // Members offered although a pending constraint blocks the event.
+    final pendingNotes = <String, String>{
+      for (final member in members)
+        if (member.onlyPendingBlockersOf(slot.event) case final blockers
+            when blockers.isNotEmpty)
+          member.id: blockers.map(constraintStatusLabel).join('\n'),
+    };
+
     // Whether anyone can be picked straight from the list. This only colours
     // the field (grey = no one available); it must NOT disable it. The menu's
     // two fixed actions, "שובצו כבר" and "בעלי מגבלות / לא זמינים", are always
@@ -2977,6 +2987,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               '${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
           selected: currentMember,
           members: members,
+          pendingNotes: pendingNotes,
           dense: dense,
           enabled: true,
           backgroundColor: hasOptions
@@ -3018,7 +3029,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   );
 
               if (member != null) {
-                _handleAssignmentChange(slot, member);
+                _handlePickedMember(slot, member);
               }
             }
           },
@@ -3544,6 +3555,41 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     await _stageIncomingMember(slot, selectedMember);
   }
 
+  /// A member picked from the list. One with a pending constraint on the
+  /// event (the "!") is assigned only after the admin confirms. Choosing to
+  /// approve the constraint stages the approval with the assignment: Save
+  /// writes both, discarding drops both.
+  Future<void> _handlePickedMember(
+      AssignmentSlot slot, TeamMember member) async {
+    final pending = member.onlyPendingBlockersOf(slot.event);
+    if (pending.isEmpty ||
+        slot.currentAssignment?.teamMemberId == member.id) {
+      await _handleAssignmentChange(slot, member);
+      return;
+    }
+
+    final choice = await showPendingConstraintAssignDialog(
+      context: context,
+      member: member,
+      constraints: pending,
+    );
+    if (!mounted) return;
+    if (choice == null) {
+      _resetDropdown(slot);
+      return;
+    }
+
+    if (_isMutationInFlight) return;
+    await _stageIncomingMember(
+      slot,
+      member,
+      approveConstraintIds:
+          choice == PendingConstraintAssignChoice.assignAndApprove
+              ? [for (final c in pending) c.id]
+              : const [],
+    );
+  }
+
   Future<void> _handleAssignmentChange(
       AssignmentSlot slot, TeamMember selectedMember) async {
     if (_isMutationInFlight) {
@@ -3566,12 +3612,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// staged at once, without hours. "ביטול" stages nothing, so the previous
   /// occupant stays.
   Future<void> _stageIncomingMember(
-      AssignmentSlot slot, TeamMember incoming) async {
+    AssignmentSlot slot,
+    TeamMember incoming, {
+    List<String> approveConstraintIds = const [],
+  }) async {
     final bloc = context.read<AssignmentBloc>();
     final previousHours = bloc.effectiveCustomWindow(slot);
     final existingHours = bloc.hoursHeldElsewhere(incoming, slot);
     if (previousHours == null && existingHours == null) {
-      bloc.add(StageMemberChange(slot: slot, member: incoming));
+      bloc.add(StageMemberChange(
+        slot: slot,
+        member: incoming,
+        approveConstraintIds: approveConstraintIds,
+      ));
       return;
     }
 
@@ -3596,6 +3649,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       setsCustomHours: true,
       customStartAt: hours == null ? null : formatWallMoment(hours.start),
       customEndAt: hours == null ? null : formatWallMoment(hours.end),
+      approveConstraintIds: approveConstraintIds,
     ));
   }
 

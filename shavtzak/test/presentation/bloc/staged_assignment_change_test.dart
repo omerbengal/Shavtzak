@@ -341,4 +341,13 @@ void main() {
           )));
     });
   });
+
+  test('approveConstraintIds survives the cache; old caches read as none', () {
+    final staged = fill().copyWith(approveConstraintIds: ['c1', 'c2']);
+    expect(StagedAssignmentChange.fromJson(staged.toJson()), staged);
+
+    final oldJson = fill().toJson()..remove('approveConstraintIds');
+    expect(StagedAssignmentChange.fromJson(oldJson).approveConstraintIds,
+        isEmpty);
+  });
 }

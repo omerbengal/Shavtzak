@@ -41,6 +41,10 @@ class MemberPickerField extends StatelessWidget {
   /// A member's id, or one of the [actions]' values.
   final ValueChanged<String> onSelected;
 
+  /// Members offered despite a pending constraint, by id, with the text of
+  /// the constraints. Their names carry an orange "!" whose tooltip is it.
+  final Map<String, String> pendingNotes;
+
   const MemberPickerField({
     super.key,
     required this.selected,
@@ -50,6 +54,7 @@ class MemberPickerField extends StatelessWidget {
     required this.backgroundColor,
     required this.onSelected,
     this.dense = false,
+    this.pendingNotes = const {},
   });
 
   Future<void> _open(BuildContext context) async {
@@ -66,6 +71,7 @@ class MemberPickerField extends StatelessWidget {
       members: members,
       selectedId: selected?.id,
       actions: actions,
+      pendingNotes: pendingNotes,
     ));
     if (value != null) onSelected(value);
   }
@@ -93,7 +99,11 @@ class MemberPickerField extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     )
-                  : _MemberName(member: member, fontSize: 12),
+                  : _MemberName(
+                      member: member,
+                      fontSize: 12,
+                      pendingNote: pendingNotes[member.id],
+                    ),
             ),
             Icon(
               Icons.arrow_drop_down,
@@ -111,29 +121,54 @@ class _MemberName extends StatelessWidget {
   final TeamMember member;
   final double fontSize;
   final TextStyle? style;
+  final String? pendingNote;
 
-  const _MemberName({required this.member, required this.fontSize, this.style});
+  const _MemberName({
+    required this.member,
+    required this.fontSize,
+    this.style,
+    this.pendingNote,
+  });
 
+  // The marks ride inside the text, so in a narrow cell they wrap with the
+  // name instead of pushing past the cell's edge.
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Flexible(
-          child: Text(
-            member.name,
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 4,
-            style: (style ?? const TextStyle(color: Colors.black))
-                .copyWith(fontSize: fontSize),
-          ),
-        ),
-        if (member.isPermanent) ...[
-          const SizedBox(width: 4),
-          Icon(Icons.verified_user, size: 12, color: Colors.blue.shade700),
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: member.name),
+          if (member.isPermanent)
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(start: 4),
+                child: Icon(Icons.verified_user,
+                    size: 12, color: Colors.blue.shade700),
+              ),
+            ),
+          if (pendingNote != null)
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(start: 2),
+                child: Tooltip(
+                  message: pendingNote!,
+                  child: Icon(
+                    Icons.priority_high,
+                    size: fontSize + 2,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ),
+            ),
         ],
-      ],
+      ),
+      textAlign: TextAlign.center,
+      overflow: TextOverflow.ellipsis,
+      maxLines: 4,
+      style: (style ?? const TextStyle(color: Colors.black))
+          .copyWith(fontSize: fontSize),
     );
   }
 }
@@ -143,12 +178,14 @@ class _MemberPickerRoute extends PopupRoute<String> {
   final List<TeamMember> members;
   final String? selectedId;
   final List<MemberPickerAction> actions;
+  final Map<String, String> pendingNotes;
 
   _MemberPickerRoute({
     required this.anchor,
     required this.members,
     required this.selectedId,
     required this.actions,
+    required this.pendingNotes,
   });
 
   @override
@@ -181,6 +218,7 @@ class _MemberPickerRoute extends PopupRoute<String> {
           members: members,
           selectedId: selectedId,
           actions: actions,
+          pendingNotes: pendingNotes,
         ),
       ),
     );
@@ -240,11 +278,13 @@ class _MemberPickerMenu extends StatefulWidget {
   final List<TeamMember> members;
   final String? selectedId;
   final List<MemberPickerAction> actions;
+  final Map<String, String> pendingNotes;
 
   const _MemberPickerMenu({
     required this.members,
     required this.selectedId,
     required this.actions,
+    required this.pendingNotes,
   });
 
   @override
@@ -334,6 +374,7 @@ class _MemberPickerMenuState extends State<_MemberPickerMenu> {
                             child: _MemberName(
                               member: member,
                               fontSize: 13,
+                              pendingNote: widget.pendingNotes[member.id],
                               style: isSelected
                                   ? const TextStyle(
                                       color: Colors.green,

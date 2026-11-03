@@ -379,12 +379,17 @@ class StageMemberChange extends AssignmentEvent {
   final String? customStartAt;
   final String? customEndAt;
   final bool setsCustomHours;
+
+  /// Pending constraints of [member] to approve on Save
+  /// ([StagedAssignmentChange.approveConstraintIds]).
+  final List<String> approveConstraintIds;
   const StageMemberChange({
     required this.slot,
     required this.member,
     this.customStartAt,
     this.customEndAt,
     this.setsCustomHours = false,
+    this.approveConstraintIds = const [],
   })  : assert(
           (customStartAt == null) == (customEndAt == null),
           'custom hours are both set or both null',
@@ -398,8 +403,14 @@ class StageMemberChange extends AssignmentEvent {
           'only an incoming member gets hours',
         );
   @override
-  List<Object?> get props =>
-      [slot, member, customStartAt, customEndAt, setsCustomHours];
+  List<Object?> get props => [
+        slot,
+        member,
+        customStartAt,
+        customEndAt,
+        setsCustomHours,
+        approveConstraintIds,
+      ];
 }
 
 /// Stage a notes/label/alt-phone edit on [slot], and optionally the member's
