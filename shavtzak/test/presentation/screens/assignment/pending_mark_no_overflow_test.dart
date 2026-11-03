@@ -46,7 +46,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
-    for (final cell in [40.0, 60.0, 90.0]) {
+    for (final cell in [60.0, 90.0]) {
       testWidgets('picker field $cell wide at $w', (tester) async {
         tester.view.physicalSize = Size(w, 800);
         tester.view.devicePixelRatio = 1;

@@ -130,11 +130,13 @@ class _MemberName extends StatelessWidget {
     this.pendingNote,
   });
 
-  // The marks ride inside the text, so in a narrow cell they wrap with the
-  // name instead of pushing past the cell's edge.
+  // The shield rides inside the name's text, so in a narrow cell it wraps
+  // with the name instead of pushing past the cell's edge. The "!" is a
+  // separate first child of the row: the start (the right, in RTL) of the
+  // name. Two icon placeholders in one line do not keep their order in RTL.
   @override
   Widget build(BuildContext context) {
-    return Text.rich(
+    final name = Text.rich(
       TextSpan(
         children: [
           TextSpan(text: member.name),
@@ -147,21 +149,6 @@ class _MemberName extends StatelessWidget {
                     size: 12, color: Colors.blue.shade700),
               ),
             ),
-          if (pendingNote != null)
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Padding(
-                padding: const EdgeInsetsDirectional.only(start: 2),
-                child: Tooltip(
-                  message: pendingNote!,
-                  child: Icon(
-                    Icons.priority_high,
-                    size: fontSize + 2,
-                    color: Colors.orange.shade800,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
       textAlign: TextAlign.center,
@@ -169,6 +156,22 @@ class _MemberName extends StatelessWidget {
       maxLines: 4,
       style: (style ?? const TextStyle(color: Colors.black))
           .copyWith(fontSize: fontSize),
+    );
+    if (pendingNote == null) return name;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Tooltip(
+          message: pendingNote!,
+          child: Icon(
+            Icons.priority_high,
+            size: fontSize + 2,
+            color: Colors.orange.shade800,
+          ),
+        ),
+        const SizedBox(width: 2),
+        Flexible(child: name),
+      ],
     );
   }
 }
