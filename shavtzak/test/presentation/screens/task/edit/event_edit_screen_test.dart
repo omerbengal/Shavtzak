@@ -205,6 +205,28 @@ void main() {
     expect(repo.updatedTasks.single.stageId, 'dinner');
   });
 
+  testWidgets('the time is edited in a small window, not in its cell',
+      (tester) async {
+    final repo = await pump(tester);
+    await tester.tap(find.byKey(const Key('edit-task-time-ws-later')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-value-sheet')), findsOneWidget);
+    expect(find.byKey(const Key('edit-value-editor')), findsNothing);
+    await tester.enterText(
+        find.descendant(
+            of: find.byKey(const Key('edit-time')),
+            matching: find.byType(EditableText)),
+        '18:15');
+    await tester.tap(find.byKey(const Key('edit-value-save')));
+    await tester.pumpAndSettle();
+    expect(repo.updatedTasks.single.assemblyTime, '18:15');
+  });
+
+  testWidgets('tasks have no drag handle', (tester) async {
+    await pump(tester);
+    expect(find.byIcon(Icons.drag_indicator), findsNothing);
+  });
+
   testWidgets('narrow window shows task cards', (tester) async {
     await pump(tester, size: const Size(400, 5000));
     expect(find.byKey(const Key('edit-task-card-ws-later')), findsOneWidget);

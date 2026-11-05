@@ -47,20 +47,14 @@ class _StageEditCardState extends State<StageEditCard> {
 
   @override
   Widget build(BuildContext context) {
-    final card = DragTarget<TaskItem>(
-      onWillAcceptWithDetails: (details) =>
-          ctx.wide && details.data.stageId != stage.id,
-      onAcceptWithDetails: (details) => ctx.onMoveTask(details.data, stage),
-      builder: (context, candidates, _) => _buildCard(candidates.isNotEmpty),
-    );
     return Padding(
       key: ctx.keyFor(stage.id),
       padding: const EdgeInsets.only(bottom: TaskStyle.editCardGap),
-      child: card,
+      child: _buildCard(),
     );
   }
 
-  Widget _buildCard(bool dropping) {
+  Widget _buildCard() {
     final highlighted = ctx.highlightId == stage.id;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -72,7 +66,7 @@ class _StageEditCardState extends State<StageEditCard> {
         child: AnimatedContainer(
           key: Key('edit-stage-${stage.id}'),
           duration: const Duration(milliseconds: 200),
-          color: dropping ? TaskStyle.editDropTarget : TaskStyle.editCard,
+          color: TaskStyle.editCard,
           child: Stack(
             children: [
               Column(
@@ -82,9 +76,7 @@ class _StageEditCardState extends State<StageEditCard> {
                     duration: const Duration(milliseconds: 300),
                     color: highlighted
                         ? TaskStyle.editHighlight
-                        : (dropping
-                            ? TaskStyle.editDropTarget
-                            : TaskStyle.editCardHeader),
+                        : TaskStyle.editCardHeader,
                     padding: EdgeInsets.fromLTRB(
                         14, 12, ctx.wide ? 22 : 16, 12),
                     child: _buildHeading(),
@@ -94,9 +86,7 @@ class _StageEditCardState extends State<StageEditCard> {
                   // card of its own, so where one ends and the next starts
                   // is plain.
                   ColoredBox(
-                    color: dropping
-                        ? TaskStyle.editDropTarget
-                        : TaskStyle.editTaskWell,
+                    color: TaskStyle.editTaskWell,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [

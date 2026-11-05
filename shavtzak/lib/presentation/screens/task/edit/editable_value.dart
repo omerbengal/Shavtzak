@@ -35,7 +35,12 @@ class EditableValue<T> extends StatefulWidget {
     required this.onCommit,
     this.validate,
     this.expand = true,
+    this.inDialog = false,
   });
+
+  /// On a wide window, edit in a small dialog instead of in place: for an
+  /// editor that needs more room than its cell, such as a time field.
+  final bool inDialog;
 
   final T value;
   final Widget display;
@@ -64,7 +69,7 @@ class _EditableValueState<T> extends State<EditableValue<T>> {
   String? _error;
 
   void _start() {
-    if (widget.wide) {
+    if (widget.wide && !widget.inDialog) {
       setState(() {
         _editing = true;
         _draft = widget.value;
@@ -107,17 +112,31 @@ class _EditableValueState<T> extends State<EditableValue<T>> {
   }
 
   Future<void> _openSheet() async {
-    final saved = await showModalBottomSheet<_Saved<T>>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => _EditSheet<T>(
-        title: widget.sheetTitle,
-        initial: widget.value,
-        editor: widget.editor,
-        validate: widget.validate,
-      ),
-    );
+    Widget content(BuildContext context) => _EditSheet<T>(
+          title: widget.sheetTitle,
+          initial: widget.value,
+          editor: widget.editor,
+          validate: widget.validate,
+        );
+    final saved = widget.wide
+        ? await showDialog<_Saved<T>>(
+            context: context,
+            builder: (context) => Dialog(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 340),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 20),
+                  child: content(context),
+                ),
+              ),
+            ),
+          )
+        : await showModalBottomSheet<_Saved<T>>(
+            context: context,
+            isScrollControlled: true,
+            showDragHandle: true,
+            builder: content,
+          );
     if (saved == null || !mounted) return;
     if (_same(saved.value, widget.value)) return;
     widget.onCommit(saved.value);
