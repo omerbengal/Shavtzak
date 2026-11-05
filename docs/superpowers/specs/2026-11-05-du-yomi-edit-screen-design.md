@@ -116,6 +116,15 @@ The new screen replaces that round trip.
   the constant). Content max width ~1280 px, centred.
 - All sizes/colours for this screen go in a new section of `task_style.dart` (house rule: every
   size and colour of the tasks screens is there).
+- **Order after an edit**: rows and cards re-sort from the live data right away (this is an
+  editing screen; the new place is the correct result). The item just edited is scrolled into view
+  and briefly highlighted so it is not lost. No `RowHold` here.
+- **Resume**: `/edit` is not a place the tab reopens to; leaving and coming back lands on the
+  event screen (`TasksResume` unchanged).
+- **"אחראי" filter** lists the event's current assignees plus anyone named on a task of the event
+  (so tasks still held by someone taken off the event can be found).
+- **Row actions**: each task row/card has a ⋯ menu ("העברה לשלב אחר…", "מחיקה") on both layouts,
+  instead of a separate 🗑 column; the laptop row also has the ⋮⋮ drag handle.
 - The removed-assignee check ("assignee taken off the event") is out of scope for v1.
 - An event with no stages: the screen shows the empty card state with "+ שלב חדש" (the Excel
   import stays on the event screen).

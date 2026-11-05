@@ -153,4 +153,63 @@ abstract final class TaskStyle {
 
   /// The line between the header and the tasks, and between the tasks.
   static const Color stageCardDivider = Color(0xFFEEEEEE);
+
+  // ---- the editing screen ("עריכה") ----
+  static const Color editPage = Color(0xFFF5F7FB);
+  static const Color editCard = Colors.white;
+  static const Color editCardHeader = Color(0xFFFBFCFE);
+  static const Color editCardEdge = Color(0xFF2196F3);
+  static const Color editDropTarget = Color(0xFFE3F2FD);
+  static const Color editHighlight = Color(0xFFFFF8E1);
+  static const Color editHover = Color(0xFFF1F5FB);
+  static const Color editLabel = Color(0xFF9CA3AF);
+  static const Color editMuted = Color(0xFF6B7280);
+  static const Color editFaint = Color(0xFFC4C9D1);
+  static const Color editRowLine = Color(0xFFF2F4F7);
+  static const List<BoxShadow> editCardShadow = [
+    BoxShadow(color: Color(0x0F000000), blurRadius: 3, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x0A000000), blurRadius: 16, offset: Offset(0, 4)),
+  ];
+  static const List<BoxShadow> editRing = [
+    BoxShadow(color: Color(0xFF2196F3), spreadRadius: 2),
+    BoxShadow(color: Color(0x222196F3), spreadRadius: 5),
+  ];
+  static const double editMaxWidth = 1280;
+  static const double editCardRadius = 14;
+  static const double editCardEdgeWidth = 5;
+  static const double editCardGap = 16;
+  static const double editRadius = 6;
+  static const double editPencilSize = 14;
+  static const double editLabelWidth = 72;
+  static const double editHandleWidth = 22;
+  static const double editTimeWidth = 70;
+  static const double editMenuWidth = 36;
+  static const double editAvatarSize = 26;
+  static const double editAssigneesMaxHeight = 280;
+  static const Duration editHighlightFor = Duration(seconds: 2);
+
+  /// A value's padding: roomier on a phone, where a finger taps it.
+  static EdgeInsets editValuePadding({required bool wide}) => wide
+      ? const EdgeInsets.symmetric(horizontal: 6, vertical: 3)
+      : const EdgeInsets.symmetric(horizontal: 6, vertical: 7);
+
+  /// The assignees' initial circles, a colour per member that stays put.
+  static const List<Color> editAvatarColors = [
+    Color(0xFF5C7CFA),
+    Color(0xFFF08C00),
+    Color(0xFF12B886),
+    Color(0xFFE64980),
+    Color(0xFF7950F2),
+    Color(0xFF1098AD),
+    Color(0xFFD9480F),
+    Color(0xFF2F9E44),
+  ];
+
+  static Color editAvatarColor(String memberId) {
+    var hash = 0;
+    for (final unit in memberId.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    return editAvatarColors[hash % editAvatarColors.length];
+  }
 }
