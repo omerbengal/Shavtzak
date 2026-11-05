@@ -89,28 +89,26 @@ class _StageEditCardState extends State<StageEditCard> {
                         14, 12, ctx.wide ? 22 : 16, 12),
                     child: _buildHeading(),
                   ),
-                  const Divider(height: 1, color: TaskStyle.editRowLine),
-                  if (ctx.wide && widget.tasks.isNotEmpty)
-                    const TaskEditHeader(),
-                  for (final (i, task) in widget.tasks.indexed)
-                    ctx.wide
-                        ? TaskEditRow(
-                            task: task,
-                            ctx: ctx,
-                            striped: i.isOdd,
-                            last: i == widget.tasks.length - 1,
-                          )
-                        : TaskEditCard(task: task, ctx: ctx),
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
-                      child: TextButton.icon(
-                        key: Key('edit-task-add-${stage.id}'),
-                        onPressed: () => ctx.onAddTask(stage),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('משימה'),
-                      ),
+                  const Divider(height: 1, color: TaskStyle.editTaskCardBorder),
+                  // The stage's tasks sit in a tinted well, each a white
+                  // card of its own, so where one ends and the next starts
+                  // is plain.
+                  ColoredBox(
+                    color: dropping
+                        ? TaskStyle.editDropTarget
+                        : TaskStyle.editTaskWell,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (ctx.wide && widget.tasks.isNotEmpty)
+                          const TaskEditHeader(),
+                        if (!ctx.wide) const SizedBox(height: 6),
+                        for (final task in widget.tasks)
+                          ctx.wide
+                              ? TaskEditRow(task: task, ctx: ctx)
+                              : TaskEditCard(task: task, ctx: ctx),
+                        _addTaskButton(),
+                      ],
                     ),
                   ),
                 ],
@@ -128,6 +126,19 @@ class _StageEditCardState extends State<StageEditCard> {
       ),
     );
   }
+
+  Widget _addTaskButton() => Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+          child: TextButton.icon(
+            key: Key('edit-task-add-${stage.id}'),
+            onPressed: () => ctx.onAddTask(stage),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('משימה'),
+          ),
+        ),
+      );
 
   Widget _buildHeading() {
     final times = (start: stage.startTime ?? '', end: stage.endTime ?? '');
