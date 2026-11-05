@@ -187,12 +187,21 @@ class TaskEditHeader extends StatelessWidget {
 }
 
 /// One task as a table row, on a wide window. Its ⋮⋮ drags it to another
-/// stage.
+/// stage. Every other row is tinted and a clear line parts two rows, so
+/// each task reads as its own line.
 class TaskEditRow extends StatelessWidget {
-  const TaskEditRow({super.key, required this.task, required this.ctx});
+  const TaskEditRow({
+    super.key,
+    required this.task,
+    required this.ctx,
+    this.striped = false,
+    this.last = false,
+  });
 
   final TaskItem task;
   final EditContext ctx;
+  final bool striped;
+  final bool last;
 
   @override
   Widget build(BuildContext context) {
@@ -201,12 +210,17 @@ class TaskEditRow extends StatelessWidget {
     return AnimatedContainer(
       key: ctx.keyFor(task.id),
       duration: const Duration(milliseconds: 300),
-      color: highlighted ? TaskStyle.editHighlight : Colors.transparent,
+      color: highlighted
+          ? TaskStyle.editHighlight
+          : (striped ? TaskStyle.editRowStripe : Colors.transparent),
       child: Container(
         key: Key('edit-task-row-${task.id}'),
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: TaskStyle.editRowLine)),
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+        decoration: BoxDecoration(
+          border: last
+              ? null
+              : const Border(
+                  bottom: BorderSide(color: TaskStyle.editTaskLine)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -258,12 +272,12 @@ class TaskEditCard extends StatelessWidget {
     return AnimatedContainer(
       key: ctx.keyFor(task.id),
       duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
       decoration: BoxDecoration(
-        color: highlighted ? TaskStyle.editHighlight : TaskStyle.editCard,
+        color: highlighted ? TaskStyle.editHighlight : TaskStyle.editTaskCard,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: TaskStyle.editRowLine),
+        border: Border.all(color: TaskStyle.editTaskCardBorder),
       ),
       child: Column(
         key: Key('edit-task-card-${task.id}'),

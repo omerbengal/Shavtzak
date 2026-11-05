@@ -92,9 +92,14 @@ class _StageEditCardState extends State<StageEditCard> {
                   const Divider(height: 1, color: TaskStyle.editRowLine),
                   if (ctx.wide && widget.tasks.isNotEmpty)
                     const TaskEditHeader(),
-                  for (final task in widget.tasks)
+                  for (final (i, task) in widget.tasks.indexed)
                     ctx.wide
-                        ? TaskEditRow(task: task, ctx: ctx)
+                        ? TaskEditRow(
+                            task: task,
+                            ctx: ctx,
+                            striped: i.isOdd,
+                            last: i == widget.tasks.length - 1,
+                          )
                         : TaskEditCard(task: task, ctx: ctx),
                   Align(
                     alignment: AlignmentDirectional.centerStart,

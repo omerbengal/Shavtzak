@@ -166,6 +166,12 @@ abstract final class TaskStyle {
   static const Color editMuted = Color(0xFF6B7280);
   static const Color editFaint = Color(0xFFC4C9D1);
   static const Color editRowLine = Color(0xFFF2F4F7);
+  // Between two tasks of a stage: a clear line, every other row tinted.
+  static const Color editTaskLine = Color(0xFFE3E7ED);
+  static const Color editRowStripe = Color(0xFFF7F9FC);
+  // A phone task card sits tinted inside the white stage card.
+  static const Color editTaskCard = Color(0xFFF6F8FB);
+  static const Color editTaskCardBorder = Color(0xFFDFE4EB);
   static const List<BoxShadow> editCardShadow = [
     BoxShadow(color: Color(0x0F000000), blurRadius: 3, offset: Offset(0, 1)),
     BoxShadow(color: Color(0x0A000000), blurRadius: 16, offset: Offset(0, 4)),
