@@ -162,8 +162,8 @@ class _StageTimesEditorState extends State<StageTimesEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 300,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 300),
       child: Row(
         children: [
           Expanded(
@@ -291,8 +291,8 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
             .where((member) =>
                 normalizeForSearch(member.name).toLowerCase().contains(query))
             .toList();
-    return SizedBox(
-      width: 300,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 300),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -19,6 +19,7 @@ import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
 import '../../presentation/screens/summary/summary_screen.dart';
 import '../../presentation/screens/task/event_tasks_screen.dart';
+import '../../presentation/screens/task/edit/event_edit_screen.dart';
 import '../../presentation/screens/task/tasks_place.dart';
 import '../../presentation/screens/task/tasks_screen.dart';
 import '../../presentation/screens/db/db_preview_screen.dart';
@@ -478,8 +479,7 @@ class AppRouter {
         GoRoute(
           path: '/terms-of-service',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child:
-                TermsOfServiceScreen(key: ValueKey('terms_of_service_prod')),
+            child: TermsOfServiceScreen(key: ValueKey('terms_of_service_prod')),
           ),
         ),
 
@@ -605,8 +605,8 @@ class AppRouter {
         GoRoute(
             path: '/test/privacy-policy',
             pageBuilder: (context, state) => const NoTransitionPage(
-                child: PrivacyPolicyScreen(
-                    key: ValueKey('privacy_policy_test')))),
+                child:
+                    PrivacyPolicyScreen(key: ValueKey('privacy_policy_test')))),
         GoRoute(
             path: '/test/terms-of-service',
             pageBuilder: (context, state) => const NoTransitionPage(
@@ -736,6 +736,22 @@ class AppRouter {
               ),
             );
           },
+          routes: [
+            // The managers' editing screen of the event.
+            GoRoute(
+              path: 'edit',
+              pageBuilder: (context, state) {
+                final eventId = state.pathParameters['eventId']!;
+                return NoTransitionPage(
+                  child: EventEditScreen(
+                    key: ValueKey('event_edit_${place.name}_${env}_$eventId'),
+                    eventId: eventId,
+                    place: place,
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ],
     );

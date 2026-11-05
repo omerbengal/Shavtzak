@@ -157,7 +157,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
           .watchEventAssignees(widget.eventId)
           .listen((members) {
         if (!mounted) return;
-        setState(() => _assignedIds = {for (final member in members) member.id});
+        setState(
+            () => _assignedIds = {for (final member in members) member.id});
       });
     }
   }
@@ -276,7 +277,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       null => null,
       TaskView(:final taskId, :final back) =>
         board.taskById(taskId) != null ? view : _resolve(back, board),
-      StageView(:final stageId) => board.stageById(stageId) != null ? view : null,
+      StageView(:final stageId) =>
+        board.stageById(stageId) != null ? view : null,
       ResultsView() => view,
     };
   }
@@ -689,32 +691,51 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             event: board.event,
             progress: taskProgress(board.tasks, _now),
             action: canManageTasks(user)
-                ? MenuAnchor(
-                    menuChildren: [
-                      MenuItemButton(
-                        key: const Key('tasks-export'),
-                        onPressed: () => downloadExport(board),
-                        leadingIcon: const Icon(Icons.download, size: 18),
-                        child: const Text('הורדה לאקסל'),
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton.icon(
+                        key: const Key('tasks-edit'),
+                        onPressed: () {
+                          Logger.action('tap:tasksEdit');
+                          context.go(widget.place.editRoute(widget.eventId));
+                        },
+                        icon: const Icon(Icons.edit_note, size: 18),
+                        label: const Text('עריכה'),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                       ),
-                      MenuItemButton(
-                        key: const Key('tasks-sync'),
-                        onPressed: () => updateFromExcel(board, user),
-                        leadingIcon: const Icon(Icons.upload_file, size: 18),
-                        child: const Text('עדכון מאקסל'),
+                      MenuAnchor(
+                        menuChildren: [
+                          MenuItemButton(
+                            key: const Key('tasks-export'),
+                            onPressed: () => downloadExport(board),
+                            leadingIcon: const Icon(Icons.download, size: 18),
+                            child: const Text('הורדה לאקסל'),
+                          ),
+                          MenuItemButton(
+                            key: const Key('tasks-sync'),
+                            onPressed: () => updateFromExcel(board, user),
+                            leadingIcon:
+                                const Icon(Icons.upload_file, size: 18),
+                            child: const Text('עדכון מאקסל'),
+                          ),
+                        ],
+                        builder: (context, menu, _) => TextButton.icon(
+                          key: const Key('tasks-excel'),
+                          onPressed: () =>
+                              menu.isOpen ? menu.close() : menu.open(),
+                          icon: const Icon(Icons.table_view, size: 18),
+                          label: const Text('אקסל'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
                       ),
                     ],
-                    builder: (context, menu, _) => TextButton.icon(
-                      key: const Key('tasks-excel'),
-                      onPressed: () =>
-                          menu.isOpen ? menu.close() : menu.open(),
-                      icon: const Icon(Icons.table_view, size: 18),
-                      label: const Text('אקסל'),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
                   )
                 : null,
           ),
@@ -866,7 +887,10 @@ class _EventTasksScreenState extends State<EventTasksScreen>
         final rows = _rowHold.rows(
           view,
           matching: missingOnly
-              ? [for (final task in stageTasks) if (!task.isComplete) task]
+              ? [
+                  for (final task in stageTasks)
+                    if (!task.isComplete) task
+                ]
               : stageTasks,
           all: stageTasks,
         );
@@ -888,9 +912,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             canManage: canManageTasks(user),
             onAddTask: () => createTask(board.event, stage, user),
             onCallPhone: callPhone,
-            tableBuilder: wide
-                ? (rows) => _stageTable(rows, view, board, user)
-                : null,
+            tableBuilder:
+                wide ? (rows) => _stageTable(rows, view, board, user) : null,
           ),
         );
       case ResultsView():
@@ -940,7 +963,10 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       case ResultsKind.myLate:
         final viewerId = _viewAsId ?? user.id;
         final matching = lateTasks(
-          [for (final task in board.tasks) if (task.isAssignedTo(viewerId)) task],
+          [
+            for (final task in board.tasks)
+              if (task.isAssignedTo(viewerId)) task
+          ],
           _now,
         );
         final title = hebrewCount(
@@ -1091,7 +1117,8 @@ class _EventTasksScreenState extends State<EventTasksScreen>
           children: [
             Icon(Icons.task_alt, size: 56, color: Colors.grey.shade400),
             const SizedBox(height: 12),
-            Text('אין עדיין שלבים לאירוע זה', style: theme.textTheme.titleMedium),
+            Text('אין עדיין שלבים לאירוע זה',
+                style: theme.textTheme.titleMedium),
             if (isManager) ...[
               const SizedBox(height: 6),
               Text(

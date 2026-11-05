@@ -1,0 +1,466 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../../core/debug/logger.dart';
+import '../../../../core/services/task_import_files.dart';
+import '../../../../core/utils/task_edit_overlay.dart';
+import '../../../../core/utils/task_progress.dart';
+import '../../../../core/utils/task_schedule.dart';
+import '../../../../core/utils/task_utils.dart';
+import '../../../../data/repositories/task_repository.dart';
+import '../../../../domain/entities/event.dart';
+import '../../../../domain/entities/stage.dart';
+import '../../../../domain/entities/task_item.dart';
+import '../../../../domain/entities/team_member.dart';
+import '../../../bloc/task/task_bloc.dart';
+import '../../../bloc/user_selection/user_selection_bloc.dart';
+import '../../../bloc/user_selection/user_selection_state.dart';
+import '../task_screen_actions.dart';
+import '../task_style.dart';
+import '../tasks_place.dart';
+import 'edit_context.dart';
+import 'edit_rules.dart';
+import 'stage_edit_card.dart';
+
+/// The managers' editing screen of one דו יומי event: every stage as a soft
+/// card with all its details, and every task with all of its, each value
+/// edited where it sits and saved at once.
+///
+/// Not a progress screen: nothing here ticks, counts or colours by time.
+/// A value just sent is shown, and built on, until the live stream brings
+/// it back ([EditOverlay]); a refusal puts the stored value back and says so.
+class EventEditScreen extends StatefulWidget {
+  const EventEditScreen({
+    super.key,
+    required this.eventId,
+    required this.place,
+    this.clock,
+    this.importFiles = const BrowserTaskImportFiles(),
+  });
+
+  final String eventId;
+  final TasksPlace place;
+  final DateTime Function()? clock;
+  final TaskImportFiles importFiles;
+
+  @override
+  State<EventEditScreen> createState() => _EventEditScreenState();
+}
+
+class _EventEditScreenState extends State<EventEditScreen>
+    with TaskScreenActions<EventEditScreen> {
+  @override
+  DateTime get actionTime => (widget.clock ?? DateTime.now)();
+
+  @override
+  TaskImportFiles get importFiles => widget.importFiles;
+
+  final EditOverlay<TaskItem> _taskOverlay = EditOverlay(sameTaskEdit);
+  final EditOverlay<Stage> _stageOverlay = EditOverlay(sameStageEdit);
+  final Map<String, GlobalKey> _keys = {};
+
+  List<TeamMember> _eventAssignees = const [];
+  StreamSubscription<List<TeamMember>>? _assigneesSubscription;
+
+  String _query = '';
+  String? _assigneeFilter;
+  String? _highlightId;
+  Timer? _highlightTimer;
+
+  /// The members as last delivered, to show a task's new assignees at once.
+  Map<String, TeamMember> _members = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    context.read<TaskBloc>().add(const LoadTasks());
+    final auth = context.read<UserSelectionBloc>().state;
+    if (auth is UserAuthenticated && canManageTasks(auth.user)) {
+      _assigneesSubscription = context
+          .read<TaskRepository>()
+          .watchEventAssignees(widget.eventId)
+          .listen((members) {
+        if (mounted) setState(() => _eventAssignees = members);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _assigneesSubscription?.cancel();
+    _highlightTimer?.cancel();
+    super.dispose();
+  }
+
+  GlobalKey _keyFor(String id) => _keys.putIfAbsent(id, GlobalKey.new);
+
+  void _backToEvent() => context.go(widget.place.eventRoute(widget.eventId));
+
+  // ---- saving ----
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+      ));
+  }
+
+  /// Tints [id] for a moment and brings it into view: an edit may have moved
+  /// it to a new place in the order.
+  void _flash(String id) {
+    _highlightTimer?.cancel();
+    setState(() => _highlightId = id);
+    _highlightTimer = Timer(TaskStyle.editHighlightFor, () {
+      if (mounted) setState(() => _highlightId = null);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _keys[id]?.currentContext;
+      if (target == null || !target.mounted) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 250),
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 250),
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      );
+    });
+  }
+
+  Future<void> _commitTask(TaskItem next) async {
+    Logger.action('edit:task');
+    _taskOverlay.sent(
+      next.id,
+      next.copyWith(
+        assignees: [
+          for (final id in next.assigneeIds)
+            if (_members[id] != null) _members[id]!,
+        ],
+      ),
+    );
+    _flash(next.id);
+    final result = await sendTaskEvent(
+      (completion) => UpdateTask(next, completion: completion),
+    );
+    if (!mounted || result.isSuccess) return;
+    setState(() => _taskOverlay.failed(next.id));
+    _showError(result.message ?? 'השמירה נכשלה. נסו שוב.');
+  }
+
+  Future<void> _commitStage(Stage next) async {
+    Logger.action('edit:stage');
+    _stageOverlay.sent(next.id, next);
+    _flash(next.id);
+    final result = await sendTaskEvent(
+      (completion) => UpdateStage(next, completion: completion),
+    );
+    if (!mounted || result.isSuccess) return;
+    setState(() => _stageOverlay.failed(next.id));
+    _showError(result.message ?? 'השמירה נכשלה. נסו שוב.');
+  }
+
+  void _moveTask(TaskItem task, Stage to) {
+    if (task.stageId == to.id) return;
+    Logger.action('edit:taskMove');
+    _commitTask(task.copyWith(stageId: to.id, stage: to));
+  }
+
+  // ---- building ----
+
+  Event? _findEvent(TasksLoaded state) {
+    for (final event in state.events) {
+      if (event.id != widget.eventId) continue;
+      if (event.isDeactivated || event.categoryId != duYomiCategoryId) {
+        return null;
+      }
+      return event;
+    }
+    return null;
+  }
+
+  /// The board with every value still on its way laid over the stream's.
+  EventTaskBoard _board(Event event, TasksLoaded loaded) {
+    _taskOverlay.reconcile({for (final task in loaded.tasks) task.id: task});
+    _stageOverlay
+        .reconcile({for (final stage in loaded.stages) stage.id: stage});
+    _members = {for (final member in loaded.members) member.id: member};
+    final stages = [
+      for (final stage in loaded.stages) _stageOverlay.resolve(stage.id, stage),
+    ];
+    final stagesById = {for (final stage in stages) stage.id: stage};
+    final tasks = [
+      for (final task in loaded.tasks)
+        () {
+          final shown = _taskOverlay.resolve(task.id, task);
+          // A moved task, or one whose stage moved, takes its day from the
+          // stage shown.
+          return shown.copyWith(stage: stagesById[shown.stageId]);
+        }(),
+    ];
+    return eventTaskBoard(event, stages: stages, tasks: tasks);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+        builder: (context, auth) {
+          if (auth is! UserAuthenticated || !canManageTasks(auth.user)) {
+            return _message(
+              'אין הרשאה לעריכת המשימות',
+              key: const Key('edit-no-access'),
+            );
+          }
+          final user = auth.user;
+          return BlocBuilder<TaskBloc, TaskState>(
+            builder: (context, state) {
+              if (state is TasksError) return _message(state.message);
+              if (state is! TasksLoaded) {
+                return _scaffold(
+                  null,
+                  const Center(child: CircularProgressIndicator()),
+                );
+              }
+              final event = _findEvent(state);
+              if (event == null) return _message('האירוע לא נמצא');
+              return _buildLoaded(_board(event, state), user);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _message(String text, {Key? key}) {
+    return _scaffold(
+      null,
+      Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(text, key: key, style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 12),
+            TextButton(onPressed: _backToEvent, child: const Text('חזרה')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scaffold(Event? event, Widget body) {
+    return Scaffold(
+      backgroundColor: TaskStyle.editPage,
+      appBar: AppBar(
+        leading: IconButton(
+          key: const Key('edit-back'),
+          tooltip: 'חזרה לאירוע',
+          icon: const Icon(Icons.arrow_forward),
+          onPressed: _backToEvent,
+        ),
+        automaticallyImplyLeading: false,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              event == null ? 'עריכה' : 'עריכה · ${event.name}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (event != null)
+              Text(
+                eventDaysLabel(event),
+                style: const TextStyle(fontSize: 13, color: Colors.white70),
+              ),
+          ],
+        ),
+      ),
+      body: body,
+    );
+  }
+
+  Widget _buildLoaded(EventTaskBoard board, TeamMember user) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final wide = constraints.maxWidth >= TaskStyle.wideBreakpoint;
+      final ctx = EditContext(
+        wide: wide,
+        event: board.event,
+        days: eventDays(board.event),
+        stages: board.stages,
+        eventAssignees: _eventAssignees,
+        onTaskCommit: _commitTask,
+        onStageCommit: _commitStage,
+        onMoveTask: _moveTask,
+        onDeleteTask: deleteTask,
+        onDeleteStage: deleteStage,
+        onAddTask: (stage) => createTask(board.event, stage, user),
+        highlightId: _highlightId,
+        keyFor: _keyFor,
+      );
+      final filtering = _query.trim().isNotEmpty || _assigneeFilter != null;
+      final now = actionTime;
+      final cards = <Widget>[];
+      for (final stage in board.stages) {
+        final visible = visibleStageTasks(
+          board,
+          stage,
+          query: _query,
+          assigneeId: _assigneeFilter,
+          now: now,
+        );
+        if (filtering && visible.isEmpty) continue;
+        cards.add(StageEditCard(
+          key: ValueKey('stage-card-${stage.id}'),
+          stage: stage,
+          tasks: visible,
+          allTaskCount: board.tasksOf(stage.id).length,
+          ctx: ctx,
+        ));
+      }
+      return _scaffold(
+        board.event,
+        ListView(
+          key: const Key('edit-list'),
+          padding: EdgeInsets.symmetric(
+            horizontal: wide ? 24 : 10,
+            vertical: wide ? 18 : 10,
+          ),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxWidth: TaskStyle.editMaxWidth),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildToolbar(board, user, wide),
+                    SizedBox(height: wide ? 16 : 10),
+                    if (board.stages.isEmpty)
+                      _emptyCard('אין עדיין שלבים באירוע. הוסיפו שלב ראשון.')
+                    else if (cards.isEmpty)
+                      _emptyCard('לא נמצאו משימות')
+                    else
+                      ...cards,
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _emptyCard(String text) => Container(
+        padding: const EdgeInsets.all(28),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: TaskStyle.editCard,
+          borderRadius: BorderRadius.circular(TaskStyle.editCardRadius),
+          boxShadow: TaskStyle.editCardShadow,
+        ),
+        child: Text(text, style: const TextStyle(color: TaskStyle.editMuted)),
+      );
+
+  Widget _buildToolbar(EventTaskBoard board, TeamMember user, bool wide) {
+    final filterMembers = assigneeFilterMembers(board, _eventAssignees);
+    final search = SizedBox(
+      width: wide ? 240 : double.infinity,
+      child: TextField(
+        key: const Key('edit-search'),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: Colors.white,
+          hintText: 'חיפוש משימה, שלב או אחראי',
+          prefixIcon: const Icon(Icons.search, size: 18),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(999)),
+        ),
+        onChanged: (value) => setState(() => _query = value),
+      ),
+    );
+    final assignee = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          key: const Key('edit-assignee-filter'),
+          value: filterMembers.any((m) => m.id == _assigneeFilter)
+              ? _assigneeFilter
+              : null,
+          isDense: true,
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('אחראי: כולם'),
+            ),
+            for (final member in filterMembers)
+              DropdownMenuItem<String?>(
+                value: member.id,
+                child: Text('אחראי: ${member.name}'),
+              ),
+          ],
+          onChanged: (id) => setState(() => _assigneeFilter = id),
+        ),
+      ),
+    );
+    final excel = OutlinedButton.icon(
+      key: const Key('edit-export'),
+      onPressed: () => downloadExport(board),
+      icon: const Icon(Icons.download, size: 18),
+      label: const Text('אקסל'),
+    );
+    final addStage = FilledButton.icon(
+      key: const Key('edit-stage-add'),
+      onPressed: () => createStage(board.event, user),
+      icon: const Icon(Icons.add, size: 18),
+      label: const Text('שלב חדש'),
+    );
+    final summary = Text(
+      '${board.stages.length} שלבים · ${board.tasks.length} משימות',
+      style: const TextStyle(color: TaskStyle.editMuted),
+    );
+    if (wide) {
+      return Row(
+        children: [
+          summary,
+          const Spacer(),
+          search,
+          const SizedBox(width: 8),
+          assignee,
+          const SizedBox(width: 8),
+          excel,
+          const SizedBox(width: 8),
+          addStage,
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        search,
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [assignee, excel, addStage],
+        ),
+        const SizedBox(height: 6),
+        summary,
+      ],
+    );
+  }
+}

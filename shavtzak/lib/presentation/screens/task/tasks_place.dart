@@ -20,6 +20,9 @@ enum TasksPlace {
 
   /// One event's screen, in the current environment.
   String eventRoute(String eventId) => '$listRoute/$eventId';
+
+  /// One event's editing screen, for managers, in the current environment.
+  String editRoute(String eventId) => '${eventRoute(eventId)}/edit';
 }
 
 /// What a [TasksPlace] last showed in this app session, so coming back to it

@@ -126,8 +126,7 @@ void main() {
       home: Scaffold(
         body: SubtasksEditor(
           initial: const [],
-          onChanged: (list) =>
-              reported.add([for (final s in list) s.title]),
+          onChanged: (list) => reported.add([for (final s in list) s.title]),
         ),
       ),
     ));

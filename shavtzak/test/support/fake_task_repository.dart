@@ -51,8 +51,17 @@ class FakeTaskRepository extends Fake implements TaskRepository {
   @override
   Future<void> insertTask(TaskItem task) => _record('insert:${task.title}');
 
+  /// Every task sent to [updateTask], in order.
+  final updatedTasks = <TaskItem>[];
+
+  /// Every stage sent to [updateStage], in order.
+  final updatedStages = <Stage>[];
+
   @override
-  Future<void> updateTask(TaskItem task) => _record('update:${task.id}');
+  Future<void> updateTask(TaskItem task) {
+    updatedTasks.add(task);
+    return _record('update:${task.id}');
+  }
 
   @override
   Future<void> deleteTask(String taskId) => _record('delete:$taskId');
@@ -73,7 +82,10 @@ class FakeTaskRepository extends Fake implements TaskRepository {
   Future<void> insertStage(Stage stage) => _record('insertStage:${stage.title}');
 
   @override
-  Future<void> updateStage(Stage stage) => _record('updateStage:${stage.id}');
+  Future<void> updateStage(Stage stage) {
+    updatedStages.add(stage);
+    return _record('updateStage:${stage.id}');
+  }
 
   @override
   Future<void> deleteStage(String stageId) => _record('deleteStage:$stageId');
