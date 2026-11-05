@@ -92,7 +92,60 @@ class _EventEditScreenState extends State<EventEditScreen>
   void dispose() {
     _assigneesSubscription?.cancel();
     _highlightTimer?.cancel();
+    _edgeTimer?.cancel();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  // ---- scrolling while a task is dragged to an edge ----
+
+  final ScrollController _scroll = ScrollController();
+  final GlobalKey _listKey = GlobalKey();
+  Timer? _edgeTimer;
+  double _edgeSpeed = 0;
+  final Stopwatch _edgeClock = Stopwatch();
+
+  /// Where the dragged task's pointer is: near the list's top or bottom the
+  /// list scrolls, until the pointer leaves the edge or the drag ends.
+  void _onDragMoved(Offset global) {
+    final box = _listKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    _edgeSpeed = edgeScrollSpeed(
+      pointerY: global.dy,
+      top: top,
+      bottom: top + box.size.height,
+      edge: TaskStyle.editDragEdge,
+      maxSpeed: TaskStyle.editDragMaxSpeed,
+    );
+    if (_edgeSpeed == 0) {
+      _stopEdgeScroll();
+    } else if (_edgeTimer == null) {
+      _edgeClock
+        ..reset()
+        ..start();
+      _edgeTimer =
+          Timer.periodic(const Duration(milliseconds: 16), (_) => _edgeTick());
+    }
+  }
+
+  void _edgeTick() {
+    final seconds = _edgeClock.elapsedMicroseconds / 1e6;
+    _edgeClock
+      ..reset()
+      ..start();
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    final next = (position.pixels + _edgeSpeed * seconds)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (next != position.pixels) _scroll.jumpTo(next);
+  }
+
+  void _stopEdgeScroll() {
+    _edgeTimer?.cancel();
+    _edgeTimer = null;
+    _edgeSpeed = 0;
+    _edgeClock.stop();
   }
 
   GlobalKey _keyFor(String id) => _keys.putIfAbsent(id, GlobalKey.new);
@@ -304,6 +357,8 @@ class _EventEditScreenState extends State<EventEditScreen>
         onAddTask: (stage) => createTask(board.event, stage, user),
         highlightId: _highlightId,
         keyFor: _keyFor,
+        onDragMoved: _onDragMoved,
+        onDragDone: _stopEdgeScroll,
       );
       final filtering = _query.trim().isNotEmpty || _assigneeFilter != null;
       final now = actionTime;
@@ -327,36 +382,48 @@ class _EventEditScreenState extends State<EventEditScreen>
       }
       return _scaffold(
         board.event,
-        ListView(
-          key: const Key('edit-list'),
-          padding: EdgeInsets.symmetric(
-            horizontal: wide ? 24 : 10,
-            vertical: wide ? 18 : 10,
-          ),
-          children: [
-            Center(
-              child: ConstrainedBox(
-                constraints:
-                    const BoxConstraints(maxWidth: TaskStyle.editMaxWidth),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildToolbar(board, user, wide),
-                    SizedBox(height: wide ? 16 : 10),
-                    if (board.stages.isEmpty)
-                      _emptyCard('אין עדיין שלבים באירוע. הוסיפו שלב ראשון.')
-                    else if (cards.isEmpty)
-                      _emptyCard('לא נמצאו משימות')
-                    else
-                      ...cards,
-                  ],
-                ),
-              ),
-            ),
-          ],
+        KeyedSubtree(
+          key: _listKey,
+          child: _buildList(board, user, wide, cards),
         ),
       );
     });
+  }
+
+  Widget _buildList(
+    EventTaskBoard board,
+    TeamMember user,
+    bool wide,
+    List<Widget> cards,
+  ) {
+    return ListView(
+      key: const Key('edit-list'),
+      controller: _scroll,
+      padding: EdgeInsets.symmetric(
+        horizontal: wide ? 24 : 10,
+        vertical: wide ? 18 : 10,
+      ),
+      children: [
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: TaskStyle.editMaxWidth),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildToolbar(board, user, wide),
+                SizedBox(height: wide ? 16 : 10),
+                if (board.stages.isEmpty)
+                  _emptyCard('אין עדיין שלבים באירוע. הוסיפו שלב ראשון.')
+                else if (cards.isEmpty)
+                  _emptyCard('לא נמצאו משימות')
+                else
+                  ...cards,
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _emptyCard(String text) => Container(

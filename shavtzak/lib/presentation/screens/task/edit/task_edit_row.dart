@@ -61,7 +61,8 @@ class _TaskValues {
           onChanged: onChanged,
           onSubmit: onSubmit,
         ),
-        onCommit: (value) => ctx.onTaskCommit(task.copyWith(title: value.trim())),
+        onCommit: (value) =>
+            ctx.onTaskCommit(task.copyWith(title: value.trim())),
       );
 
   Widget description() => EditableValue<String>(
@@ -174,6 +175,7 @@ class TaskEditHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(inset, 10, inset, 6),
       child: Row(
         children: [
+          const SizedBox(width: TaskStyle.editHandleWidth),
           SizedBox(width: TaskStyle.editTimeWidth, child: label('התייצבות')),
           Expanded(flex: 3, child: label('משימה')),
           const SizedBox(width: 12),
@@ -189,8 +191,8 @@ class TaskEditHeader extends StatelessWidget {
   }
 }
 
-/// One task as a table row, on a wide window; its ⋯ menu moves it to
-/// another stage. Each row is a white card of its own, with a gap to the next, so
+/// One task as a table row, on a wide window; its ⋮⋮ drags it, or its ⋯
+/// menu moves it, to another stage. Each row is a white card of its own, with a gap to the next, so
 /// where a task starts and ends is plain.
 class TaskEditRow extends StatelessWidget {
   const TaskEditRow({super.key, required this.task, required this.ctx});
@@ -211,6 +213,26 @@ class TaskEditRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            SizedBox(
+              width: TaskStyle.editHandleWidth,
+              child: Draggable<TaskItem>(
+                key: Key('edit-task-drag-${task.id}'),
+                data: task,
+                dragAnchorStrategy: pointerDragAnchorStrategy,
+                feedback: _DragFeedback(title: task.title),
+                onDragUpdate: (details) =>
+                    ctx.onDragMoved(details.globalPosition),
+                onDragEnd: (_) => ctx.onDragDone(),
+                child: const MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Icon(Icons.drag_indicator,
+                        size: 18, color: TaskStyle.editFaint),
+                  ),
+                ),
+              ),
+            ),
             SizedBox(width: TaskStyle.editTimeWidth, child: values.time()),
             Expanded(flex: 3, child: values.title()),
             const SizedBox(width: 12),
@@ -219,7 +241,8 @@ class TaskEditRow extends StatelessWidget {
             Expanded(flex: 3, child: values.assignees()),
             const SizedBox(width: 12),
             Expanded(flex: 3, child: values.subtasks()),
-            SizedBox(width: TaskStyle.editMenuWidth, child: values.menu(context)),
+            SizedBox(
+                width: TaskStyle.editMenuWidth, child: values.menu(context)),
           ],
         ),
       ),
@@ -296,6 +319,27 @@ class _TaskCardBox extends StatelessWidget {
         boxShadow: TaskStyle.editTaskCardShadow,
       ),
       child: child,
+    );
+  }
+}
+
+class _DragFeedback extends StatelessWidget {
+  const _DragFeedback({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(title),
+        ),
+      ),
     );
   }
 }

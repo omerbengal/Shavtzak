@@ -24,6 +24,8 @@ class EditContext {
     required this.onAddTask,
     required this.highlightId,
     required this.keyFor,
+    required this.onDragMoved,
+    required this.onDragDone,
   });
 
   final bool wide;
@@ -50,6 +52,13 @@ class EditContext {
 
   /// A stable key per task or stage, to scroll the one just edited into view.
   final GlobalKey Function(String id) keyFor;
+
+  /// A task is being dragged, its pointer at this global position: near the
+  /// list's top or bottom the screen scrolls.
+  final ValueChanged<Offset> onDragMoved;
+
+  /// The drag ended, dropped or not: scrolling stops.
+  final VoidCallback onDragDone;
 }
 
 /// "יום ג׳ 20/10".
@@ -206,8 +215,7 @@ class _MoveStageOption extends StatelessWidget {
               const Padding(
                 padding: EdgeInsetsDirectional.only(start: 8),
                 child: Text('השלב הנוכחי',
-                    style:
-                        TextStyle(fontSize: 12, color: TaskStyle.editMuted)),
+                    style: TextStyle(fontSize: 12, color: TaskStyle.editMuted)),
               ),
           ],
         ),

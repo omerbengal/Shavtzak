@@ -159,6 +159,7 @@ abstract final class TaskStyle {
   static const Color editCard = Colors.white;
   static const Color editCardHeader = Color(0xFFFBFCFE);
   static const Color editCardEdge = Color(0xFF2196F3);
+  static const Color editDropTarget = Color(0xFFE3F2FD);
   static const Color editHighlight = Color(0xFFFFF8E1);
   static const Color editHover = Color(0xFFF1F5FB);
   static const Color editLabel = Color(0xFF9CA3AF);
@@ -193,7 +194,12 @@ abstract final class TaskStyle {
   static const double editRadius = 6;
   static const double editPencilSize = 14;
   static const double editLabelWidth = 72;
+  static const double editHandleWidth = 22;
   static const double editTimeWidth = 88;
+  // While a task is dragged, holding it this close to the list's top or
+  // bottom scrolls the list, faster nearer the edge.
+  static const double editDragEdge = 64;
+  static const double editDragMaxSpeed = 1200; // px per second
   static const double editMenuWidth = 36;
   static const double editAvatarSize = 26;
   static const double editAssigneesMaxHeight = 280;

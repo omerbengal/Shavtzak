@@ -222,9 +222,57 @@ void main() {
     expect(repo.updatedTasks.single.assemblyTime, '18:15');
   });
 
-  testWidgets('tasks have no drag handle', (tester) async {
-    await pump(tester);
-    expect(find.byIcon(Icons.drag_indicator), findsNothing);
+  testWidgets('dragging a task onto another stage moves it', (tester) async {
+    final repo = await pump(tester);
+    final handle = find.byKey(const Key('edit-task-drag-ws-later'));
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await gesture.moveBy(const Offset(0, 20));
+    await tester.pump();
+    await gesture
+        .moveTo(tester.getCenter(find.byKey(const Key('edit-stage-dinner'))));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(repo.updatedTasks.single.stageId, 'dinner');
+  });
+
+  testWidgets('holding a dragged task at the bottom edge scrolls down, '
+      'at the top scrolls back up', (tester) async {
+    await pump(tester, size: const Size(1280, 700));
+    double offset() => tester
+        .state<ScrollableState>(find.descendant(
+            of: find.byKey(const Key('edit-list')),
+            matching: find.byType(Scrollable)).first)
+        .position
+        .pixels;
+    final handle = find.byKey(const Key('edit-task-drag-ws-later'));
+    await tester.ensureVisible(handle);
+    await tester.pumpAndSettle();
+    final start = offset();
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await gesture.moveBy(const Offset(0, 20));
+    await tester.pump();
+    await gesture.moveTo(const Offset(640, 695));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final down = offset();
+    expect(down, greaterThan(start));
+    // In the middle it stays put.
+    await gesture.moveTo(const Offset(640, 350));
+    await tester.pump(const Duration(milliseconds: 16));
+    final held = offset();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(offset(), held);
+    await gesture.moveTo(const Offset(640, 2));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(offset(), lessThan(held));
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('narrow window shows task cards', (tester) async {

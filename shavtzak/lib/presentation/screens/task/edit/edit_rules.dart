@@ -97,3 +97,25 @@ String initials(String name) {
       name.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty);
   return parts.take(2).map((part) => part.substring(0, 1)).join();
 }
+
+/// How fast the list scrolls while a dragged task is held at [pointerY],
+/// in px per second: negative (up) within [edge] of the list's [top],
+/// positive (down) within [edge] of its [bottom], zero elsewhere. Faster
+/// nearer the edge, up to [maxSpeed] at it or beyond.
+double edgeScrollSpeed({
+  required double pointerY,
+  required double top,
+  required double bottom,
+  required double edge,
+  required double maxSpeed,
+}) {
+  final fromTop = pointerY - top;
+  if (fromTop < edge) {
+    return -maxSpeed * ((edge - fromTop) / edge).clamp(0.0, 1.0);
+  }
+  final fromBottom = bottom - pointerY;
+  if (fromBottom < edge) {
+    return maxSpeed * ((edge - fromBottom) / edge).clamp(0.0, 1.0);
+  }
+  return 0;
+}

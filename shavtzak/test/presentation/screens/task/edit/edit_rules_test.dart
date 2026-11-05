@@ -54,6 +54,25 @@ void main() {
     );
   });
 
+  group('edgeScrollSpeed', () {
+    double speed(double y) => edgeScrollSpeed(
+        pointerY: y, top: 100, bottom: 900, edge: 64, maxSpeed: 1200);
+    test('still in the middle', () {
+      expect(speed(500), 0);
+      expect(speed(164), 0);
+      expect(speed(836), 0);
+    });
+    test('up near the top, faster nearer the edge', () {
+      expect(speed(132), -600);
+      expect(speed(100), -1200);
+      expect(speed(40), -1200);
+    });
+    test('down near the bottom', () {
+      expect(speed(868), 600);
+      expect(speed(950), 1200);
+    });
+  });
+
   test('initials and first names', () {
     expect(initials('דנה כהן'), 'דכ');
     expect(firstName('דנה כהן'), 'דנה');
