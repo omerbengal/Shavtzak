@@ -20,6 +20,7 @@ import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import 'database_interface.dart';
 import '../../domain/entities/imported_stage.dart';
+import '../../domain/entities/stage_sync_plan.dart';
 
 /// Decorator over [DatabaseInterface] that records DB lifecycle events
 /// (`dbStart`, `dbEnd`, `dbStreamEmit`, `dbError`) into [DebugLogger].
@@ -1430,6 +1431,23 @@ class LoggingDatabase implements DatabaseInterface {
         },
         countOf: (_) => null,
         action: () => _inner.importStages(eventId, stages),
+      );
+
+  @override
+  Future<void> syncStages(String eventId, StageSyncPlan plan) => _runFuture(
+        op: 'syncStages',
+        ctx: {
+          'collection': 'stages',
+          'eventId': eventId,
+          'stagesCreate': plan.stagesToCreate.length,
+          'stagesUpdate': plan.stagesToUpdate.length,
+          'stagesDelete': plan.stageIdsToDelete.length,
+          'tasksCreate': plan.tasksToCreate.length,
+          'tasksUpdate': plan.tasksToUpdate.length,
+          'tasksDelete': plan.taskIdsToDelete.length,
+        },
+        countOf: (_) => null,
+        action: () => _inner.syncStages(eventId, plan),
       );
 
   @override

@@ -13,6 +13,7 @@ import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../domain/entities/imported_stage.dart';
+import '../../domain/entities/stage_sync_plan.dart';
 
 /// A request to raise an event's role quota to AT LEAST [count], applied
 /// atomically inside [DatabaseInterface.saveAssignmentsBatch]. Used to
@@ -559,4 +560,9 @@ abstract class DatabaseInterface {
   /// Creates every stage of [stages] and their tasks in one go, for an event
   /// that has no stages yet. All or nothing.
   Future<void> importStages(String eventId, List<ImportedStage> stages);
+
+  /// Brings an event that has stages in line with an updated import file:
+  /// every write of [plan] in one go, all or nothing. Updated tasks keep
+  /// their progress.
+  Future<void> syncStages(String eventId, StageSyncPlan plan);
 }

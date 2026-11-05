@@ -65,16 +65,7 @@ String taskExportFileName(Event event) {
 /// imports back as it is. Ticks, completion and the assignees' notes are not
 /// part of the format and are left out.
 List<int> buildTaskExport(EventTaskBoard board) {
-  final nameOf = <String, String>{};
-  final used = <String>{};
-  for (final stage in board.stages) {
-    final base = stage.title.replaceAll(RegExp(r'\s+'), ' ').trim();
-    var name = base;
-    for (var copy = 2; !used.add(name); copy++) {
-      name = '$base ($copy)';
-    }
-    nameOf[stage.id] = name;
-  }
+  final nameOf = exportStageNames(board.stages);
 
   return _buildWorkbook(
     stageRows: [
@@ -103,6 +94,23 @@ List<int> buildTaskExport(EventTaskBoard board) {
           ],
     ],
   );
+}
+
+/// The name each of [stages] (in screen order) has in an export: its title,
+/// with " (2)", " (3)" after a repeated one. An updated file is matched back
+/// to the stages by these names.
+Map<String, String> exportStageNames(List<Stage> stages) {
+  final nameOf = <String, String>{};
+  final used = <String>{};
+  for (final stage in stages) {
+    final base = stage.title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    var name = base;
+    for (var copy = 2; !used.add(name); copy++) {
+      name = '$base ($copy)';
+    }
+    nameOf[stage.id] = name;
+  }
+  return nameOf;
 }
 
 CellValue? _text(String text) => text.isEmpty ? null : TextCellValue(text);

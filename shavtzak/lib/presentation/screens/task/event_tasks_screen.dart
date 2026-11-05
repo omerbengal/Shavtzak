@@ -689,14 +689,31 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             event: board.event,
             progress: taskProgress(board.tasks, _now),
             action: canManageTasks(user)
-                ? TextButton.icon(
-                    key: const Key('tasks-export'),
-                    onPressed: () => downloadExport(board),
-                    icon: const Icon(Icons.download, size: 18),
-                    label: const Text('הורדה לאקסל'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ? MenuAnchor(
+                    menuChildren: [
+                      MenuItemButton(
+                        key: const Key('tasks-export'),
+                        onPressed: () => downloadExport(board),
+                        leadingIcon: const Icon(Icons.download, size: 18),
+                        child: const Text('הורדה לאקסל'),
+                      ),
+                      MenuItemButton(
+                        key: const Key('tasks-sync'),
+                        onPressed: () => updateFromExcel(board, user),
+                        leadingIcon: const Icon(Icons.upload_file, size: 18),
+                        child: const Text('עדכון מאקסל'),
+                      ),
+                    ],
+                    builder: (context, menu, _) => TextButton.icon(
+                      key: const Key('tasks-excel'),
+                      onPressed: () =>
+                          menu.isOpen ? menu.close() : menu.open(),
+                      icon: const Icon(Icons.table_view, size: 18),
+                      label: const Text('אקסל'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
                   )
                 : null,

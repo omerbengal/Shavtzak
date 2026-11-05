@@ -1415,7 +1415,10 @@ void main() {
         (tester) async {
       final files = FakeTaskImportFiles();
       await pumpScreen(tester, user: admin, tasks: [mine], importFiles: files);
+      await tester.tap(find.byKey(const Key('tasks-excel')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('tasks-export')));
+      await tester.pumpAndSettle();
       expect(files.saved.single.$2, 'משימות דו יומי - ${event.name}.xlsx');
       expect(files.saved.single.$1, isNotEmpty);
     });
@@ -1423,7 +1426,43 @@ void main() {
     testWidgets('a member gets no download', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
       await openTab(tester, 'כל השלבים');
-      expect(find.byKey(const Key('tasks-export')), findsNothing);
+      expect(find.byKey(const Key('tasks-excel')), findsNothing);
+    });
+
+    testWidgets('a manager updates the event from a changed file',
+        (tester) async {
+      final files = FakeTaskImportFiles()
+        ..picks.add(PickedImportFile(
+          name: 'מעודכן.xlsx',
+          bytes: Uint8List.fromList(buildImportWorkbook(
+            stageRows: [
+              stageRow(
+                date: const DateCellValue(year: 2026, month: 10, day: 20),
+                start: '08:00',
+              ),
+            ],
+            taskRows: [
+              taskRow(title: 'להזמין אוטובוס', assignees: 'דנה'),
+              taskRow(title: 'חדשה', assignees: 'יואב'),
+            ],
+          )),
+        ));
+      await pumpScreen(tester, user: admin, tasks: [mine], importFiles: files);
+      await tester.tap(find.byKey(const Key('tasks-excel')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tasks-sync')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('task-sync-task-counts')))
+            .data,
+        'משימות: 1 חדשה',
+      );
+      await tester.tap(find.byKey(const Key('task-sync-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['syncStages:e1']);
+      expect(find.text('האירוע עודכן לפי הקובץ'), findsOneWidget);
     });
 
     testWidgets('cancelling the picker opens nothing', (tester) async {

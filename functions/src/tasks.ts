@@ -35,7 +35,7 @@ export type Subtask = {
 export type TaskDoc = {
   id: string;
   eventId: string;
-  /** The stage the task sits under. Fixed once the task exists. */
+  /** The stage the task sits under. Only an Excel update (`stage.sync`) moves it. */
   stageId: string;
   title: string;
   description: string;
@@ -327,12 +327,17 @@ export function applyTaskEdit(
   existing: TaskDoc,
   input: Record<string, unknown>,
   ctx: TaskContext,
+  options: {allowStageMove?: boolean} = {},
 ): TaskDoc {
   if (input['id'] !== existing.id) {
     throw new TaskError(400, 'מזהה משימה לא תואם');
   }
   const fields = parseEditableFields(input);
-  if (fields.eventId !== existing.eventId || fields.stageId !== existing.stageId) {
+  if (fields.eventId !== existing.eventId) {
+    throw new TaskError(400, 'לא ניתן להעביר משימה לאירוע אחר');
+  }
+  // Only an Excel update moves a task, checking the new stage itself.
+  if (fields.stageId !== existing.stageId && options.allowStageMove !== true) {
     throw new TaskError(400, 'לא ניתן להעביר משימה לשלב אחר');
   }
   const doneById = new Map(
@@ -340,6 +345,7 @@ export function applyTaskEdit(
   );
   const next: TaskDoc = {
     ...existing,
+    stageId: fields.stageId,
     title: fields.title,
     description: fields.description,
     assemblyTime: fields.assemblyTime,

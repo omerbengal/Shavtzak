@@ -10,6 +10,7 @@ import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.da
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_event.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_state.dart';
 import 'package:shavtzak/domain/entities/imported_stage.dart';
+import 'package:shavtzak/domain/entities/stage_sync_plan.dart';
 
 class MockUserSelectionBloc
     extends MockBloc<UserSelectionEvent, UserSelectionState>
@@ -80,4 +81,8 @@ class FakeTaskRepository extends Fake implements TaskRepository {
   @override
   Future<void> importStages(String eventId, List<ImportedStage> stages) =>
       _record('importStages:$eventId:${stages.length}');
+
+  @override
+  Future<void> syncStages(String eventId, StageSyncPlan plan) =>
+      _record('syncStages:$eventId');
 }

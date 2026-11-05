@@ -33,6 +33,18 @@ class ImportStages extends TaskEvent {
   List<Object?> get props => [eventId, stages];
 }
 
+/// Brings an event in line with an updated import file.
+class SyncStages extends TaskEvent {
+  final String eventId;
+  final StageSyncPlan plan;
+  final CrudActionCompleter? completion;
+
+  const SyncStages(this.eventId, this.plan, {this.completion});
+
+  @override
+  List<Object?> get props => [eventId, plan];
+}
+
 class UpdateStage extends TaskEvent {
   final Stage stage;
   final CrudActionCompleter? completion;

@@ -279,46 +279,7 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
       );
     }
     if (result.problems.isNotEmpty) {
-      final count = result.problems.length;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            count == 1 ? 'נמצאה בעיה אחת בקובץ' : 'נמצאו $count בעיות בקובץ',
-            key: const Key('task-import-problem-count'),
-            style: theme.textTheme.titleSmall
-                ?.copyWith(color: theme.colorScheme.error),
-          ),
-          const SizedBox(height: 8),
-          for (var i = 0; i < count; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 18,
-                    color: theme.colorScheme.error,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      result.problems[i].text,
-                      key: Key('task-import-problem-$i'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 8),
-          Text(
-            'יש לתקן את הקובץ ולבחור אותו שוב. דבר לא נשמר.',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: Colors.grey.shade700),
-          ),
-        ],
-      );
+      return ImportProblemsView(result.problems);
     }
     final byId = {
       for (final imported in result.stages) imported.stage.id: imported
@@ -362,6 +323,58 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// Everything wrong with an import file, and that nothing was saved.
+class ImportProblemsView extends StatelessWidget {
+  const ImportProblemsView(this.problems, {super.key});
+
+  final List<ImportProblem> problems;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final count = problems.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          count == 1 ? 'נמצאה בעיה אחת בקובץ' : 'נמצאו $count בעיות בקובץ',
+          key: const Key('task-import-problem-count'),
+          style: theme.textTheme.titleSmall
+              ?.copyWith(color: theme.colorScheme.error),
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < count; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 18,
+                  color: theme.colorScheme.error,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    problems[i].text,
+                    key: Key('task-import-problem-$i'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 8),
+        Text(
+          'יש לתקן את הקובץ ולבחור אותו שוב. דבר לא נשמר.',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: Colors.grey.shade700),
+        ),
       ],
     );
   }

@@ -71,6 +71,7 @@ import {
   stageFromStored,
 } from './stages';
 import {buildStageImport, importEventId} from './stage_import';
+import {buildStageSync, syncEventId} from './stage_sync';
 import {buildSlotAnnotationMerge} from './slot_annotations';
 import {buildMemberFeedParts, renderIcsFeed} from './calendar_feed';
 import {
@@ -5940,6 +5941,53 @@ async function executeMutation(
         );
       }
       return {ok: true, stageCount: built.stages.length, taskCount: built.tasks.length};
+    }
+
+    case 'stage.sync': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const eventId = syncEventId(payload);
+      const now = Timestamp.now();
+      const built = await db.runTransaction(async (transaction) => {
+        const eventDays = await readWritableEventDaysInTransaction(
+          transaction,
+          collections,
+          eventId,
+        );
+        const [stageDocs, taskDocs] = await Promise.all([
+          transaction.get(db.collection(collections.stages).where('eventId', '==', eventId)),
+          transaction.get(db.collection(collections.tasks).where('eventId', '==', eventId)),
+        ]);
+        const next = buildStageSync(
+          payload,
+          {now, actor: taskActor},
+          eventDays,
+          stageDocs.docs.map((doc) => stageFromStored(doc.id, doc.data())),
+          taskDocs.docs.map((doc) => taskFromStored(doc.id, doc.data())),
+        );
+        await requireTaskAssigneesInTransaction(transaction, collections, next.newAssigneeIds);
+        for (const stage of next.stageWrites) {
+          transaction.set(db.collection(collections.stages).doc(stage.id), stage);
+        }
+        for (const task of next.taskWrites) {
+          transaction.set(db.collection(collections.tasks).doc(task.id), task);
+        }
+        for (const id of next.taskDeletes) {
+          transaction.delete(db.collection(collections.tasks).doc(id));
+        }
+        for (const id of next.stageDeletes) {
+          transaction.delete(db.collection(collections.stages).doc(id));
+        }
+        return next;
+      });
+      const counts = {
+        stageWrites: built.stageWrites.length,
+        stageDeletes: built.stageDeletes.length,
+        taskWrites: built.taskWrites.length,
+        taskDeletes: built.taskDeletes.length,
+      };
+      await writeAuditLog(db, collections, actor, operation, 'event', eventId, counts);
+      return {ok: true, ...counts};
     }
 
     case 'task.insert': {

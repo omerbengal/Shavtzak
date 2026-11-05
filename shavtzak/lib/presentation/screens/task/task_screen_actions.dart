@@ -19,6 +19,7 @@ import 'widgets/confirm_delete_dialog.dart';
 import 'widgets/stage_form_modal.dart';
 import 'widgets/task_form_modal.dart';
 import 'widgets/task_import_dialog.dart';
+import 'widgets/task_sync_dialog.dart';
 
 /// The tasks screen's actions: each sends one [TaskBloc] event. The forms
 /// and dialogs show their own outcome; a tick that fails is reported in a
@@ -114,6 +115,38 @@ mixin TaskScreenActions<T extends StatefulWidget> on State<T> {
           'יובאו ${result.stages.length} שלבים ו-${result.taskCount} משימות',
         ),
       ));
+  }
+
+  /// An updated import file for an event that already has stages: shows the
+  /// difference against [board] and, on confirm, saves it.
+  Future<void> updateFromExcel(EventTaskBoard board, TeamMember user) async {
+    Logger.action('tap:tasksSync');
+    final PickedImportFile? file;
+    try {
+      file = await importFiles.pickXlsx();
+    } catch (error) {
+      Logger.warning('tasksSync:readFailed', {'error': '$error'});
+      if (mounted) _showError(importFileReadError);
+      return;
+    }
+    if (file == null || !mounted) return;
+    final eventId = board.event.id;
+    final diff = await showTaskSyncDialog(
+      context,
+      file: file,
+      board: board,
+      files: importFiles,
+      assignees: context.read<TaskRepository>().watchEventAssignees(eventId),
+      onSync: (plan) => sendTaskEvent(
+        (completion) => SyncStages(eventId, plan, completion: completion),
+      ),
+      currentUserId: user.id,
+      now: actionTime,
+    );
+    if (diff == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('האירוע עודכן לפי הקובץ')));
   }
 
   void downloadTemplate(Event event) {

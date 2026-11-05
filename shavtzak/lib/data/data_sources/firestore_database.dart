@@ -36,7 +36,9 @@ import '../../core/debug/debug_logger.dart';
 import '../../core/debug/log_event.dart';
 import 'database_interface.dart';
 import '../../domain/entities/imported_stage.dart';
+import '../../domain/entities/stage_sync_plan.dart';
 import '../models/stage_import_model.dart';
+import '../models/stage_sync_model.dart';
 
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
@@ -2676,6 +2678,14 @@ class FirestoreDatabase implements DatabaseInterface {
     await _invokeMutation(
       'stage.import',
       payload: StageImportModel.toMutationPayload(eventId, stages),
+    );
+  }
+
+  @override
+  Future<void> syncStages(String eventId, StageSyncPlan plan) async {
+    await _invokeMutation(
+      'stage.sync',
+      payload: StageSyncModel.toMutationPayload(eventId, plan),
     );
   }
 }
