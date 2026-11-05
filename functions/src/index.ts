@@ -6029,9 +6029,24 @@ async function executeMutation(
       const {before, after} = await mutateTaskInTransaction(
         collections,
         taskId,
-        (existing) => applyTaskEdit(existing, input, {now, actor: taskActor}),
+        // The editing screen moves a task to another stage of its event; the
+        // new stage is checked here, as on insert.
+        (existing) => applyTaskEdit(
+          existing,
+          input,
+          {now, actor: taskActor},
+          {allowStageMove: true},
+        ),
         async (transaction, existing, next) => {
           await requireWritableEventInTransaction(transaction, collections, next.eventId);
+          if (next.stageId !== existing.stageId) {
+            await requireStageOfEventInTransaction(
+              transaction,
+              collections,
+              next.stageId,
+              next.eventId,
+            );
+          }
           // Only newly added assignees are checked, so a task that still lists a
           // since-deleted member stays editable.
           await requireTaskAssigneesInTransaction(

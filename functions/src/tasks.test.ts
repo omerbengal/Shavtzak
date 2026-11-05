@@ -247,6 +247,30 @@ test('applyTaskEdit cannot move a task to another stage or event', () => {
   );
 });
 
+test('applyTaskEdit moves a task to another stage when allowed, keeping its ticks', () => {
+  const existing = {
+    ...newTask(),
+    subtasks: [{id: 'st1', title: 'א', isDone: true}],
+  };
+  const moved = applyTaskEdit(
+    existing,
+    baseInput({stageId: 's2', subtasks: [{id: 'st1', title: 'א'}]}),
+    {now: later, actor: flagged},
+    {allowStageMove: true},
+  );
+  assert.equal(moved.stageId, 's2');
+  assert.equal(moved.subtasks[0].isDone, true);
+  assertTaskError(
+    () => applyTaskEdit(
+      existing,
+      baseInput({eventId: 'e2', stageId: 's2'}),
+      {now: later, actor: flagged},
+      {allowStageMove: true},
+    ),
+    400,
+  );
+});
+
 test('applyTaskEdit keeps isDone for a surviving subtask id and opens a new one', () => {
   const existing = applySubtaskToggle(newTask(), 'a', true, {now, actor: assignee});
   const edited = applyTaskEdit(

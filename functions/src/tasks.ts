@@ -336,7 +336,8 @@ export function applyTaskEdit(
   if (fields.eventId !== existing.eventId) {
     throw new TaskError(400, 'לא ניתן להעביר משימה לאירוע אחר');
   }
-  // Only an Excel update moves a task, checking the new stage itself.
+  // Only callers that check the new stage themselves move a task: an Excel
+  // update and `task.update` (which checks it inside its transaction).
   if (fields.stageId !== existing.stageId && options.allowStageMove !== true) {
     throw new TaskError(400, 'לא ניתן להעביר משימה לשלב אחר');
   }
