@@ -62,35 +62,156 @@ Widget editPlaceholder(String text) => Text(
       style: const TextStyle(color: TaskStyle.editFaint),
     );
 
-/// Asks which of [stages] (other than [current]) a task moves to.
+/// Asks which stage of the event a task moves to: the stages grouped by
+/// day, each a row with its time and title. The task's own stage stays in
+/// the list, marked and not choosable, so the order reads like the screen.
 Future<Stage?> pickStage(
   BuildContext context, {
   required List<Stage> stages,
   required String currentStageId,
 }) {
-  final others = stages.where((stage) => stage.id != currentStageId).toList();
+  final byDay = <DateTime, List<Stage>>{};
+  for (final stage in stages) {
+    final day = DateTime(stage.date.year, stage.date.month, stage.date.day);
+    byDay.putIfAbsent(day, () => []).add(stage);
+  }
+  final hasOthers = stages.any((stage) => stage.id != currentStageId);
   return showDialog<Stage>(
     context: context,
     builder: (context) => Directionality(
       textDirection: TextDirection.rtl,
-      child: SimpleDialog(
+      child: Dialog(
         key: const Key('edit-move-dialog'),
-        title: const Text('העברה לשלב אחר'),
-        children: [
-          if (others.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('אין שלבים אחרים באירוע'),
-            ),
-          for (final stage in others)
-            SimpleDialogOption(
-              key: Key('edit-move-to-${stage.id}'),
-              onPressed: () => Navigator.of(context).pop(stage),
-              child: Text('${stage.title} · ${editDayLabel(stage.date)}'
-                  '${stageTimeLabel(stage).isEmpty ? '' : ' · ${stageTimeLabel(stage)}'}'),
-            ),
-        ],
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(TaskStyle.editCardRadius)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 560),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 18, 20, 4),
+                child: Text('העברה לשלב אחר',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Text('לאיזה שלב להעביר את המשימה?',
+                    style: TextStyle(color: TaskStyle.editMuted)),
+              ),
+              const Divider(height: 1, color: TaskStyle.editTaskLine),
+              Flexible(
+                child: !hasOthers
+                    ? const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text('אין שלבים אחרים באירוע'),
+                      )
+                    : ListView(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.only(bottom: 6),
+                        children: [
+                          for (final entry in byDay.entries) ...[
+                            _MoveDayHeading(day: entry.key),
+                            for (final stage in entry.value)
+                              _MoveStageOption(
+                                stage: stage,
+                                current: stage.id == currentStageId,
+                              ),
+                          ],
+                        ],
+                      ),
+              ),
+              const Divider(height: 1, color: TaskStyle.editTaskLine),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: TextButton(
+                    key: const Key('edit-move-cancel'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('ביטול'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     ),
   );
+}
+
+/// A day's heading in the move list.
+class _MoveDayHeading extends StatelessWidget {
+  const _MoveDayHeading({required this.day});
+
+  final DateTime day;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        color: TaskStyle.editRowStripe,
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+        child: Text(
+          editDayLabel(day),
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: TaskStyle.editCardEdge,
+          ),
+        ),
+      );
+}
+
+/// One stage in the move list: its time in a fixed column, then its title.
+class _MoveStageOption extends StatelessWidget {
+  const _MoveStageOption({required this.stage, required this.current});
+
+  final Stage stage;
+  final bool current;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = stageTimeLabel(stage);
+    final faded = current ? TaskStyle.editFaint : null;
+    return InkWell(
+      key: Key('edit-move-to-${stage.id}'),
+      onTap: current ? null : () => Navigator.of(context).pop(stage),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: TaskStyle.editRowLine)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 96,
+              child: Text(
+                time.isEmpty ? '—' : time,
+                style: TextStyle(
+                  color: faded ?? TaskStyle.editMuted,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                stage.title,
+                style: TextStyle(fontWeight: FontWeight.w500, color: faded),
+              ),
+            ),
+            if (current)
+              const Padding(
+                padding: EdgeInsetsDirectional.only(start: 8),
+                child: Text('השלב הנוכחי',
+                    style:
+                        TextStyle(fontSize: 12, color: TaskStyle.editMuted)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
