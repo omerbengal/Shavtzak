@@ -17,12 +17,14 @@ class _TaskValues {
   final TaskItem task;
   final EditContext ctx;
 
-  Widget time() {
+  /// [expand] false sizes it to the time itself, as on the phone card.
+  Widget time({bool expand = true}) {
     final time = task.assemblyTime ?? '';
     return EditableValue<String>(
       key: Key('edit-task-time-${task.id}'),
       value: time,
       wide: ctx.wide,
+      expand: expand,
       inDialog: true,
       sheetTitle: 'שעת התייצבות',
       display: time.isEmpty
@@ -272,7 +274,7 @@ class TaskEditCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(width: 64, child: values.time()),
+                values.time(expand: false),
                 Expanded(child: values.title()),
                 values.menu(context),
               ],

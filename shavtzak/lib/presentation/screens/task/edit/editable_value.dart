@@ -168,21 +168,23 @@ class _EditableValueState<T> extends State<EditableValue<T>> {
                 Expanded(child: widget.display)
               else
                 Flexible(child: widget.display),
-              // The pencil keeps its room, so hovering moves nothing.
-              SizedBox(
-                width: TaskStyle.editPencilSize + 4,
-                child: Opacity(
-                  opacity: _hover && widget.wide ? 1 : 0,
-                  child: Padding(
-                    padding: const EdgeInsetsDirectional.only(start: 4),
-                    child: Icon(
-                      Icons.edit,
-                      size: TaskStyle.editPencilSize,
-                      color: theme.colorScheme.primary,
+              // The pencil keeps its room, so hovering moves nothing. A
+              // phone has no hover, so there it takes no room at all.
+              if (widget.wide)
+                SizedBox(
+                  width: TaskStyle.editPencilSize + 4,
+                  child: Opacity(
+                    opacity: _hover && widget.wide ? 1 : 0,
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.only(start: 4),
+                      child: Icon(
+                        Icons.edit,
+                        size: TaskStyle.editPencilSize,
+                        color: theme.colorScheme.primary,
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),

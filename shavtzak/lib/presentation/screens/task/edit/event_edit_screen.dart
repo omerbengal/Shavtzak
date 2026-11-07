@@ -308,10 +308,15 @@ class _EventEditScreenState extends State<EventEditScreen>
     );
   }
 
+  /// The bar: the event's name on its own line (two lines on a phone, so a
+  /// long name is read whole), then "עריכה" and the event's days.
   Widget _scaffold(Event? event, Widget body) {
+    final narrow =
+        MediaQuery.sizeOf(context).width < TaskStyle.wideBreakpoint;
     return Scaffold(
       backgroundColor: TaskStyle.editPage,
       appBar: AppBar(
+        toolbarHeight: event != null && narrow ? 84 : null,
         leading: IconButton(
           key: const Key('edit-back'),
           tooltip: 'חזרה לאירוע',
@@ -319,22 +324,32 @@ class _EventEditScreenState extends State<EventEditScreen>
           onPressed: _backToEvent,
         ),
         automaticallyImplyLeading: false,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              event == null ? 'עריכה' : 'עריכה · ${event.name}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (event != null)
-              Text(
-                eventDaysLabel(event),
-                style: const TextStyle(fontSize: 13, color: Colors.white70),
+        titleSpacing: 0,
+        title: event == null
+            ? const Text('עריכה')
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    event.name,
+                    key: const Key('edit-title'),
+                    maxLines: narrow ? 2 : 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: narrow ? 17 : 20,
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'עריכה · ${eventDaysLabel(event)}',
+                    style:
+                        const TextStyle(fontSize: 13, color: Colors.white70),
+                  ),
+                ],
               ),
-          ],
-        ),
       ),
       body: body,
     );

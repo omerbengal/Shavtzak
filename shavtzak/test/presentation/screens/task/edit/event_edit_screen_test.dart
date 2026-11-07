@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -273,6 +274,28 @@ void main() {
     expect(offset(), lessThan(held));
     await gesture.up();
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('a phone card shows its whole time, on one line',
+      (tester) async {
+    await pump(tester, size: const Size(400, 5000));
+    final time = find.descendant(
+      of: find.byKey(const Key('edit-task-time-ws-later')),
+      matching: find.text('15:45'),
+    );
+    final paragraph = tester.renderObject<RenderParagraph>(time);
+    expect(paragraph.size.width,
+        greaterThanOrEqualTo(paragraph.getMaxIntrinsicWidth(double.infinity)));
+    expect(paragraph.size.height,
+        lessThan(paragraph.getMinIntrinsicHeight(double.infinity) * 1.5));
+  });
+
+  testWidgets('a phone shows a long event name on two lines', (tester) async {
+    await pump(tester, size: const Size(400, 5000));
+    final title = tester.widget<Text>(find.byKey(const Key('edit-title')));
+    expect(title.data, 'דו יומי הנהלה');
+    expect(title.maxLines, 2);
+    expect(find.textContaining('עריכה · '), findsOneWidget);
   });
 
   testWidgets('narrow window shows task cards', (tester) async {
