@@ -6,6 +6,7 @@ import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../task_style.dart';
+import 'edit_rules.dart';
 
 /// What every card and row of the editing screen needs from the screen: the
 /// layout, the event's facts, and where each change goes.
@@ -19,6 +20,8 @@ class EditContext {
     required this.onTaskCommit,
     required this.onStageCommit,
     required this.onMoveTask,
+    required this.onReorder,
+    required this.onCopyField,
     required this.onDeleteTask,
     required this.onDeleteStage,
     required this.onAddTask,
@@ -43,6 +46,13 @@ class EditContext {
   final ValueChanged<TaskItem> onTaskCommit;
   final ValueChanged<Stage> onStageCommit;
   final void Function(TaskItem task, Stage to) onMoveTask;
+
+  /// [moved] was dropped on [target], a task of its stage due at the same
+  /// moment: it goes just before it, or just after when [after].
+  final void Function(TaskItem moved, TaskItem target, bool after) onReorder;
+
+  /// [from]'s [field] was dragged onto [to]'s.
+  final void Function(TaskItem from, TaskItem to, TaskField field) onCopyField;
   final ValueChanged<TaskItem> onDeleteTask;
   final void Function(Stage stage, int taskCount) onDeleteStage;
   final ValueChanged<Stage> onAddTask;

@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/task_progress.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
+import 'package:shavtzak/domain/entities/subtask.dart';
+import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/presentation/screens/task/edit/edit_rules.dart';
 
 import '../../../../support/task_fixtures.dart';
@@ -77,5 +79,106 @@ void main() {
     expect(initials('דנה כהן'), 'דכ');
     expect(firstName('דנה כהן'), 'דנה');
     expect(initials('יואב'), 'י');
+  });
+
+  group('reordering tasks due at the same moment', () {
+    final stage = buildStage(id: 's1', date: DateTime(2026, 6, 15));
+    final other = buildStage(id: 's2', date: DateTime(2026, 6, 15));
+    TaskItem at(String id, String? time, {Stage? on}) =>
+        buildTask(id: id, stage: on ?? stage, assemblyTime: time);
+
+    test('only another task of the stage due at the same moment', () {
+      final a = at('a', '09:00');
+      expect(canReorderOnto(a, at('b', '09:00')), isTrue);
+      expect(canReorderOnto(a, a), isFalse);
+      expect(canReorderOnto(a, at('c', '09:30')), isFalse);
+      expect(canReorderOnto(a, at('d', '09:00', on: other)), isFalse);
+      expect(canReorderOnto(at('e', null), at('f', null)), isTrue);
+    });
+
+    test('puts the task before or after the target, numbering the stage', () {
+      final early = at('early', '08:00');
+      final a = at('a', '09:00');
+      final b = at('b', '09:00');
+      final c = at('c', '09:00');
+      final stageTasks = [early, a, b, c];
+
+      final before = reorderedStageTasks(stageTasks, c, a, after: false);
+      expect(before.map((t) => t.id), ['early', 'c', 'a', 'b']);
+      expect(before.map((t) => t.order), [0, 1, 2, 3]);
+
+      final after = reorderedStageTasks(stageTasks, a, c, after: true);
+      expect(after.map((t) => t.id), ['early', 'b', 'c', 'a']);
+
+      expect(orderChanged(stageTasks, before), isTrue);
+      final same = reorderedStageTasks(stageTasks, a, b, after: false);
+      expect(orderChanged(stageTasks, same), isFalse);
+    });
+  });
+
+  group('copying a value to another task', () {
+    final stage = buildStage(id: 's1', date: DateTime(2026, 6, 15));
+    final from = buildTask(
+      id: 'from',
+      stage: stage,
+      assemblyTime: '09:00',
+      description: 'להביא שלטים',
+      assigneeIds: const ['m1', 'm2'],
+      subtasks: const [
+        Subtask(id: 'x', title: 'הדפסה', isDone: true),
+        Subtask(id: 'y', title: 'תלייה'),
+      ],
+    );
+    final empty = buildTask(id: 'to', stage: stage, assigneeIds: const ['m3']);
+
+    test('only within the stage, and only a value that has something', () {
+      final elsewhere = buildTask(
+        id: 'far',
+        stage: buildStage(id: 's2', date: DateTime(2026, 6, 15)),
+      );
+      expect(canCopyField(from, empty, TaskField.description), isTrue);
+      expect(canCopyField(from, from, TaskField.description), isFalse);
+      expect(canCopyField(from, elsewhere, TaskField.description), isFalse);
+      expect(canCopyField(empty, from, TaskField.description), isFalse);
+    });
+
+    test('empty and same', () {
+      expect(isTaskFieldEmpty(empty, TaskField.time), isTrue);
+      expect(isTaskFieldEmpty(empty, TaskField.subtasks), isTrue);
+      expect(isTaskFieldEmpty(empty, TaskField.assignees), isFalse);
+      expect(
+        sameTaskField(
+          from,
+          from.copyWith(assigneeIds: const ['m2', 'm1']),
+          TaskField.assignees,
+        ),
+        isTrue,
+      );
+      expect(sameTaskField(from, empty, TaskField.description), isFalse);
+    });
+
+    test('copies each value; subtasks come new and unticked', () {
+      var n = 0;
+      String newId() => 'new${n++}';
+      expect(
+        copyTaskField(from, empty, TaskField.time, newId: newId).assemblyTime,
+        '09:00',
+      );
+      expect(
+        copyTaskField(from, empty, TaskField.description, newId: newId)
+            .description,
+        'להביא שלטים',
+      );
+      expect(
+        copyTaskField(from, empty, TaskField.assignees, newId: newId)
+            .assigneeIds,
+        ['m1', 'm2'],
+      );
+      final subtasks =
+          copyTaskField(from, empty, TaskField.subtasks, newId: newId).subtasks;
+      expect(subtasks.map((s) => s.title), ['הדפסה', 'תלייה']);
+      expect(subtasks.map((s) => s.id), ['new0', 'new1']);
+      expect(subtasks.every((s) => !s.isDone), isTrue);
+    });
   });
 }

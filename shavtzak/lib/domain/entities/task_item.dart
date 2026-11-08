@@ -20,6 +20,11 @@ class TaskItem extends Equatable {
 
   /// The assembly (התייצבות) time on the stage's day, `HH:mm`; null = none.
   final String? assemblyTime;
+
+  /// Where the task sits among its stage's tasks that share its due moment,
+  /// set by dragging it on the editing screen; null = never placed, after
+  /// the placed ones.
+  final int? order;
   final List<String> assigneeIds; // Foreign keys to TeamMember
 
   // The assignees' shared status note. Overwritten on each save; the audit log
@@ -50,6 +55,7 @@ class TaskItem extends Equatable {
     this.description = '',
     this.subtasks = const [],
     this.assemblyTime,
+    this.order,
     required this.assigneeIds,
     this.assigneeUpdate,
     this.assigneeUpdateAt,
@@ -106,6 +112,7 @@ class TaskItem extends Equatable {
     String? description,
     List<Subtask>? subtasks,
     String? assemblyTime,
+    int? order,
     List<String>? assigneeIds,
     String? assigneeUpdate,
     DateTime? assigneeUpdateAt,
@@ -131,6 +138,7 @@ class TaskItem extends Equatable {
       subtasks: subtasks ?? this.subtasks,
       assemblyTime:
           clearAssemblyTime ? null : (assemblyTime ?? this.assemblyTime),
+      order: order ?? this.order,
       assigneeIds: assigneeIds ?? this.assigneeIds,
       assigneeUpdate: assigneeUpdate ?? this.assigneeUpdate,
       assigneeUpdateAt: assigneeUpdateAt ?? this.assigneeUpdateAt,
@@ -157,6 +165,7 @@ class TaskItem extends Equatable {
         description,
         subtasks,
         assemblyTime,
+        order,
         assigneeIds,
         assigneeUpdate,
         assigneeUpdateAt,

@@ -2614,6 +2614,19 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> reorderTasks(
+    String eventId,
+    String stageId,
+    List<String> taskIds,
+  ) async {
+    await _invokeMutation('task.reorder', payload: {
+      'eventId': eventId,
+      'stageId': stageId,
+      'taskIds': taskIds,
+    });
+  }
+
+  @override
   Future<void> setSubtaskDone(
     String taskId,
     String subtaskId,

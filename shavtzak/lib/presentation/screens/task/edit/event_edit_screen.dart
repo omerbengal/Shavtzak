@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/debug/logger.dart';
 import '../../../../core/services/task_import_files.dart';
@@ -72,6 +73,9 @@ class _EventEditScreenState extends State<EventEditScreen>
 
   /// The members as last delivered, to show a task's new assignees at once.
   Map<String, TeamMember> _members = const {};
+
+  /// The board as last shown, so a drop acts on what the manager saw.
+  EventTaskBoard? _shown;
 
   @override
   void initState() {
@@ -225,6 +229,90 @@ class _EventEditScreenState extends State<EventEditScreen>
     _commitTask(task.copyWith(stageId: to.id, stage: to));
   }
 
+  /// [moved] dropped on [target], due at the same moment in the same stage:
+  /// the stage's tasks are numbered in their new order, shown at once.
+  Future<void> _reorder(TaskItem moved, TaskItem target, bool after) async {
+    final board = _shown;
+    if (board == null) return;
+    final shownMoved = board.taskById(moved.id) ?? moved;
+    final shownTarget = board.taskById(target.id) ?? target;
+    if (!canReorderOnto(shownMoved, shownTarget)) return;
+    final before = board.tasksOf(shownTarget.stageId);
+    final next =
+        reorderedStageTasks(before, shownMoved, shownTarget, after: after);
+    if (!orderChanged(before, next)) return;
+    Logger.action('edit:taskReorder', {'tasks': next.length});
+    for (final task in next) {
+      _taskOverlay.sent(task.id, task);
+    }
+    _flash(moved.id);
+    final result = await sendTaskEvent(
+      (completion) => ReorderTasks(
+        board.event.id,
+        shownTarget.stageId,
+        next,
+        completion: completion,
+      ),
+    );
+    if (!mounted || result.isSuccess) return;
+    setState(() {
+      for (final task in next) {
+        _taskOverlay.failed(task.id);
+      }
+    });
+    _showError(result.message ?? 'שינוי הסדר נכשל. נסו שוב.');
+  }
+
+  /// [from]'s [field] dragged onto [to]'s: copied in at once when [to] has
+  /// none, after a yes when it has one. [from] stays as it is.
+  Future<void> _copyField(TaskItem from, TaskItem to, TaskField field) async {
+    final board = _shown;
+    final source = board?.taskById(from.id) ?? from;
+    final target = board?.taskById(to.id) ?? to;
+    if (!canCopyField(source, target, field)) return;
+    if (sameTaskField(source, target, field)) return;
+    if (!isTaskFieldEmpty(target, field)) {
+      final replace = await _confirmReplace(source, target, field);
+      if (replace != true || !mounted) return;
+    }
+    Logger.action('edit:copyField', {'field': field.name});
+    await _commitTask(
+      copyTaskField(source, target, field, newId: const Uuid().v4),
+    );
+  }
+
+  Future<bool?> _confirmReplace(
+    TaskItem source,
+    TaskItem target,
+    TaskField field,
+  ) =>
+      showDialog<bool>(
+        context: context,
+        builder: (context) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            key: const Key('edit-copy-confirm'),
+            title: Text('להחליף את ${field.definite}?'),
+            content: Text(
+              '"${target.title}" כבר מכילה ${field.label}. '
+              'להעתיק לשם את ${field.definite} של "${source.title}" במקום?',
+            ),
+            actions: [
+              TextButton(
+                key: const Key('edit-copy-cancel'),
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('ביטול'),
+              ),
+              FilledButton(
+                key: const Key('edit-copy-replace'),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('החלפה'),
+              ),
+            ],
+          ),
+        ),
+      );
+
   // ---- building ----
 
   Event? _findEvent(TasksLoaded state) {
@@ -311,8 +399,7 @@ class _EventEditScreenState extends State<EventEditScreen>
   /// The bar: the event's name on its own line (two lines on a phone, so a
   /// long name is read whole), then "עריכה" and the event's days.
   Widget _scaffold(Event? event, Widget body) {
-    final narrow =
-        MediaQuery.sizeOf(context).width < TaskStyle.wideBreakpoint;
+    final narrow = MediaQuery.sizeOf(context).width < TaskStyle.wideBreakpoint;
     return Scaffold(
       backgroundColor: TaskStyle.editPage,
       appBar: AppBar(
@@ -345,8 +432,7 @@ class _EventEditScreenState extends State<EventEditScreen>
                   const SizedBox(height: 2),
                   Text(
                     'עריכה · ${eventDaysLabel(event)}',
-                    style:
-                        const TextStyle(fontSize: 13, color: Colors.white70),
+                    style: const TextStyle(fontSize: 13, color: Colors.white70),
                   ),
                 ],
               ),
@@ -356,6 +442,7 @@ class _EventEditScreenState extends State<EventEditScreen>
   }
 
   Widget _buildLoaded(EventTaskBoard board, TeamMember user) {
+    _shown = board;
     return LayoutBuilder(builder: (context, constraints) {
       final wide = constraints.maxWidth >= TaskStyle.wideBreakpoint;
       final ctx = EditContext(
@@ -367,6 +454,8 @@ class _EventEditScreenState extends State<EventEditScreen>
         onTaskCommit: _commitTask,
         onStageCommit: _commitStage,
         onMoveTask: _moveTask,
+        onReorder: _reorder,
+        onCopyField: _copyField,
         onDeleteTask: deleteTask,
         onDeleteStage: deleteStage,
         onAddTask: (stage) => createTask(board.event, stage, user),

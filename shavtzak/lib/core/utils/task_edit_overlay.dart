@@ -5,10 +5,12 @@ import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 
 /// Whether [a] and [b] carry the same fields a manager edits on the editing
-/// screen: what `task.update` writes, ignoring ticks and timestamps.
+/// screen: what `task.update` and `task.reorder` write, ignoring ticks and
+/// timestamps.
 bool sameTaskEdit(TaskItem a, TaskItem b) {
   const list = ListEquality<String>();
   return a.stageId == b.stageId &&
+      a.order == b.order &&
       a.title == b.title &&
       a.description == b.description &&
       (a.assemblyTime ?? '') == (b.assemblyTime ?? '') &&
@@ -83,6 +85,7 @@ TaskItem withTaskEdit(
     description: edit.description,
     assemblyTime: edit.assemblyTime,
     clearAssemblyTime: edit.assemblyTime == null,
+    order: edit.order,
     assigneeIds: edit.assigneeIds,
     assignees: assignees,
     subtasks: [

@@ -114,12 +114,16 @@ void main() {
     List<String> ids(List<TaskItem> tasks) =>
         tasks.map((task) => task.id).toList();
 
-    test('no restriction returns everything, including a task whose event is missing', () {
-      expect(ids(filterTasks(all, now: now)), ['bus', 'food', 'done', 'orphan']);
+    test(
+        'no restriction returns everything, including a task whose event is missing',
+        () {
+      expect(
+          ids(filterTasks(all, now: now)), ['bus', 'food', 'done', 'orphan']);
     });
 
     test('onlyAssigneeId keeps only that member\'s tasks', () {
-      expect(ids(filterTasks(all, now: now, onlyAssigneeId: 'm1')), ['bus', 'done']);
+      expect(ids(filterTasks(all, now: now, onlyAssigneeId: 'm1')),
+          ['bus', 'done']);
     });
 
     test('the query matches the title', () {
@@ -137,7 +141,8 @@ void main() {
         assigneeIds: const ['m2'],
         assignees: [buildMember(id: 'm2', name: 'יואב כהן')],
       );
-      expect(ids(filterTasks([bus, named], now: now, query: 'יואב')), ['named']);
+      expect(
+          ids(filterTasks([bus, named], now: now, query: 'יואב')), ['named']);
     });
 
     test('the query no longer matches the event name', () {
@@ -291,8 +296,7 @@ void main() {
         expect(soon([dueAt('undated', null)]), isEmpty);
       });
 
-      test('drops a completed task even when it was due inside the window',
-          () {
+      test('drops a completed task even when it was due inside the window', () {
         expect(
           soon([
             dueAt('done', DateTime(2026, 10, 11, 14, 10), isComplete: true),
@@ -301,7 +305,8 @@ void main() {
         );
       });
 
-      test('drops a task with no assembly time, even when its day ends inside '
+      test(
+          'drops a task with no assembly time, even when its day ends inside '
           'the window', () {
         final lateEvening = DateTime(2026, 10, 11, 23, 45);
         final untimed = buildTask(
@@ -355,7 +360,16 @@ void main() {
     });
 
     test('rejects an impossible or unfinished time', () {
-      for (final time in ['93:00', '24:00', '12:60', '9', '18', '9:30', 'ab:cd', '']) {
+      for (final time in [
+        '93:00',
+        '24:00',
+        '12:60',
+        '9',
+        '18',
+        '9:30',
+        'ab:cd',
+        ''
+      ]) {
         expect(isValidDueTime(time), isFalse, reason: time);
       }
     });
@@ -437,6 +451,23 @@ void main() {
       );
     });
 
+    test(
+        'at the same moment a placed order wins over the title, '
+        'never-placed ones after', () {
+      final at = DateTime(2026, 10, 13, 9);
+      final tasks = [
+        buildTask(id: 'a', title: 'אישור', dueAt: at),
+        buildTask(id: 'b', title: 'בדיקה', dueAt: at).copyWith(order: 0),
+        buildTask(id: 'c', title: 'גיוס', dueAt: at).copyWith(order: 1),
+        buildTask(id: 'early', title: 'תת', dueAt: DateTime(2026, 10, 13, 8))
+            .copyWith(order: 9),
+      ];
+      expect(
+        sortTasks(tasks).map((task) => task.id).toList(),
+        ['early', 'b', 'c', 'a'],
+      );
+    });
+
     test('does not mutate the list it was given', () {
       final tasks = [
         buildTask(id: 'completed', isComplete: true),
@@ -450,9 +481,21 @@ void main() {
   group('sortStages', () {
     test('orders by day, then start time with untimed first, then title', () {
       final stages = [
-        buildStage(id: 'dinner', title: 'ערב', date: DateTime(2026, 10, 21), startTime: '19:00'),
-        buildStage(id: 'day2', title: 'בוקר', date: DateTime(2026, 10, 22), startTime: '07:00'),
-        buildStage(id: 'arrive', title: 'קליטה', date: DateTime(2026, 10, 21), startTime: '08:00'),
+        buildStage(
+            id: 'dinner',
+            title: 'ערב',
+            date: DateTime(2026, 10, 21),
+            startTime: '19:00'),
+        buildStage(
+            id: 'day2',
+            title: 'בוקר',
+            date: DateTime(2026, 10, 22),
+            startTime: '07:00'),
+        buildStage(
+            id: 'arrive',
+            title: 'קליטה',
+            date: DateTime(2026, 10, 21),
+            startTime: '08:00'),
         buildStage(id: 'note-b', title: 'ב', date: DateTime(2026, 10, 21)),
         buildStage(id: 'note-a', title: 'א', date: DateTime(2026, 10, 21)),
       ];
@@ -474,17 +517,28 @@ void main() {
   });
 
   group('stagesToShow', () {
-    final arrival = buildStage(id: 'arrive', title: 'קליטה', date: DateTime(2026, 10, 21));
-    final dinner = buildStage(id: 'dinner', title: 'ערב', date: DateTime(2026, 10, 21), startTime: '19:00');
-    final empty = buildStage(id: 'empty', title: 'ריק', date: DateTime(2026, 10, 22));
+    final arrival =
+        buildStage(id: 'arrive', title: 'קליטה', date: DateTime(2026, 10, 21));
+    final dinner = buildStage(
+        id: 'dinner',
+        title: 'ערב',
+        date: DateTime(2026, 10, 21),
+        startTime: '19:00');
+    final empty =
+        buildStage(id: 'empty', title: 'ריק', date: DateTime(2026, 10, 22));
 
-    final mine = buildTask(id: 'mine', stage: arrival, assigneeIds: const ['m1']);
-    final theirs = buildTask(id: 'theirs', stage: dinner, assigneeIds: const ['m2']);
+    final mine =
+        buildTask(id: 'mine', stage: arrival, assigneeIds: const ['m1']);
+    final theirs =
+        buildTask(id: 'theirs', stage: dinner, assigneeIds: const ['m2']);
 
-    List<String> shown(List<StageTasks> groups) =>
-        [for (final group in groups) '${group.stage.id}:${group.tasks.map((t) => t.id).join(',')}'];
+    List<String> shown(List<StageTasks> groups) => [
+          for (final group in groups)
+            '${group.stage.id}:${group.tasks.map((t) => t.id).join(',')}'
+        ];
 
-    test('all tasks with nothing narrowing shows every stage, empty ones too', () {
+    test('all tasks with nothing narrowing shows every stage, empty ones too',
+        () {
       final groups = stagesToShow(
         stages: [empty, dinner, arrival],
         visibleTasks: [mine, theirs],
@@ -536,7 +590,8 @@ void main() {
         startDate: DateTime(2026, 10, 30, 21),
         endDate: DateTime(2026, 10, 31, 3),
       );
-      expect(eventDays(event), [DateTime(2026, 10, 30), DateTime(2026, 10, 31)]);
+      expect(
+          eventDays(event), [DateTime(2026, 10, 30), DateTime(2026, 10, 31)]);
     });
 
     test('an end before the start is a one-day event', () {
@@ -558,20 +613,23 @@ void main() {
     );
     final past = buildEvent(id: 'past', startDate: DateTime(2026, 9, 1));
     final older = buildEvent(id: 'older', startDate: DateTime(2026, 8, 1));
-    final onHold = buildEvent(id: 'hold', startDate: DateTime(2026, 10, 25), isDeactivated: true);
+    final onHold = buildEvent(
+        id: 'hold', startDate: DateTime(2026, 10, 25), isDeactivated: true);
     final otherCategory = buildEvent(
       id: 'other',
       startDate: DateTime(2026, 10, 26),
       categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
     );
 
-    test('splits active דו יומי events into upcoming, nearest first, and past, '
+    test(
+        'splits active דו יומי events into upcoming, nearest first, and past, '
         'latest first', () {
       final split = taskEvents(
         [past, later, onHold, upcoming, older, otherCategory, running],
         now: now,
       );
-      expect(split.upcoming.map((event) => event.id), ['running', 'up', 'later']);
+      expect(
+          split.upcoming.map((event) => event.id), ['running', 'up', 'later']);
       expect(split.past.map((event) => event.id), ['past', 'older']);
     });
   });

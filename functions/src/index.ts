@@ -56,6 +56,8 @@ import {
   applySubtaskToggle,
   applyTaskEdit,
   buildNewTask,
+  parseReorderIds,
+  planTaskReorder,
   requireTaskManager,
   requireTaskParticipant,
   taskAuditDetails,
@@ -6081,6 +6083,38 @@ async function executeMutation(
         {before, after},
       );
       return {ok: true};
+    }
+
+    case 'task.reorder': {
+      // The editing screen's drag among a stage's tasks that share a time:
+      // the stage's tasks in their new order, numbered in one transaction.
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const eventId = requireString(payload['eventId'], 'eventId');
+      const stageId = requireString(payload['stageId'], 'stageId');
+      const orderedIds = parseReorderIds(payload['taskIds']);
+      const now = Timestamp.now();
+      const changed = await db.runTransaction(async (transaction) => {
+        await requireWritableEventInTransaction(transaction, collections, eventId);
+        await requireStageOfEventInTransaction(transaction, collections, stageId, eventId);
+        const snapshot = await transaction.get(
+          db.collection(collections.tasks).where('stageId', '==', stageId),
+        );
+        const stageTasks = snapshot.docs.map((doc) => taskFromStored(doc.id, doc.data()));
+        const next = planTaskReorder(stageTasks, orderedIds, now);
+        for (const task of next) {
+          transaction.update(db.collection(collections.tasks).doc(task.id), {
+            order: task.order,
+            updatedAt: task.updatedAt,
+          });
+        }
+        return next.length;
+      });
+      await writeAuditLog(
+        db, collections, actor, operation, 'stage', stageId,
+        {eventId, taskIds: orderedIds, changed},
+      );
+      return {ok: true, changed};
     }
 
     case 'task.delete': {

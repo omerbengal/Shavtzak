@@ -12,6 +12,8 @@ import {
   buildNewTask,
   canManageTasks,
   isTaskAssignee,
+  parseReorderIds,
+  planTaskReorder,
   requireTaskManager,
   requireTaskParticipant,
   taskAuditDetails,
@@ -500,4 +502,48 @@ test('taskFromStored drops malformed subtask entries instead of throwing', () =>
     updatedAt: now,
   });
   assert.deepEqual(task.subtasks, [{id: 'a', title: 'טוב', isDone: true}]);
+});
+
+// ---- order within a stage ----
+
+test('a new task has no order; a stored order is read back', () => {
+  const task = buildNewTask(baseInput(), {now, actor: manager});
+  assert.equal(task.order, null);
+  assert.equal(taskFromStored('t1', {order: 3}).order, 3);
+  assert.equal(taskFromStored('t1', {order: 'x'}).order, null);
+  assert.equal(taskFromStored('t1', {}).order, null);
+});
+
+test('an edit keeps the order', () => {
+  const stored = {...buildNewTask(baseInput(), {now, actor: manager}), order: 2};
+  const edited = applyTaskEdit(stored, baseInput({title: 'שם חדש'}), {now: later, actor: manager});
+  assert.equal(edited.order, 2);
+});
+
+test('parseReorderIds refuses empty, repeated or malformed ids', () => {
+  assert.deepEqual(parseReorderIds(['a', 'b']), ['a', 'b']);
+  for (const bad of [[], 'a', ['a', 'a'], ['a/b'], [1]]) {
+    assert.throws(() => parseReorderIds(bad), (e: unknown) => e instanceof TaskError && e.status === 400);
+  }
+});
+
+test('planTaskReorder numbers the listed tasks and returns only changes', () => {
+  const make = (id: string, order: number | null): TaskDoc => ({
+    ...buildNewTask(baseInput({id}), {now, actor: manager}),
+    order,
+  });
+  const tasks = [make('a', 0), make('b', 1), make('c', null)];
+  const changed = planTaskReorder(tasks, ['b', 'a', 'c'], later);
+  assert.deepEqual(changed.map((t) => [t.id, t.order]), [['b', 0], ['a', 1], ['c', 2]]);
+  assert.ok(changed.every((t) => t.updatedAt === later));
+
+  assert.deepEqual(planTaskReorder(tasks, ['a', 'b'], later), []);
+});
+
+test('planTaskReorder refuses a task that is not in the stage', () => {
+  const tasks = [{...buildNewTask(baseInput({id: 'a'}), {now, actor: manager}), order: null}];
+  assert.throws(
+    () => planTaskReorder(tasks, ['a', 'zz'], later),
+    (e: unknown) => e instanceof TaskError && e.status === 409,
+  );
 });

@@ -534,6 +534,14 @@ abstract class DatabaseInterface {
   /// Delete a task (task managers only)
   Future<void> deleteTask(String taskId);
 
+  /// Number [stageId]'s tasks in the order [taskIds] lists them, for the
+  /// tasks that share a due moment (task managers only)
+  Future<void> reorderTasks(
+    String eventId,
+    String stageId,
+    List<String> taskIds,
+  );
+
   /// Tick or untick one subtask (task managers and assignees)
   Future<void> setSubtaskDone(String taskId, String subtaskId, bool isDone);
 

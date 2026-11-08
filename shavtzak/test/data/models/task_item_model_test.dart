@@ -112,6 +112,15 @@ void main() {
       expect(task.updatedAt, DateTime.fromMillisecondsSinceEpoch(0));
     });
 
+    test('reads the order, and none when it is missing or not a number', () {
+      expect(TaskItemModel.fromMap('t1', {...fullMap(), 'order': 3}).order, 3);
+      expect(
+          TaskItemModel.fromMap('t1', {...fullMap(), 'order': 2.0}).order, 2);
+      expect(TaskItemModel.fromMap('t1', {...fullMap(), 'order': 'x'}).order,
+          null);
+      expect(TaskItemModel.fromMap('t1', const {}).order, null);
+    });
+
     test('malformed subtask entries are skipped', () {
       final task = TaskItemModel.fromMap('t1', {
         ...fullMap(),
@@ -122,7 +131,8 @@ void main() {
           null,
         ],
       });
-      expect(task.subtasks, const [Subtask(id: 'a', title: 'טוב', isDone: true)]);
+      expect(
+          task.subtasks, const [Subtask(id: 'a', title: 'טוב', isDone: true)]);
     });
 
     test('non-string assignee ids are skipped', () {

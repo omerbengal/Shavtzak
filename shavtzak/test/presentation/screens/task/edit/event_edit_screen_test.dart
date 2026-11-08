@@ -9,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
+import 'package:shavtzak/domain/entities/subtask.dart';
+import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/task/task_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.dart';
@@ -40,8 +42,8 @@ void main() {
     ],
   );
 
-  TaskBoard board() => TaskBoard(
-        tasks: sampleTasks,
+  TaskBoard board([List<TaskItem>? tasks]) => TaskBoard(
+        tasks: tasks ?? sampleTasks,
         events: [sampleEvent],
         stages: [
           for (final stage in sampleStages)
@@ -54,6 +56,7 @@ void main() {
     WidgetTester tester, {
     TeamMember? user,
     Size size = const Size(1280, 3200),
+    List<TaskItem>? tasks,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -113,7 +116,7 @@ void main() {
       ),
     ));
     await tester.pump();
-    repo.controller.add(board());
+    repo.controller.add(board(tasks));
     await tester.pump();
     await tester.pumpAndSettle();
     return repo;
@@ -241,10 +244,11 @@ void main() {
   testWidgets('on a phone a long press drags a task onto another stage',
       (tester) async {
     final repo = await pump(tester, size: const Size(400, 5000));
-    final card = find.byKey(const Key('edit-task-card-ws-later'));
-    await tester.ensureVisible(card);
+    // The top line (time and name) picks up the whole task.
+    final top = find.byKey(const Key('edit-task-longdrag-ws-later'));
+    await tester.ensureVisible(top);
     await tester.pumpAndSettle();
-    final gesture = await tester.startGesture(tester.getCenter(card));
+    final gesture = await tester.startGesture(tester.getCenter(top));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
     await gesture
         .moveTo(tester.getCenter(find.byKey(const Key('edit-stage-dinner'))));
@@ -254,8 +258,7 @@ void main() {
     expect(repo.updatedTasks.single.stageId, 'dinner');
   });
 
-  testWidgets('on a phone a short tap still edits, not drags',
-      (tester) async {
+  testWidgets('on a phone a short tap still edits, not drags', (tester) async {
     final repo = await pump(tester, size: const Size(400, 5000));
     await tester.tap(find.text('חלוקת ערכות למשתתפים'));
     await tester.pumpAndSettle();
@@ -263,13 +266,16 @@ void main() {
     expect(repo.updatedTasks, isEmpty);
   });
 
-  testWidgets('holding a dragged task at the bottom edge scrolls down, '
+  testWidgets(
+      'holding a dragged task at the bottom edge scrolls down, '
       'at the top scrolls back up', (tester) async {
     await pump(tester, size: const Size(1280, 700));
     double offset() => tester
-        .state<ScrollableState>(find.descendant(
-            of: find.byKey(const Key('edit-list')),
-            matching: find.byType(Scrollable)).first)
+        .state<ScrollableState>(find
+            .descendant(
+                of: find.byKey(const Key('edit-list')),
+                matching: find.byType(Scrollable))
+            .first)
         .position
         .pixels;
     final handle = find.byKey(const Key('edit-task-drag-ws-later'));
@@ -302,8 +308,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('a phone card shows its whole time, on one line',
-      (tester) async {
+  testWidgets('a phone card shows its whole time, on one line', (tester) async {
     await pump(tester, size: const Size(400, 5000));
     final time = find.descendant(
       of: find.byKey(const Key('edit-task-time-ws-later')),
@@ -370,5 +375,192 @@ void main() {
         size: tallPhoneSize);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('tasks-edit')), findsNothing);
+  });
+
+  // ---- order among tasks due at the same moment ----
+
+  // A second task at 15:45 in "סדנאות", next to "חלוקת ערכות למשתתפים";
+  // by title it comes first ("א" before "ח").
+  final twin = tWsLater.copyWith(
+    id: 'ws-twin',
+    title: 'איסוף תגים',
+    description: 'מהקבלה',
+    subtasks: const [Subtask(id: 'q', title: 'ספירה', isDone: true)],
+  );
+  List<TaskItem> withTwin() => [...sampleTasks, twin];
+
+  Future<void> dragTo(WidgetTester tester, Finder from, Offset to,
+      {bool longPress = false}) async {
+    await tester.ensureVisible(from);
+    await tester.pumpAndSettle();
+    // A mouse on a wide window; a finger for a long press.
+    final gesture = await tester.startGesture(
+      tester.getCenter(from),
+      kind: longPress ? PointerDeviceKind.touch : PointerDeviceKind.mouse,
+    );
+    if (longPress) {
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    } else {
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+    }
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
+
+  Offset topOf(WidgetTester tester, Finder finder) =>
+      tester.getTopLeft(finder) + Offset(tester.getSize(finder).width / 2, 6);
+
+  testWidgets(
+      'a task dropped on the top of one due at the same moment goes '
+      'before it, at once', (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    double y(String id) =>
+        tester.getTopLeft(find.byKey(Key('edit-task-row-$id'))).dy;
+    expect(y('ws-twin'), lessThan(y('ws-later')));
+
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-task-drag-ws-later')),
+      topOf(tester, find.byKey(const Key('edit-task-row-ws-twin'))),
+    );
+
+    expect(
+      repo.calls,
+      contains('reorder:ws:ws-done,ws-theirs,ws-soon,ws-later,ws-twin,'
+          'ws-untimed'),
+    );
+    expect(y('ws-later'), lessThan(y('ws-twin')));
+    expect(repo.updatedTasks, isEmpty);
+  });
+
+  testWidgets('a task dropped on one due at another time stays put',
+      (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-task-drag-ws-later')),
+      topOf(tester, find.byKey(const Key('edit-task-row-ws-soon'))),
+    );
+    expect(repo.calls.where((call) => call.startsWith('reorder')), isEmpty);
+    expect(repo.updatedTasks, isEmpty);
+  });
+
+  testWidgets('on a phone a task long-pressed by its top line reorders too',
+      (tester) async {
+    final repo =
+        await pump(tester, tasks: withTwin(), size: const Size(400, 6000));
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-task-longdrag-ws-later')),
+      topOf(tester, find.byKey(const Key('edit-task-card-ws-twin'))),
+      longPress: true,
+    );
+    expect(
+        repo.calls.where((call) => call.startsWith('reorder')), hasLength(1));
+  });
+
+  // ---- copying a value to another task ----
+
+  testWidgets('a description dragged onto an empty one is copied at once',
+      (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-field-drag-description-ws-twin')),
+      tester.getCenter(find.byKey(const Key('edit-task-description-ws-later'))),
+    );
+    final saved = repo.updatedTasks.single;
+    expect(saved.id, 'ws-later');
+    expect(saved.description, 'מהקבלה');
+    expect(find.byKey(const Key('edit-copy-confirm')), findsNothing);
+  });
+
+  testWidgets('a value dropped on one that has a value asks first',
+      (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    Future<void> dragAssignees() => dragTo(
+          tester,
+          find.byKey(const Key('edit-field-drag-assignees-ws-soon')),
+          tester
+              .getCenter(find.byKey(const Key('edit-task-assignees-ws-later'))),
+        );
+
+    await dragAssignees();
+    expect(find.byKey(const Key('edit-copy-confirm')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('edit-copy-cancel')));
+    await tester.pumpAndSettle();
+    expect(repo.updatedTasks, isEmpty);
+
+    await dragAssignees();
+    await tester.tap(find.byKey(const Key('edit-copy-replace')));
+    await tester.pumpAndSettle();
+    expect(repo.updatedTasks.single.assigneeIds, ['m1', 'm2']);
+  });
+
+  testWidgets('copied subtasks are new and unticked; the source keeps its own',
+      (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-field-drag-subtasks-ws-twin')),
+      tester.getCenter(find.byKey(const Key('edit-task-subtasks-ws-later'))),
+    );
+    final saved = repo.updatedTasks.single;
+    expect(saved.id, 'ws-later');
+    expect(saved.subtasks.single.title, 'ספירה');
+    expect(saved.subtasks.single.id, isNot('q'));
+    expect(saved.subtasks.single.isDone, isFalse);
+  });
+
+  testWidgets('a value is not copied into a task of another stage',
+      (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-field-drag-description-ws-twin')),
+      tester.getCenter(
+          find.byKey(const Key('edit-task-description-dinner-guests'))),
+    );
+    expect(repo.updatedTasks, isEmpty);
+  });
+
+  testWidgets('a click on a value still edits it', (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    await tester.tap(find.byKey(const Key('edit-task-description-ws-twin')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-value-editor')), findsOneWidget);
+    expect(repo.updatedTasks, isEmpty);
+  });
+
+  testWidgets('a mouse click that shakes a few pixels still edits',
+      (tester) async {
+    final repo = await pump(tester, tasks: withTwin());
+    final value = find.byKey(const Key('edit-task-description-ws-twin'));
+    await tester.ensureVisible(value);
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(
+      tester.getCenter(value),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(4, 3));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-value-editor')), findsOneWidget);
+    expect(repo.updatedTasks, isEmpty);
+  });
+
+  testWidgets('on a phone a long press on a value copies it', (tester) async {
+    final repo =
+        await pump(tester, tasks: withTwin(), size: const Size(400, 6000));
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-field-drag-description-ws-twin')),
+      tester.getCenter(find.byKey(const Key('edit-task-description-ws-later'))),
+      longPress: true,
+    );
+    expect(repo.updatedTasks.single.description, 'מהקבלה');
   });
 }

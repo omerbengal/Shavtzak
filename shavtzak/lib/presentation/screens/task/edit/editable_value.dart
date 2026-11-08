@@ -36,7 +36,12 @@ class EditableValue<T> extends StatefulWidget {
     this.validate,
     this.expand = true,
     this.inDialog = false,
+    this.wrapIdle,
   });
+
+  /// Wraps the value while it is shown, not while it is being edited: for
+  /// dragging it to, or dropping onto it from, another task.
+  final Widget Function(Widget child)? wrapIdle;
 
   /// On a wide window, edit in a small dialog instead of in place: for an
   /// editor that needs more room than its cell, such as a time field.
@@ -145,6 +150,11 @@ class _EditableValueState<T> extends State<EditableValue<T>> {
   @override
   Widget build(BuildContext context) {
     if (_editing) return _buildEditor(context);
+    final idle = _buildIdle(context);
+    return widget.wrapIdle?.call(idle) ?? idle;
+  }
+
+  Widget _buildIdle(BuildContext context) {
     final theme = Theme.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,

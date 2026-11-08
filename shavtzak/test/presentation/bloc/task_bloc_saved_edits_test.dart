@@ -26,6 +26,13 @@ class _SilentRepository extends Fake implements TaskRepository {
 
   @override
   Future<void> insertTask(TaskItem task) async {}
+
+  @override
+  Future<void> reorderTasks(
+    String eventId,
+    String stageId,
+    List<String> taskIds,
+  ) async {}
 }
 
 // The 2026-11-08 report: a stage's contacts edited on a phone, the save
@@ -36,10 +43,12 @@ void main() {
   late List<String> staleReports;
 
   final oldContacts = [
-    const StageContact(id: 'c1', name: 'שגיב', phone: '054-6219399', role: 'קרן הסיוע'),
+    const StageContact(
+        id: 'c1', name: 'שגיב', phone: '054-6219399', role: 'קרן הסיוע'),
   ];
   final newContacts = [
-    const StageContact(id: 'c2', name: 'אליסף', phone: '054-4543733', role: 'קרן הסיוע'),
+    const StageContact(
+        id: 'c2', name: 'אליסף', phone: '054-4543733', role: 'קרן הסיוע'),
   ];
   final liveStage = buildStage(contacts: oldContacts);
   final savedStage = buildStage(contacts: newContacts);
@@ -83,7 +92,8 @@ void main() {
       final bloc = buildBloc();
       await load(bloc, TaskBoard(tasks: const [], stages: [liveStage]));
 
-      final result = await dispatch(bloc, (c) => UpdateStage(savedStage, completion: c));
+      final result =
+          await dispatch(bloc, (c) => UpdateStage(savedStage, completion: c));
 
       expect(result.isSuccess, isTrue);
       expect(shownStages(bloc).single.contacts, newContacts);
@@ -104,14 +114,16 @@ void main() {
       await bloc.close();
     });
 
-    test('once the stream carries it, the stream is shown and nothing is '
+    test(
+        'once the stream carries it, the stream is shown and nothing is '
         'reported', () async {
       final bloc = buildBloc();
       await load(bloc, TaskBoard(tasks: const [], stages: [liveStage]));
       await dispatch(bloc, (c) => UpdateStage(savedStage, completion: c));
 
       final fromStream = savedStage.copyWith(updatedAt: DateTime(2026, 11, 8));
-      repository.controller.add(TaskBoard(tasks: const [], stages: [fromStream]));
+      repository.controller
+          .add(TaskBoard(tasks: const [], stages: [fromStream]));
       await settle();
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
@@ -208,11 +220,43 @@ void main() {
       final bloc = buildBloc();
       await load(bloc, const TaskBoard(tasks: []));
 
-      await dispatch(bloc, (c) => CreateTask(buildTask(id: 'new'), completion: c));
+      await dispatch(
+          bloc, (c) => CreateTask(buildTask(id: 'new'), completion: c));
       await Future<void>.delayed(const Duration(milliseconds: 60));
 
       expect(staleReports, ['tasks:taskCreate']);
       await bloc.close();
     });
+  });
+
+  test('an accepted reorder shows at once, and leaves once the stream has it',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(bloc.close);
+    final a = buildTask(id: 'a', stage: liveStage);
+    final b = buildTask(id: 'b', stage: liveStage);
+    await load(bloc, TaskBoard(tasks: [a, b], stages: [liveStage]));
+
+    final result = await dispatch(
+      bloc,
+      (completion) => ReorderTasks(
+        'e1',
+        liveStage.id,
+        [b.copyWith(order: 0), a.copyWith(order: 1)],
+        completion: completion,
+      ),
+    );
+    expect(result.isSuccess, isTrue);
+    Map<String, int?> orders() =>
+        {for (final task in shownTasks(bloc)) task.id: task.order};
+    expect(orders(), {'a': 1, 'b': 0});
+
+    repository.controller.add(TaskBoard(
+      tasks: [a.copyWith(order: 1), b.copyWith(order: 0)],
+      stages: [liveStage],
+    ));
+    await settle();
+    expect(orders(), {'a': 1, 'b': 0});
+    expect(staleReports, isEmpty);
   });
 }

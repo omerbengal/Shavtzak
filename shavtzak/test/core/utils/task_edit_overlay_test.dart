@@ -48,6 +48,20 @@ void main() {
     expect(sameTaskEdit(withSub, withSub.copyWith()), isTrue);
   });
 
+  test('a new order does not match until the stream carries it', () {
+    expect(sameTaskEdit(live, live.copyWith(order: 2)), isFalse);
+    expect(
+      sameTaskEdit(live.copyWith(order: 2), live.copyWith(order: 2)),
+      isTrue,
+    );
+    final shown = withTaskEdit(
+      live,
+      live.copyWith(order: 2),
+      assignees: live.assignees,
+    );
+    expect(shown.order, 2);
+  });
+
   test('failed entry is dropped', () {
     final o = overlay();
     o.sent('t1', live.copyWith(title: 'חדש'));

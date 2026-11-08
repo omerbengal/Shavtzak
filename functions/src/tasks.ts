@@ -42,6 +42,12 @@ export type TaskDoc = {
   subtasks: Subtask[];
   /** The assembly (התייצבות) time on the stage's day, `HH:mm`; null = none. */
   assemblyTime: string | null;
+  /**
+   * Where the task sits among its stage's tasks that share its due moment
+   * (`task.reorder`); null = never placed, after the placed ones. Every other
+   * write keeps it.
+   */
+  order: number | null;
   assigneeIds: string[];
   assigneeUpdate: string | null;
   assigneeUpdateAt: Timestamp | null;
@@ -124,6 +130,9 @@ export function taskFromStored(id: string, raw: Record<string, unknown>): TaskDo
     description: typeof raw['description'] === 'string' ? raw['description'] : '',
     subtasks: storedSubtasks(raw['subtasks']),
     assemblyTime: typeof raw['assemblyTime'] === 'string' ? raw['assemblyTime'] : null,
+    order: typeof raw['order'] === 'number' && Number.isFinite(raw['order'])
+      ? raw['order']
+      : null,
     assigneeIds: Array.isArray(raw['assigneeIds'])
       ? raw['assigneeIds'].filter((value): value is string => typeof value === 'string')
       : [],
@@ -309,6 +318,7 @@ export function buildNewTask(input: Record<string, unknown>, ctx: TaskContext): 
     description: fields.description,
     subtasks: fields.subtasks.map((subtask) => ({...subtask, isDone: false})),
     assemblyTime: fields.assemblyTime,
+    order: null,
     assigneeIds: fields.assigneeIds,
     assigneeUpdate: null,
     assigneeUpdateAt: null,
@@ -417,4 +427,47 @@ export function applyAssigneeUpdate(
     assigneeUpdateByName: ctx.actor.name,
     updatedAt: ctx.now,
   };
+}
+
+// ---- order within a stage ----
+
+const MAX_REORDER_IDS = 500;
+
+/** The ordered task ids of a `task.reorder` payload. */
+export function parseReorderIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TaskError(400, 'חסר סדר משימות');
+  }
+  if (value.length > MAX_REORDER_IDS) throw new TaskError(400, 'יותר מדי משימות');
+  const ids: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !TASK_ID_PATTERN.test(entry) || ids.includes(entry)) {
+      throw new TaskError(400, 'סדר משימות לא תקין');
+    }
+    ids.push(entry);
+  }
+  return ids;
+}
+
+/**
+ * Number [stageTasks] in the order [orderedIds] lists them: the first gets 0,
+ * the next 1, and so on. Every listed id must be a task of the stage (409
+ * otherwise: the screen is out of date); a stage task left out keeps its
+ * number. Returns only the tasks whose number changes, with `updatedAt` bumped.
+ */
+export function planTaskReorder(
+  stageTasks: TaskDoc[],
+  orderedIds: string[],
+  now: Timestamp,
+): TaskDoc[] {
+  const byId = new Map(stageTasks.map((task) => [task.id, task]));
+  const changed: TaskDoc[] = [];
+  orderedIds.forEach((id, index) => {
+    const task = byId.get(id);
+    if (task == null) {
+      throw new TaskError(409, 'המשימות של השלב השתנו. יש לנסות שוב');
+    }
+    if (task.order !== index) changed.push({...task, order: index, updatedAt: now});
+  });
+  return changed;
 }

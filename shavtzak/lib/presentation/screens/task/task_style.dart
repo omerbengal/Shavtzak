@@ -163,6 +163,10 @@ abstract final class TaskStyle {
   static const Color editCardHeaderLine = Color(0xFFC9DCF4);
   static const Color editCardEdge = Color(0xFF2196F3);
   static const Color editDropTarget = Color(0xFFCFE3FA);
+
+  /// Where a dragged task will land among its neighbours, and the frame of
+  /// a value a dragged value would be copied onto.
+  static const Color editDropLine = Color(0xFF1E6FD9);
   static const Color editHighlight = Color(0xFFFFF8E1);
   static const Color editHover = Color(0x142196F3);
   static const Color editLabel = Color(0xFF9CA3AF);

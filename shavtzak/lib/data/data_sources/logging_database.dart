@@ -1475,6 +1475,23 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
+  Future<void> reorderTasks(
+    String eventId,
+    String stageId,
+    List<String> taskIds,
+  ) =>
+      _runFuture(
+        op: 'reorderTasks',
+        ctx: {
+          'collection': 'tasks',
+          'stageId': stageId,
+          'count': taskIds.length,
+        },
+        countOf: (_) => null,
+        action: () => _inner.reorderTasks(eventId, stageId, taskIds),
+      );
+
+  @override
   Future<void> deleteTask(String taskId) => _runFuture(
         op: 'deleteTask',
         ctx: {'collection': 'tasks', 'id': taskId},

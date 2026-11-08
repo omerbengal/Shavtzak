@@ -27,6 +27,7 @@ class TaskItemModel {
       description: _string(data['description']) ?? '',
       subtasks: _subtasks(data['subtasks']),
       assemblyTime: _string(data['assemblyTime']),
+      order: _int(data['order']),
       assigneeIds: _stringList(data['assigneeIds']),
       assigneeUpdate: _string(data['assigneeUpdate']),
       assigneeUpdateAt: _date(data['assigneeUpdateAt']),
@@ -66,6 +67,9 @@ class TaskItemModel {
   static final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0);
 
   static String? _string(Object? value) => value is String ? value : null;
+
+  static int? _int(Object? value) =>
+      value is num && value.isFinite ? value.toInt() : null;
 
   static DateTime? _date(Object? value) =>
       value is Timestamp ? value.toDate() : null;

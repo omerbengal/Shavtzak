@@ -239,6 +239,39 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
         },
       );
     });
+    on<ReorderTasks>((event, emit) {
+      final orderById = {for (final task in event.tasks) task.id: task.order};
+      return _run(
+        event.completion,
+        () => _repository.reorderTasks(
+          event.eventId,
+          event.stageId,
+          [for (final task in event.tasks) task.id],
+        ),
+        awaited: _AwaitedWrite(
+          'taskReorder',
+          (board) => orderById.entries.every(
+            (entry) => board.tasks.any(
+              (live) => live.id == entry.key && live.order == entry.value,
+            ),
+          ),
+          onTimeout: () => orderById.keys.forEach(_taskOverlay.failed),
+        ),
+        onSuccess: () {
+          final liveById = {
+            for (final task in _board?.tasks ?? const <TaskItem>[])
+              task.id: task,
+          };
+          for (final task in event.tasks) {
+            // Only the order changes, so an edit of another field still on
+            // its way is kept.
+            final shown = _taskOverlay.resolve(task.id, liveById[task.id] ?? task);
+            _taskOverlay.sent(task.id, shown.copyWith(order: task.order));
+          }
+          _emitBoard(emit);
+        },
+      );
+    });
     on<DeleteTask>(
       (event, emit) => _run(
         event.completion,

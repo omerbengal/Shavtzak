@@ -7,6 +7,7 @@ import '../task_style.dart';
 import 'edit_context.dart';
 import 'edit_rules.dart';
 import 'editable_value.dart';
+import 'task_drag.dart';
 import 'value_editors.dart';
 
 /// The editable values of one task, shared by the wide row and the phone
@@ -17,6 +18,26 @@ class _TaskValues {
   final TaskItem task;
   final EditContext ctx;
 
+  /// [field] can be dragged onto the same value of another task of the
+  /// stage, and takes one dropped from another. With [drag] false it only
+  /// takes one: on a phone the time sits in the line whose long press picks
+  /// up the whole task.
+  Widget Function(Widget child) _draggable(TaskField field,
+          {bool drag = true}) =>
+      (child) => TaskFieldDropTarget(
+            task: task,
+            field: field,
+            ctx: ctx,
+            child: drag
+                ? TaskFieldDragSource(
+                    task: task,
+                    field: field,
+                    ctx: ctx,
+                    child: child,
+                  )
+                : child,
+          );
+
   /// [expand] false sizes it to the time itself, as on the phone card.
   Widget time({bool expand = true}) {
     final time = task.assemblyTime ?? '';
@@ -26,6 +47,7 @@ class _TaskValues {
       wide: ctx.wide,
       expand: expand,
       inDialog: true,
+      wrapIdle: _draggable(TaskField.time, drag: ctx.wide),
       sheetTitle: 'שעת התייצבות',
       display: time.isEmpty
           ? editPlaceholder('—')
@@ -71,6 +93,7 @@ class _TaskValues {
         key: Key('edit-task-description-${task.id}'),
         value: task.description,
         wide: ctx.wide,
+        wrapIdle: _draggable(TaskField.description),
         sheetTitle: 'תיאור',
         display: task.description.isEmpty
             ? editPlaceholder('הוספת תיאור')
@@ -90,6 +113,7 @@ class _TaskValues {
         key: Key('edit-task-assignees-${task.id}'),
         value: task.assigneeIds,
         wide: ctx.wide,
+        wrapIdle: _draggable(TaskField.assignees),
         sheetTitle: 'אחראים',
         display: task.assignees.isEmpty
             ? editPlaceholder('בחירת אחראים')
@@ -108,6 +132,7 @@ class _TaskValues {
         key: Key('edit-task-subtasks-${task.id}'),
         value: task.subtasks,
         wide: ctx.wide,
+        wrapIdle: _draggable(TaskField.subtasks),
         sheetTitle: 'תתי-משימות',
         display: task.subtasks.isEmpty
             ? editPlaceholder('הוספת תתי-משימות')
@@ -205,6 +230,14 @@ class TaskEditRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final values = _TaskValues(task, ctx);
+    return TaskReorderTarget(
+      task: task,
+      ctx: ctx,
+      child: _row(context, values),
+    );
+  }
+
+  Widget _row(BuildContext context, _TaskValues values) {
     return _TaskCardBox(
       task: task,
       ctx: ctx,
@@ -259,24 +292,25 @@ class TaskEditCard extends StatelessWidget {
   final TaskItem task;
   final EditContext ctx;
 
-  /// A long press picks the card up to drag it onto another stage; a tap
-  /// still edits the value under it, and a swipe still scrolls.
+  /// A long press on the top line (time and name) picks the whole task up,
+  /// to drop it on another stage or beside a task due at the same moment; a
+  /// long press on any other value picks up just that value. A tap still
+  /// edits the value under it, and a swipe still scrolls.
   @override
   Widget build(BuildContext context) {
-    return LongPressDraggable<TaskItem>(
-      key: Key('edit-task-longdrag-${task.id}'),
-      data: task,
-      dragAnchorStrategy: pointerDragAnchorStrategy,
-      feedback: _DragFeedback(title: task.title),
-      childWhenDragging: Opacity(opacity: 0.4, child: _card(context)),
-      onDragUpdate: (details) => ctx.onDragMoved(details.globalPosition),
-      onDragEnd: (_) => ctx.onDragDone(),
-      child: _card(context),
-    );
+    return TaskReorderTarget(task: task, ctx: ctx, child: _card(context));
   }
 
   Widget _card(BuildContext context) {
     final values = _TaskValues(task, ctx);
+    final top = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        values.time(expand: false),
+        Expanded(child: values.title()),
+        values.menu(context),
+      ],
+    );
     return _TaskCardBox(
       task: task,
       ctx: ctx,
@@ -286,13 +320,16 @@ class TaskEditCard extends StatelessWidget {
           key: Key('edit-task-card-${task.id}'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                values.time(expand: false),
-                Expanded(child: values.title()),
-                values.menu(context),
-              ],
+            LongPressDraggable<TaskItem>(
+              key: Key('edit-task-longdrag-${task.id}'),
+              data: task,
+              dragAnchorStrategy: pointerDragAnchorStrategy,
+              feedback: _DragFeedback(title: task.title),
+              childWhenDragging: Opacity(opacity: 0.4, child: top),
+              onDragUpdate: (details) =>
+                  ctx.onDragMoved(details.globalPosition),
+              onDragEnd: (_) => ctx.onDragDone(),
+              child: top,
             ),
             values.description(),
             values.assignees(),

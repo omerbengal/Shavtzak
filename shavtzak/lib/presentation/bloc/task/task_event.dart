@@ -97,6 +97,25 @@ class UpdateTask extends TaskEvent {
   List<Object?> get props => [task];
 }
 
+/// A stage's tasks in their new order, each already carrying its new
+/// [TaskItem.order] (its place in the list).
+class ReorderTasks extends TaskEvent {
+  final String eventId;
+  final String stageId;
+  final List<TaskItem> tasks;
+  final CrudActionCompleter? completion;
+
+  const ReorderTasks(
+    this.eventId,
+    this.stageId,
+    this.tasks, {
+    this.completion,
+  });
+
+  @override
+  List<Object?> get props => [eventId, stageId, tasks];
+}
+
 class DeleteTask extends TaskEvent {
   final String taskId;
   final CrudActionCompleter? completion;

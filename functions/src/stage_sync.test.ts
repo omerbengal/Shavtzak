@@ -39,7 +39,7 @@ function storedStage(id: string): StageDoc {
 function storedTask(id: string, stageId: string, overrides: Partial<TaskDoc> = {}): TaskDoc {
   return {
     id, eventId: 'e1', stageId, title: `משימה ${id}`, description: '', subtasks: [],
-    assemblyTime: null, assigneeIds: ['m1'],
+    assemblyTime: null, order: null, assigneeIds: ['m1'],
     assigneeUpdate: null, assigneeUpdateAt: null, assigneeUpdateById: null, assigneeUpdateByName: null,
     isComplete: false, completedAt: null, completedById: null,
     createdAt: earlier, createdById: 'm-old', updatedAt: earlier,

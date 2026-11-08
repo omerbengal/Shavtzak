@@ -93,12 +93,16 @@ List<TaskItem> filterTasks(
 /// A sorted copy of [tasks]: earliest due date first, undated ones last.
 ///
 /// Completion does not move a task, so ticking one leaves it where it was.
-/// Ties fall back to the title so the order does not jump between rebuilds.
+/// Tasks due at the same moment go by the order a manager dragged them into
+/// ([TaskItem.order]; never-placed ones after), then by title, so the order
+/// does not jump between rebuilds.
 List<TaskItem> sortTasks(List<TaskItem> tasks) {
   final sorted = [...tasks];
   sorted.sort((a, b) {
     final byDate = _compareNullsLast(a.dueAt, b.dueAt);
     if (byDate != 0) return byDate;
+    final byOrder = _compareNullsLast(a.order, b.order);
+    if (byOrder != 0) return byOrder;
     return a.title.compareTo(b.title);
   });
   return sorted;
@@ -152,7 +156,7 @@ bool _isDueWithin(TaskItem task, DateTime now, Duration window) {
 }
 
 /// Ascending by date with nulls after every real date.
-int _compareNullsLast(DateTime? a, DateTime? b) {
+int _compareNullsLast<T extends Comparable<Object>>(T? a, T? b) {
   if (a == null && b == null) return 0;
   if (a == null) return 1;
   if (b == null) return -1;

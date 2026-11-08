@@ -67,6 +67,14 @@ class FakeTaskRepository extends Fake implements TaskRepository {
   Future<void> deleteTask(String taskId) => _record('delete:$taskId');
 
   @override
+  Future<void> reorderTasks(
+    String eventId,
+    String stageId,
+    List<String> taskIds,
+  ) =>
+      _record('reorder:$stageId:${taskIds.join(',')}');
+
+  @override
   Future<void> setSubtaskDone(String taskId, String subtaskId, bool isDone) =>
       _record('subtask:$taskId:$subtaskId:$isDone');
 

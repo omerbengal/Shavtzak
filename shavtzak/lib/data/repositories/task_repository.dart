@@ -99,6 +99,13 @@ class TaskRepository {
 
   Future<void> updateTask(TaskItem task) => _database.updateTask(task);
 
+  Future<void> reorderTasks(
+    String eventId,
+    String stageId,
+    List<String> taskIds,
+  ) =>
+      _database.reorderTasks(eventId, stageId, taskIds);
+
   Future<void> deleteTask(String taskId) => _database.deleteTask(taskId);
 
   Future<void> setSubtaskDone(String taskId, String subtaskId, bool isDone) =>

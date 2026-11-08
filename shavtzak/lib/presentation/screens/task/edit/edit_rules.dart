@@ -3,6 +3,7 @@ import '../../../../core/utils/task_progress.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/stage.dart';
+import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
 
@@ -118,4 +119,131 @@ double edgeScrollSpeed({
     return maxSpeed * ((edge - fromBottom) / edge).clamp(0.0, 1.0);
   }
   return 0;
+}
+
+// ---- order among tasks due at the same moment ----
+
+/// Whether [moved] may be dropped beside [target] to change its place:
+/// another task of the same stage, due at the same moment.
+bool canReorderOnto(TaskItem moved, TaskItem target) =>
+    moved.id != target.id &&
+    moved.stageId == target.stageId &&
+    moved.dueAt == target.dueAt;
+
+/// [stageTasks] (in screen order) with [moved] put just before [target], or
+/// just after it when [after], every task numbered by its new place.
+///
+/// Numbering the whole stage keeps it consistent: the tasks are sorted by
+/// time first, so a number only decides among tasks due at the same moment.
+List<TaskItem> reorderedStageTasks(
+  List<TaskItem> stageTasks,
+  TaskItem moved,
+  TaskItem target, {
+  required bool after,
+}) {
+  final rest = [
+    for (final task in stageTasks)
+      if (task.id != moved.id) task,
+  ];
+  final at = rest.indexWhere((task) => task.id == target.id);
+  if (at < 0) return stageTasks;
+  rest.insert(after ? at + 1 : at, moved);
+  return [
+    for (var i = 0; i < rest.length; i++) rest[i].copyWith(order: i),
+  ];
+}
+
+/// Whether [reordered] puts any task in another place than [before] had it.
+bool orderChanged(List<TaskItem> before, List<TaskItem> reordered) {
+  if (before.length != reordered.length) return true;
+  for (var i = 0; i < before.length; i++) {
+    if (before[i].id != reordered[i].id) return true;
+  }
+  return false;
+}
+
+// ---- copying one value from a task to another ----
+
+/// The values of a task that can be dragged onto another task.
+enum TaskField {
+  time('שעת התייצבות', 'שעת ההתייצבות'),
+  description('תיאור', 'התיאור'),
+  assignees('אחראים', 'האחראים'),
+  subtasks('תתי-משימות', 'תתי-המשימות');
+
+  const TaskField(this.label, this.definite);
+
+  /// The value's Hebrew name: "תיאור".
+  final String label;
+
+  /// The same with "the": "התיאור".
+  final String definite;
+}
+
+/// Whether [task] has nothing in [field].
+bool isTaskFieldEmpty(TaskItem task, TaskField field) {
+  switch (field) {
+    case TaskField.time:
+      return (task.assemblyTime ?? '').isEmpty;
+    case TaskField.description:
+      return task.description.trim().isEmpty;
+    case TaskField.assignees:
+      return task.assigneeIds.isEmpty;
+    case TaskField.subtasks:
+      return task.subtasks.isEmpty;
+  }
+}
+
+/// Whether [a] and [b] already hold the same [field]: assignees in any
+/// order, subtasks by their titles.
+bool sameTaskField(TaskItem a, TaskItem b, TaskField field) {
+  switch (field) {
+    case TaskField.time:
+      return (a.assemblyTime ?? '') == (b.assemblyTime ?? '');
+    case TaskField.description:
+      return a.description == b.description;
+    case TaskField.assignees:
+      return a.assigneeIds.toSet().length == b.assigneeIds.toSet().length &&
+          a.assigneeIds.toSet().containsAll(b.assigneeIds);
+    case TaskField.subtasks:
+      if (a.subtasks.length != b.subtasks.length) return false;
+      for (var i = 0; i < a.subtasks.length; i++) {
+        if (a.subtasks[i].title != b.subtasks[i].title) return false;
+      }
+      return true;
+  }
+}
+
+/// Whether [from] may hand its [field] to [to]: another task of the same
+/// stage, with something to hand over.
+bool canCopyField(TaskItem from, TaskItem to, TaskField field) =>
+    from.id != to.id &&
+    from.stageId == to.stageId &&
+    !isTaskFieldEmpty(from, field);
+
+/// [to] with [from]'s [field] in place of its own. Copied subtasks are new
+/// ones ([newId] for each) and not ticked, so ticking one never ticks the
+/// other.
+TaskItem copyTaskField(
+  TaskItem from,
+  TaskItem to,
+  TaskField field, {
+  required String Function() newId,
+}) {
+  switch (field) {
+    case TaskField.time:
+      return to.copyWith(assemblyTime: from.assemblyTime);
+    case TaskField.description:
+      return to.copyWith(description: from.description);
+    case TaskField.assignees:
+      return to.copyWith(
+        assigneeIds: [...from.assigneeIds],
+        assignees: [...from.assignees],
+      );
+    case TaskField.subtasks:
+      return to.copyWith(subtasks: [
+        for (final subtask in from.subtasks)
+          Subtask(id: newId(), title: subtask.title),
+      ]);
+  }
 }
