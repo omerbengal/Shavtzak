@@ -535,6 +535,24 @@ void main() {
     expect(repo.updatedTasks, isEmpty);
   });
 
+  for (final phone in [false, true]) {
+    testWidgets(
+        'the assignees picker opens cleanly ${phone ? 'on a phone' : 'wide'}',
+        (tester) async {
+      await pump(tester,
+          tasks: withTwin(),
+          size: phone ? const Size(400, 6000) : const Size(1280, 3200));
+      final value = find.byKey(const Key('edit-task-assignees-ws-later'));
+      await tester.ensureVisible(value);
+      await tester.pumpAndSettle();
+      await tester.tap(value);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('edit-assignee-m2')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('edit-assignee-m2')));
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets('a mouse click that shakes a few pixels still edits',
       (tester) async {
     final repo = await pump(tester, tasks: withTwin());

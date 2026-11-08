@@ -218,30 +218,36 @@ class _EditableValueState<T> extends State<EditableValue<T>> {
             borderRadius: BorderRadius.circular(TaskStyle.editRadius),
             boxShadow: TaskStyle.editRing,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              widget.editor(
-                context,
-                _draft,
-                (next) => setState(() {
-                  _draft = next;
-                  _error = null;
-                }),
-                _save,
-              ),
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    _error!,
-                    key: const Key('edit-value-error'),
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.error),
-                  ),
+          // Its own Material over the white box, so a list in the editor
+          // (the assignees' check rows) shows its ripple instead of
+          // painting it behind the box.
+          child: Material(
+            type: MaterialType.transparency,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                widget.editor(
+                  context,
+                  _draft,
+                  (next) => setState(() {
+                    _draft = next;
+                    _error = null;
+                  }),
+                  _save,
                 ),
-            ],
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      _error!,
+                      key: const Key('edit-value-error'),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
