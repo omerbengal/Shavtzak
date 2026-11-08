@@ -5895,6 +5895,25 @@ async function executeMutation(
       return {ok: true};
     }
 
+    case 'stage.deleteAll': {
+      // Wipes an event's whole דו יומי plan: every stage and every task.
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const eventId = requireString(payload['eventId'], 'eventId');
+      const counts = await db.runTransaction(async (transaction) => {
+        await requireWritableEventInTransaction(transaction, collections, eventId);
+        const [stageDocs, taskDocs] = await Promise.all([
+          transaction.get(db.collection(collections.stages).where('eventId', '==', eventId)),
+          transaction.get(db.collection(collections.tasks).where('eventId', '==', eventId)),
+        ]);
+        for (const task of taskDocs.docs) transaction.delete(task.ref);
+        for (const stage of stageDocs.docs) transaction.delete(stage.ref);
+        return {stageCount: stageDocs.size, taskCount: taskDocs.size};
+      });
+      await writeAuditLog(db, collections, actor, operation, 'event', eventId, counts);
+      return {ok: true, ...counts};
+    }
+
     case 'stage.import': {
       const taskActor = taskActorFrom(actor);
       requireTaskManager(taskActor);

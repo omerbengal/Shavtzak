@@ -1515,6 +1515,41 @@ void main() {
       expect(files.saved.single.$1, isNotEmpty);
     });
 
+    testWidgets('deleting everything takes two confirms', (tester) async {
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await tester.tap(find.byKey(const Key('stages-delete-all')));
+      await tester.pumpAndSettle();
+      await tester
+          .tap(find.byKey(const Key('stages-delete-all-first-confirm')));
+      await tester.pumpAndSettle();
+      expect(repository.calls, isEmpty);
+      expect(
+        find.text('האם את/ה בטוח בטוח מאוד מאוד שצריך למחוק את כל המידע על '
+            'המחזור הזה?'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('stages-delete-all-confirm')));
+      await tester.pumpAndSettle();
+      expect(repository.calls, ['deleteAllStages:${event.id}']);
+    });
+
+    testWidgets('cancelling the first warning deletes nothing',
+        (tester) async {
+      await pumpScreen(tester, user: admin, tasks: [mine]);
+      await tester.tap(find.byKey(const Key('stages-delete-all')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stages-delete-all-first-cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('stages-delete-all-confirm')), findsNothing);
+      expect(repository.calls, isEmpty);
+    });
+
+    testWidgets('a member gets no delete-all', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      await openTab(tester, 'כל השלבים');
+      expect(find.byKey(const Key('stages-delete-all')), findsNothing);
+    });
+
     testWidgets('a member gets no download', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
       await openTab(tester, 'כל השלבים');

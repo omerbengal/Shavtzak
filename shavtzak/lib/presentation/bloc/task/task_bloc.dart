@@ -200,6 +200,17 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
         ),
       ),
     );
+    on<DeleteAllStages>(
+      (event, emit) => _run(
+        event.completion,
+        () => _repository.deleteAllStages(event.eventId),
+        awaited: _AwaitedWrite(
+          'stagesDeleteAll',
+          (board) =>
+              board.stages.every((stage) => stage.eventId != event.eventId),
+        ),
+      ),
+    );
     on<CreateTask>(
       (event, emit) => _run(
         event.completion,

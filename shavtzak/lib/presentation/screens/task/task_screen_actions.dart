@@ -221,6 +221,55 @@ mixin TaskScreenActions<T extends StatefulWidget> on State<T> {
     );
   }
 
+  /// Deletes every stage and task of [board]'s event, behind two warnings.
+  Future<void> deleteAllStages(EventTaskBoard board) async {
+    Logger.action('tap:stagesDeleteAll', {
+      'stages': board.stages.length,
+      'tasks': board.tasks.length,
+    });
+    final first = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת כל השלבים והמשימות'),
+          content: Text(
+            'למחוק את כל ${board.stages.length} השלבים ואת כל '
+            '${board.tasks.length} המשימות של "${board.event.name}"? '
+            'לא ניתן לשחזר.',
+          ),
+          actions: [
+            TextButton(
+              key: const Key('stages-delete-all-first-cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              key: const Key('stages-delete-all-first-confirm'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('המשך'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (first != true || !mounted) return;
+    final eventId = board.event.id;
+    await showConfirmDeleteDialog(
+      context,
+      title: 'אישור אחרון',
+      message: 'האם את/ה בטוח בטוח מאוד מאוד שצריך למחוק את כל המידע על '
+          'המחזור הזה?',
+      keyPrefix: 'stages-delete-all',
+      onDelete: () => sendTaskEvent(
+        (completion) => DeleteAllStages(eventId, completion: completion),
+      ),
+    );
+  }
+
   Future<void> createTask(Event event, Stage stage, TeamMember user) {
     Logger.action('tap:taskAdd');
     return showTaskFormModal(

@@ -557,6 +557,9 @@ abstract class DatabaseInterface {
   /// Delete a stage and every task under it (task managers only)
   Future<void> deleteStage(String stageId);
 
+  /// Deletes every stage and every task of [eventId] (task managers only)
+  Future<void> deleteAllStages(String eventId);
+
   /// Creates every stage of [stages] and their tasks in one go, for an event
   /// that has no stages yet. All or nothing.
   Future<void> importStages(String eventId, List<ImportedStage> stages);

@@ -91,6 +91,10 @@ class FakeTaskRepository extends Fake implements TaskRepository {
   Future<void> deleteStage(String stageId) => _record('deleteStage:$stageId');
 
   @override
+  Future<void> deleteAllStages(String eventId) =>
+      _record('deleteAllStages:$eventId');
+
+  @override
   Future<void> importStages(String eventId, List<ImportedStage> stages) =>
       _record('importStages:$eventId:${stages.length}');
 

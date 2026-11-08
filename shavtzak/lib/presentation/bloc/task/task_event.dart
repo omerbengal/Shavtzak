@@ -66,6 +66,17 @@ class DeleteStage extends TaskEvent {
   List<Object?> get props => [stageId];
 }
 
+/// Delete every stage of an event and every task under them.
+class DeleteAllStages extends TaskEvent {
+  final String eventId;
+  final CrudActionCompleter? completion;
+
+  const DeleteAllStages(this.eventId, {this.completion});
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
 class CreateTask extends TaskEvent {
   final TaskItem task;
   final CrudActionCompleter? completion;

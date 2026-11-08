@@ -750,6 +750,17 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                           ),
                         ),
                       ),
+                      IconButton(
+                        key: const Key('stages-delete-all'),
+                        tooltip: 'מחיקת כל השלבים והמשימות',
+                        onPressed: () => deleteAllStages(board),
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 20,
+                          color: Colors.red.shade700,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ],
                   )
                 : null,

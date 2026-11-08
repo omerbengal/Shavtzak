@@ -1421,6 +1421,14 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
+  Future<void> deleteAllStages(String eventId) => _runFuture(
+        op: 'deleteAllStages',
+        ctx: {'collection': 'stages', 'eventId': eventId},
+        countOf: (_) => null,
+        action: () => _inner.deleteAllStages(eventId),
+      );
+
+  @override
   Future<void> importStages(String eventId, List<ImportedStage> stages) =>
       _runFuture(
         op: 'importStages',

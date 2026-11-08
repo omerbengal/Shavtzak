@@ -2674,6 +2674,11 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> deleteAllStages(String eventId) async {
+    await _invokeMutation('stage.deleteAll', payload: {'eventId': eventId});
+  }
+
+  @override
   Future<void> importStages(String eventId, List<ImportedStage> stages) async {
     await _invokeMutation(
       'stage.import',

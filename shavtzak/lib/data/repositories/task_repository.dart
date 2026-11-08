@@ -117,6 +117,10 @@ class TaskRepository {
   /// Deletes the stage and every task under it.
   Future<void> deleteStage(String stageId) => _database.deleteStage(stageId);
 
+  /// Deletes every stage of the event and every task under them.
+  Future<void> deleteAllStages(String eventId) =>
+      _database.deleteAllStages(eventId);
+
   Future<void> importStages(String eventId, List<ImportedStage> stages) =>
       _database.importStages(eventId, stages);
 
