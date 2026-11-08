@@ -9,6 +9,7 @@ import '../../../../core/utils/task_schedule.dart';
 import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/team_member.dart';
+import '../../../widgets/rtl_arrow_keys.dart';
 import '../../event/widgets/event_time_field.dart';
 import '../task_style.dart';
 
@@ -54,7 +55,8 @@ class _TextValueEditorState extends State<TextValueEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final field = TextField(
+    final field = RtlArrowKeys(
+        child: TextField(
       key: const Key('edit-text'),
       controller: _controller,
       focusNode: _focus,
@@ -72,7 +74,7 @@ class _TextValueEditorState extends State<TextValueEditor> {
       ),
       onChanged: widget.onChanged,
       onSubmitted: widget.multiline ? null : (_) => widget.onSubmit(),
-    );
+    ));
     if (!widget.multiline) return field;
     return CallbackShortcuts(
       bindings: {
@@ -297,7 +299,8 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
+          RtlArrowKeys(
+              child: TextField(
             key: const Key('edit-assignee-search'),
             autofocus: true,
             decoration: const InputDecoration(
@@ -307,7 +310,7 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
               border: OutlineInputBorder(),
             ),
             onChanged: (value) => setState(() => _query = value),
-          ),
+          )),
           if (members.isEmpty)
             const Padding(
               padding: EdgeInsets.all(12),
@@ -474,7 +477,8 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
                 Expanded(
                   child: Focus(
                     onKeyEvent: (_, event) => _onKey(index, event),
-                    child: TextField(
+                    child: RtlArrowKeys(
+                        child: TextField(
                       key: Key('edit-subtask-$index'),
                       controller: line.controller,
                       focusNode: line.focus,
@@ -486,7 +490,7 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
                       ),
                       onChanged: (_) => _report(),
                       onSubmitted: (_) => _insertAfter(index),
-                    ),
+                    )),
                   ),
                 ),
                 IconButton(
@@ -594,7 +598,7 @@ class _ContactsEditorState extends State<ContactsEditor> {
     bool phone = false,
     bool autofocus = false,
   }) {
-    return TextField(
+    final field = TextField(
       key: key,
       controller: controller,
       autofocus: autofocus,
@@ -607,6 +611,8 @@ class _ContactsEditorState extends State<ContactsEditor> {
       ),
       onChanged: (_) => _report(),
     );
+    // A phone number reads left to right, so its arrows already point right.
+    return phone ? field : RtlArrowKeys(child: field);
   }
 
   @override
@@ -623,8 +629,8 @@ class _ContactsEditorState extends State<ContactsEditor> {
               children: [
                 Expanded(
                   flex: 3,
-                  child: _field(_lines[index].name, 'שם',
-                      Key('edit-contact-name-$index'),
+                  child: _field(
+                      _lines[index].name, 'שם', Key('edit-contact-name-$index'),
                       autofocus: index == _lines.length - 1),
                 ),
                 const SizedBox(width: 6),
