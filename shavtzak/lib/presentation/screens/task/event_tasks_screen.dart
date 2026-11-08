@@ -1134,6 +1134,12 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                 runSpacing: 8,
                 children: [
                   FilledButton.icon(
+                    key: const Key('tasks-copy-cycle'),
+                    onPressed: () => copyFromCycle(event, user),
+                    icon: const Icon(Icons.copy_all),
+                    label: const Text('העתקה ממחזור קודם'),
+                  ),
+                  OutlinedButton.icon(
                     key: const Key('tasks-import'),
                     onPressed: () => importFromExcel(event, user),
                     icon: const Icon(Icons.upload_file),

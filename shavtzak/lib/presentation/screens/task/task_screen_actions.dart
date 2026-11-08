@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/debug/logger.dart';
 import '../../../core/services/task_import_files.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/task_cycle_copy.dart';
 import '../../../core/utils/task_import/task_import_template.dart';
 import '../../../core/utils/task_progress.dart';
 import '../../../data/repositories/task_repository.dart';
@@ -17,6 +18,7 @@ import '../../bloc/task/task_bloc.dart';
 import 'widgets/assignee_update_dialog.dart';
 import 'widgets/confirm_delete_dialog.dart';
 import 'widgets/stage_form_modal.dart';
+import 'widgets/task_cycle_copy_dialog.dart';
 import 'widgets/task_form_modal.dart';
 import 'widgets/task_import_dialog.dart';
 import 'widgets/task_sync_dialog.dart';
@@ -113,6 +115,39 @@ mixin TaskScreenActions<T extends StatefulWidget> on State<T> {
       ..showSnackBar(SnackBar(
         content: Text(
           'יובאו ${result.stages.length} שלבים ו-${result.taskCount} משימות',
+        ),
+      ));
+  }
+
+  /// "העתקה ממחזור קודם": fills [event], which has no stages yet, with every
+  /// stage and task of an earlier דו יומי event the person picks.
+  Future<void> copyFromCycle(Event event, TeamMember user) async {
+    Logger.action('tap:tasksCopyCycle');
+    final state = context.read<TaskBloc>().state;
+    if (state is! TasksLoaded) return;
+    final sources = cycleSources(
+      events: state.events,
+      stages: state.stages,
+      tasks: state.tasks,
+      targetEventId: event.id,
+    );
+    final result = await showTaskCycleCopyDialog(
+      context,
+      target: event,
+      sources: sources,
+      assignees: context.read<TaskRepository>().watchEventAssignees(event.id),
+      currentUser: user,
+      now: actionTime,
+      onImport: (stages) => sendTaskEvent(
+        (completion) => ImportStages(event.id, stages, completion: completion),
+      ),
+    );
+    if (result == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(
+          'הועתקו ${result.stages.length} שלבים ו-${result.taskCount} משימות',
         ),
       ));
   }

@@ -204,8 +204,8 @@ abstract final class TaskStyle {
   static const double editTimeWidth = 88;
   // While a task is dragged, holding it this close to the list's top or
   // bottom scrolls the list, faster nearer the edge.
-  static const double editDragEdge = 64;
-  static const double editDragMaxSpeed = 1200; // px per second
+  static const double editDragEdge = 80;
+  static const double editDragMaxSpeed = 3000; // px per second
   static const double editMenuWidth = 36;
   static const double editAvatarSize = 26;
   static const double editAssigneesMaxHeight = 280;

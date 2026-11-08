@@ -1381,13 +1381,71 @@ void main() {
     testWidgets('a manager sees import and template on an event without stages',
         (tester) async {
       await pumpScreen(tester, user: admin, tasks: const [], stages: const []);
+      expect(find.byKey(const Key('tasks-copy-cycle')), findsOneWidget);
       expect(find.byKey(const Key('tasks-import')), findsOneWidget);
       expect(find.byKey(const Key('tasks-import-template')), findsOneWidget);
+    });
+
+    testWidgets('a manager copies an earlier מחזור into an empty event',
+        (tester) async {
+      final previous = buildEvent(
+        id: 'e0',
+        name: 'דו יומי קודם',
+        startDate: DateTime(2026, 9, 1),
+        endDate: DateTime(2026, 9, 2),
+      );
+      final oldStage = buildStage(
+        id: 'old-st',
+        eventId: 'e0',
+        title: 'קליטה',
+        date: DateTime(2026, 9, 2),
+      );
+      final harness = await pumpEventTasks(
+        tester,
+        user: admin,
+        size: tallPhoneSize,
+        board: TaskBoard(
+          tasks: [
+            buildTask(
+                id: 'kept', eventId: 'e0', stageId: 'old-st', title: 'שילוט'),
+            buildTask(
+              id: 'orphan',
+              eventId: 'e0',
+              stageId: 'old-st',
+              title: 'פירוק',
+              assigneeIds: const ['gone'],
+            ),
+          ],
+          events: [event, previous],
+          stages: [oldStage],
+          members: [dana, yoav],
+        ),
+        assignees: {
+          'e1': [dana, yoav],
+        },
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tasks-copy-cycle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('cycle-copy-source-e0')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Text>(find.byKey(const Key('cycle-copy-summary'))).data,
+        '1 שלבים · 2 משימות',
+      );
+      expect(find.byKey(const Key('cycle-copy-given-to-you')), findsOneWidget);
+      expect(find.text('• פירוק'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('cycle-copy-confirm')));
+      await tester.pumpAndSettle();
+      expect(harness.repository.calls, contains('importStages:e1:1'));
+      expect(find.byKey(const Key('cycle-copy-dialog')), findsNothing);
+      expect(find.text('הועתקו 1 שלבים ו-2 משימות'), findsOneWidget);
     });
 
     testWidgets('a member gets no import buttons', (tester) async {
       await pumpScreen(tester, user: dana, tasks: const [], stages: const []);
       expect(find.text('אין עדיין שלבים לאירוע זה'), findsOneWidget);
+      expect(find.byKey(const Key('tasks-copy-cycle')), findsNothing);
       expect(find.byKey(const Key('tasks-import')), findsNothing);
       expect(find.byKey(const Key('tasks-import-template')), findsNothing);
     });
