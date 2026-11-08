@@ -89,7 +89,7 @@ class _StageEditCardState extends State<StageEditCard> {
                         14, 12, ctx.wide ? 22 : 16, 12),
                     child: _buildHeading(),
                   ),
-                  const Divider(height: 1, color: TaskStyle.editTaskCardBorder),
+                  const Divider(height: 1, color: TaskStyle.editCardHeaderLine),
                   // The stage's tasks sit in a tinted well, each a white
                   // card of its own, so where one ends and the next starts
                   // is plain.
