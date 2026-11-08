@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <!-- iPhone: the keyboard opens on the first tap of a text field. Loaded
+       first so it sees the address before the app rewrites it. -->
+  <script src="ios_keyboard_fix.js"></script>
   <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
@@ -259,6 +262,7 @@
 
   <!-- No waiting on fonts here: main.dart registers Rubik with the engine
        before the first frame, and the splash stays up until then. -->
+  <!-- iPhone: the keyboard opens on the first tap of a text field. -->
   <script src="flutter_bootstrap.js" async></script>
 
   <script>
