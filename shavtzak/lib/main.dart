@@ -35,6 +35,7 @@ import 'core/services/backend_api_service.dart';
 import 'core/services/drive_service.dart';
 import 'core/services/audit_context_service.dart';
 import 'core/services/app_version_service.dart';
+import 'presentation/widgets/keep_focused_field_visible.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
 import 'presentation/widgets/version_blocking_overlay.dart';
 
@@ -528,6 +529,9 @@ class MyApp extends StatelessWidget {
                         title: 'שבצק - ניהול צוות',
                         theme: AppTheme.lightTheme,
                         debugShowCheckedModeBanner: false,
+                        builder: (context, child) => KeepFocusedFieldVisible(
+                          child: child ?? const SizedBox.shrink(),
+                        ),
                         routerConfig: AppRouter.router(
                           userSelectionBloc: userSelectionBloc,
                           userSelectionRepository: userSelectionRepository,

@@ -214,6 +214,7 @@ class _EventTimeFieldState extends State<EventTimeField> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 8),
                   child: Row(
+                    textDirection: TextDirection.rtl,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       TextButton(

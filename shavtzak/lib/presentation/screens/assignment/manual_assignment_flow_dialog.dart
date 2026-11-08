@@ -174,6 +174,14 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           ),
         ),
         actions: [
+          // Cancel button - role selection auto-completes the assignment
+          TextButton(
+            onPressed: () {
+              Logger.action('tap:cancel:manualAssignmentFlow', {'step': _currentStep});
+              Navigator.of(context).pop();
+            },
+            child: const Text('ביטול', style: TextStyle(color: Colors.red)),
+          ),
           // Back button (only show on steps 2 and 3)
           if (_currentStep == 1 || _currentStep == 2)
             TextButton(
@@ -201,14 +209,6 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
               },
               child: const Text('אחורה'),
             ),
-          // Cancel button - role selection auto-completes the assignment
-          TextButton(
-            onPressed: () {
-              Logger.action('tap:cancel:manualAssignmentFlow', {'step': _currentStep});
-              Navigator.of(context).pop();
-            },
-            child: const Text('ביטול', style: TextStyle(color: Colors.red)),
-          ),
         ],
       ),
     );

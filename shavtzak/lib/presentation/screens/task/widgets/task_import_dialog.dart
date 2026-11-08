@@ -225,12 +225,6 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
                     alignment: WrapAlignment.end,
                     spacing: 8,
                     children: [
-                      TextButton.icon(
-                        key: const Key('task-import-pick-again'),
-                        onPressed: _isImporting ? null : _pickAgain,
-                        icon: const Icon(Icons.upload_file),
-                        label: const Text('בחירת קובץ אחר'),
-                      ),
                       TextButton(
                         key: const Key('task-import-cancel'),
                         onPressed: _isImporting
@@ -239,6 +233,12 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
                         child: Text(
                           result?.isValid ?? false ? 'ביטול' : 'סגירה',
                         ),
+                      ),
+                      TextButton.icon(
+                        key: const Key('task-import-pick-again'),
+                        onPressed: _isImporting ? null : _pickAgain,
+                        icon: const Icon(Icons.upload_file),
+                        label: const Text('בחירת קובץ אחר'),
                       ),
                       FilledButton(
                         key: const Key('task-import-confirm'),

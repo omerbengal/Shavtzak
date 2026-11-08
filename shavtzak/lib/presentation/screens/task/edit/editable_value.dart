@@ -317,18 +317,18 @@ class _EditSheetState<T> extends State<_EditSheet<T>> {
               Row(
                 children: [
                   Expanded(
-                    child: FilledButton(
-                      key: const Key('edit-value-save'),
-                      onPressed: _save,
-                      child: const Text('שמירה'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
                     child: OutlinedButton(
                       key: const Key('edit-value-cancel'),
                       onPressed: () => Navigator.of(context).pop(),
                       child: const Text('ביטול'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      key: const Key('edit-value-save'),
+                      onPressed: _save,
+                      child: const Text('שמירה'),
                     ),
                   ),
                 ],

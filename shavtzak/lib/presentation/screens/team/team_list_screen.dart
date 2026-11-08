@@ -4311,6 +4311,7 @@ class _AdminRepeatingConstraintDialogState
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
+                  textDirection: TextDirection.rtl,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton(
@@ -4844,6 +4845,7 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
+                  textDirection: TextDirection.rtl,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton(
@@ -6520,6 +6522,13 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              TextButton(
+                onPressed: () {
+                  Logger.action('tap:cancel:vehicleInfoDialog');
+                  Navigator.of(context).pop();
+                },
+                child: const Text('ביטול'),
+              ),
               // Clear details button
               if (_vehicleNumberController.text.isNotEmpty ||
                   _selectedManufacturer != null ||
@@ -6542,13 +6551,6 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                   label: const Text('נקה פרטים',
                       style: TextStyle(color: Colors.red)),
                 ),
-              TextButton(
-                onPressed: () {
-                  Logger.action('tap:cancel:vehicleInfoDialog');
-                  Navigator.of(context).pop();
-                },
-                child: const Text('ביטול'),
-              ),
               ElevatedButton(
                 onPressed: _isDirty
                     ? () {

@@ -226,17 +226,17 @@ class _TaskSyncDialogState extends State<_TaskSyncDialog> {
                     alignment: WrapAlignment.end,
                     spacing: 8,
                     children: [
-                      TextButton.icon(
-                        key: const Key('task-sync-pick-again'),
-                        onPressed: _isSaving ? null : _pickAgain,
-                        icon: const Icon(Icons.upload_file),
-                        label: const Text('בחירת קובץ אחר'),
-                      ),
                       TextButton(
                         key: const Key('task-sync-cancel'),
                         onPressed:
                             _isSaving ? null : () => Navigator.of(context).pop(),
                         child: Text(_canSave ? 'ביטול' : 'סגירה'),
+                      ),
+                      TextButton.icon(
+                        key: const Key('task-sync-pick-again'),
+                        onPressed: _isSaving ? null : _pickAgain,
+                        icon: const Icon(Icons.upload_file),
+                        label: const Text('בחירת קובץ אחר'),
                       ),
                       FilledButton(
                         key: const Key('task-sync-confirm'),

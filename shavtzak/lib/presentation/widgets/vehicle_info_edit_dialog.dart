@@ -249,6 +249,15 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              TextButton(
+                onPressed: _isSaving
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:vehicleInfoDialog');
+                        Navigator.of(context).pop();
+                      },
+                child: const Text('ביטול'),
+              ),
               if (_vehicleNumberController.text.isNotEmpty ||
                   _selectedManufacturer != null ||
                   _modelController.text.isNotEmpty ||
@@ -274,15 +283,6 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                     style: TextStyle(color: Colors.red),
                   ),
                 ),
-              TextButton(
-                onPressed: _isSaving
-                    ? null
-                    : () {
-                        Logger.action('tap:cancel:vehicleInfoDialog');
-                        Navigator.of(context).pop();
-                      },
-                child: const Text('ביטול'),
-              ),
               ElevatedButton(
                 onPressed: (_isDirty && !_isSaving)
                     ? () {

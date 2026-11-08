@@ -189,12 +189,6 @@ class _CycleCopyDialogState extends State<_CycleCopyDialog> {
                     alignment: WrapAlignment.end,
                     spacing: 8,
                     children: [
-                      if (!picking)
-                        TextButton(
-                          key: const Key('cycle-copy-back'),
-                          onPressed: _isSaving ? null : () => _pick(null),
-                          child: const Text('מחזור אחר'),
-                        ),
                       TextButton(
                         key: const Key('cycle-copy-cancel'),
                         onPressed: _isSaving
@@ -202,6 +196,12 @@ class _CycleCopyDialogState extends State<_CycleCopyDialog> {
                             : () => Navigator.of(context).pop(),
                         child: const Text('ביטול'),
                       ),
+                      if (!picking)
+                        TextButton(
+                          key: const Key('cycle-copy-back'),
+                          onPressed: _isSaving ? null : () => _pick(null),
+                          child: const Text('מחזור אחר'),
+                        ),
                       if (!picking)
                         FilledButton(
                           key: const Key('cycle-copy-confirm'),
