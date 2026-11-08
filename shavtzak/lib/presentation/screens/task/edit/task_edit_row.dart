@@ -259,8 +259,23 @@ class TaskEditCard extends StatelessWidget {
   final TaskItem task;
   final EditContext ctx;
 
+  /// A long press picks the card up to drag it onto another stage; a tap
+  /// still edits the value under it, and a swipe still scrolls.
   @override
   Widget build(BuildContext context) {
+    return LongPressDraggable<TaskItem>(
+      key: Key('edit-task-longdrag-${task.id}'),
+      data: task,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: _DragFeedback(title: task.title),
+      childWhenDragging: Opacity(opacity: 0.4, child: _card(context)),
+      onDragUpdate: (details) => ctx.onDragMoved(details.globalPosition),
+      onDragEnd: (_) => ctx.onDragDone(),
+      child: _card(context),
+    );
+  }
+
+  Widget _card(BuildContext context) {
     final values = _TaskValues(task, ctx);
     return _TaskCardBox(
       task: task,

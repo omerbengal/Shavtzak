@@ -49,7 +49,7 @@ class _StageEditCardState extends State<StageEditCard> {
   Widget build(BuildContext context) {
     final card = DragTarget<TaskItem>(
       onWillAcceptWithDetails: (details) =>
-          ctx.wide && details.data.stageId != stage.id,
+          details.data.stageId != stage.id,
       onAcceptWithDetails: (details) => ctx.onMoveTask(details.data, stage),
       builder: (context, candidates, _) => _buildCard(candidates.isNotEmpty),
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -235,6 +236,31 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
     expect(repo.updatedTasks.single.stageId, 'dinner');
+  });
+
+  testWidgets('on a phone a long press drags a task onto another stage',
+      (tester) async {
+    final repo = await pump(tester, size: const Size(400, 5000));
+    final card = find.byKey(const Key('edit-task-card-ws-later'));
+    await tester.ensureVisible(card);
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(tester.getCenter(card));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await gesture
+        .moveTo(tester.getCenter(find.byKey(const Key('edit-stage-dinner'))));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(repo.updatedTasks.single.stageId, 'dinner');
+  });
+
+  testWidgets('on a phone a short tap still edits, not drags',
+      (tester) async {
+    final repo = await pump(tester, size: const Size(400, 5000));
+    await tester.tap(find.text('חלוקת ערכות למשתתפים'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-value-sheet')), findsOneWidget);
+    expect(repo.updatedTasks, isEmpty);
   });
 
   testWidgets('holding a dragged task at the bottom edge scrolls down, '
