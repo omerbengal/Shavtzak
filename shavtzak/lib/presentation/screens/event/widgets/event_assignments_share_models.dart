@@ -6,7 +6,6 @@ class EventAssignmentsShareData {
   final String locationLine;
   final String eventNoteLine;
   final List<EventAssignmentsShareSection> sections;
-  final List<EventAssignmentsShareNote> notes;
 
   const EventAssignmentsShareData({
     required this.eventName,
@@ -16,7 +15,6 @@ class EventAssignmentsShareData {
     required this.locationLine,
     this.eventNoteLine = '',
     required this.sections,
-    required this.notes,
   });
 }
 
@@ -36,23 +34,14 @@ class EventAssignmentsShareSection {
 
 class EventAssignmentsShareRow {
   final String memberName;
-  final int? noteNumber;
+
+  /// The member's note (custom hours and/or the assignment note), shown
+  /// right under the name.
+  final String? noteText;
 
   const EventAssignmentsShareRow({
     required this.memberName,
-    this.noteNumber,
-  });
-}
-
-class EventAssignmentsShareNote {
-  final int number;
-  final String memberName;
-  final String text;
-
-  const EventAssignmentsShareNote({
-    required this.number,
-    required this.memberName,
-    required this.text,
+    this.noteText,
   });
 }
 

@@ -29,10 +29,6 @@ class EventAssignmentsShareCard extends StatelessWidget {
               _Header(data: data),
               const SizedBox(height: 24),
               ..._buildSections(data.sections),
-              if (data.notes.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                _NotesSection(notes: data.notes),
-              ],
               const SizedBox(height: 20),
               const Text(
                 'נוצר משבצק',
@@ -195,13 +191,11 @@ class _ShareSection extends StatelessWidget {
           ],
           if (section.rows.isNotEmpty) ...[
             const SizedBox(height: 14),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                for (final row in section.rows) _ShareRow(row: row),
-              ],
-            ),
+            for (final row in section.rows)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _ShareRow(row: row),
+              ),
           ],
           if (section.hasChildren) ...[
             const SizedBox(height: 14),
@@ -223,109 +217,72 @@ class _ShareRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 320),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            '•',
-            style: TextStyle(
-              color: Color(0xFF475569),
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              height: 1.25,
-            ),
+    final note = row.noteText?.trim() ?? '';
+    final name = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          '•',
+          style: TextStyle(
+            color: Color(0xFF475569),
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            height: 1.25,
           ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              row.memberName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF111827),
-                fontSize: 21,
-                fontWeight: FontWeight.w400,
-                height: 1.25,
-              ),
-            ),
-          ),
-          if (row.noteNumber != null) ...[
-            const SizedBox(width: 3),
-            Transform.translate(
-              offset: const Offset(0, -7),
-              child: Text(
-                '(${row.noteNumber})',
-                style: const TextStyle(
-                  color: Color(0xFF475569),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _NotesSection extends StatelessWidget {
-  final List<EventAssignmentsShareNote> notes;
-
-  const _NotesSection({required this.notes});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.purple.shade50,
-        border: Border.all(color: Colors.purple.shade200),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'הערות',
-            style: TextStyle(
-              color: Colors.purple.shade800,
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            row.memberName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF111827),
               fontSize: 21,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w400,
               height: 1.25,
             ),
           ),
-          const SizedBox(height: 8),
-          for (final note in notes)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '(${note.number}) ${note.memberName}: ',
-                      style: TextStyle(
-                        color: Colors.purple.shade800,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    TextSpan(text: note.text),
-                  ],
-                ),
+        ),
+      ],
+    );
+
+    if (note.isEmpty) {
+      return name;
+    }
+
+    // The member's note (hours and/or the assignment note) sits right under
+    // their name.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        name,
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsetsDirectional.only(start: 16),
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50,
+                border: Border.all(color: Colors.purple.shade200),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                note,
                 style: TextStyle(
                   color: Colors.purple.shade900,
-                  fontSize: 19,
+                  fontSize: 16,
                   fontWeight: FontWeight.w500,
-                  height: 1.45,
+                  height: 1.35,
                 ),
               ),
             ),
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 }

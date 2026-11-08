@@ -4,7 +4,8 @@ import 'package:shavtzak/presentation/screens/event/widgets/event_assignments_sh
 import 'package:shavtzak/presentation/screens/event/widgets/event_assignments_share_models.dart';
 
 void main() {
-  testWidgets('renders event details, names, note refs, and full notes',
+  testWidgets(
+      'renders event details, names, and each member note under the name',
       (tester) async {
     final data = EventAssignmentsShareData(
       eventName: 'טקס פתיחה',
@@ -16,16 +17,12 @@ void main() {
         EventAssignmentsShareSection(
           title: 'מפקד אירוע',
           rows: [
-            EventAssignmentsShareRow(memberName: 'נועה כהן', noteNumber: 1),
+            EventAssignmentsShareRow(
+              memberName: 'נועה כהן',
+              noteText: 'מגיעה ישירות מהכניסה הראשית בלי קיצור של הטקסט.',
+            ),
             EventAssignmentsShareRow(memberName: 'דניאל לוי'),
           ],
-        ),
-      ],
-      notes: const [
-        EventAssignmentsShareNote(
-          number: 1,
-          memberName: 'נועה כהן',
-          text: 'מגיעה ישירות מהכניסה הראשית בלי קיצור של הטקסט.',
         ),
       ],
     );
@@ -47,14 +44,20 @@ void main() {
     expect(find.text('נא להביא חולצות ייצוגיות.'), findsOneWidget);
     expect(find.text('מפקד אירוע'), findsOneWidget);
     expect(find.text('נועה כהן'), findsOneWidget);
-    expect(find.text('(1)'), findsOneWidget);
+    final noteFinder =
+        find.text('מגיעה ישירות מהכניסה הראשית בלי קיצור של הטקסט.');
+    expect(noteFinder, findsOneWidget);
+    // The note sits right under its member's name, with no numbered list.
     expect(
-      find.textContaining(
-        'נועה כהן: מגיעה ישירות מהכניסה הראשית',
-        findRichText: true,
-      ),
-      findsOneWidget,
+      tester.getTopLeft(noteFinder).dy,
+      greaterThan(tester.getBottomLeft(find.text('נועה כהן')).dy),
     );
+    expect(
+      tester.getTopLeft(noteFinder).dy,
+      lessThan(tester.getTopLeft(find.text('דניאל לוי')).dy),
+    );
+    expect(find.text('(1)'), findsNothing);
+    expect(find.text('הערות'), findsNothing);
     expect(find.textContaining('טלפון'), findsNothing);
     expect(find.textContaining('ממתין'), findsNothing);
     expect(find.textContaining('נדחה'), findsNothing);
@@ -63,8 +66,8 @@ void main() {
         tester.widget<Text>(find.text('נא להביא חולצות ייצוגיות.'));
     expect(eventNoteText.style?.color, Colors.amber.shade900);
 
-    final notesTitle = tester.widget<Text>(find.text('הערות'));
-    expect(notesTitle.style?.color, Colors.purple.shade800);
+    final noteText = tester.widget<Text>(noteFinder);
+    expect(noteText.style?.color, Colors.purple.shade900);
 
     expect(find.byType(Divider), findsOneWidget);
 

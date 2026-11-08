@@ -34,6 +34,5 @@ EventAssignmentsShareData _shareData() {
         ],
       ),
     ],
-    notes: [],
   );
 }

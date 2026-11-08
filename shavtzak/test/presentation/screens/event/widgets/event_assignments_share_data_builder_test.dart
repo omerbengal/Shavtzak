@@ -61,17 +61,12 @@ void main() {
       expect(data.sections.map((section) => section.title),
           ['מפקד אירוע', 'חובשים']);
       expect(data.sections[0].rows.single.memberName, 'נועה כהן');
-      expect(data.sections[0].rows.single.noteNumber, 1);
+      expect(data.sections[0].rows.single.noteText, 'מגיעה מהכניסה הראשית.');
       expect(data.sections[1].rows.map((row) => row.memberName),
           ['אורי ברק', 'מיכל ישראלי']);
-      expect(data.sections[1].rows.last.noteNumber, 2);
-      expect(
-          data.notes
-              .map((note) => '${note.number}:${note.memberName}:${note.text}'),
-          [
-            '1:נועה כהן:מגיעה מהכניסה הראשית.',
-            '2:מיכל ישראלי:הערה מלאה שלא מתקצרת גם כאשר היא ארוכה יחסית.',
-          ]);
+      expect(data.sections[1].rows.first.noteText, isNull);
+      expect(data.sections[1].rows.last.noteText,
+          'הערה מלאה שלא מתקצרת גם כאשר היא ארוכה יחסית.');
     });
 
     test('builds label-grouped data with unlabeled assignments last', () {
@@ -153,7 +148,7 @@ void main() {
             groupingMode: EventAssignmentsGroupingMode.role,
           );
 
-      test('a member with hours and notes gets both in one numbered note', () {
+      test('a member with hours and notes gets both in one note', () {
         final data = buildFor([
           _assignment(
             id: 'a1',
@@ -166,13 +161,11 @@ void main() {
           ),
         ]);
 
-        expect(data.sections.single.rows.single.noteNumber, 1);
-        expect(data.notes.single.number, 1);
-        expect(data.notes.single.memberName, 'דנה כהן');
-        expect(data.notes.single.text, 'שעות 14:00–23:00 · מביא ציוד');
+        expect(data.sections.single.rows.single.noteText,
+            'שעות 14:00–23:00 · מביא ציוד');
       });
 
-      test('a member with hours but no notes still gets a numbered note', () {
+      test('a member with hours but no notes still gets a note', () {
         final data = buildFor([
           _assignment(
             id: 'a1',
@@ -184,13 +177,12 @@ void main() {
           ),
         ]);
 
-        expect(data.sections.single.rows.single.noteNumber, 1);
-        expect(data.notes.single.text, 'שעות 14:00–02:00');
+        expect(data.sections.single.rows.single.noteText, 'שעות 14:00–02:00');
       });
 
-      test('notes are numbered in visual order across members with and '
-          'without hours, and a member without hours keeps their note as is',
-          () {
+      test(
+          'each member carries their own note, and a member without hours '
+          'keeps their note as is', () {
         final data = buildFor([
           _assignment(
             id: 'a1',
@@ -217,12 +209,8 @@ void main() {
 
         expect(
           data.sections.single.rows
-              .map((row) => '${row.memberName}:${row.noteNumber}'),
-          ['אורי ברק:1', 'גל לוי:null', 'דנה כהן:2'],
-        );
-        expect(
-          data.notes.map((note) => '${note.number}:${note.text}'),
-          ['1:מגיע מוקדם', '2:שעות 14:00–23:00'],
+              .map((row) => '${row.memberName}:${row.noteText}'),
+          ['אורי ברק:מגיע מוקדם', 'גל לוי:null', 'דנה כהן:שעות 14:00–23:00'],
         );
       });
 
@@ -247,7 +235,8 @@ void main() {
           ),
         ]);
 
-        expect(data.notes.map((note) => note.text), ['מגיע מוקדם']);
+        expect(data.sections.single.rows.map((row) => row.noteText),
+            ['מגיע מוקדם', null]);
       });
     });
 

@@ -14,28 +14,10 @@ class EventAssignmentsShareDataBuilder {
     required List<AssignmentLabel> labels,
     required EventAssignmentsGroupingMode groupingMode,
   }) {
-    final notes = <EventAssignmentsShareNote>[];
-    var nextNoteNumber = 1;
-
     EventAssignmentsShareRow buildRow(Assignment assignment) {
-      final memberName = assignment.teamMember!.name;
-      final noteText = _noteText(assignment, event);
-      int? noteNumber;
-
-      if (noteText != null) {
-        noteNumber = nextNoteNumber++;
-        notes.add(
-          EventAssignmentsShareNote(
-            number: noteNumber,
-            memberName: memberName,
-            text: noteText,
-          ),
-        );
-      }
-
       return EventAssignmentsShareRow(
-        memberName: memberName,
-        noteNumber: noteNumber,
+        memberName: assignment.teamMember!.name,
+        noteText: _noteText(assignment, event),
       );
     }
 
@@ -62,12 +44,11 @@ class EventAssignmentsShareDataBuilder {
       locationLine: _formatLocationLine(event.location),
       eventNoteLine: event.comments.trim(),
       sections: sections,
-      notes: notes,
     );
   }
 
-  /// What the numbered note under the picture says about [assignment]'s
-  /// member, or null when it has nothing to say.
+  /// The note shown right under [assignment]'s member in the picture, or
+  /// null when there is nothing to say.
   ///
   /// A member with hours of their own gets a note even without one: 'שעות
   /// 14:00–23:00' (days by weekday, see [formatCustomHoursByWeekday]),
