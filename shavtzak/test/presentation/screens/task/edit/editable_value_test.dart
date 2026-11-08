@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/presentation/screens/task/edit/editable_value.dart';
 import 'package:shavtzak/presentation/screens/task/edit/value_editors.dart';
 
@@ -137,5 +138,37 @@ void main() {
     expect(find.byKey(const Key('edit-subtask-1')), findsOneWidget);
     await tester.enterText(find.byKey(const Key('edit-subtask-1')), 'ב');
     expect(reported.last, ['א', 'ב']);
+  });
+
+  testWidgets(
+      'subtasks editor: dragging the first line below the second '
+      'swaps them', (tester) async {
+    final reported = <List<String>>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SubtasksEditor(
+          initial: const [
+            Subtask(id: 'a', title: 'א'),
+            Subtask(id: 'b', title: 'ב'),
+            Subtask(id: 'c', title: 'ג'),
+          ],
+          onChanged: (list) => reported.add([for (final s in list) s.title]),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final handle = find.byIcon(Icons.drag_indicator).first;
+    final rowHeight =
+        tester.getSize(find.byKey(const Key('edit-subtask-0'))).height;
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump();
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(Offset(0, rowHeight * 0.2));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(reported.last, ['ב', 'א', 'ג']);
   });
 }

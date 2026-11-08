@@ -449,8 +449,13 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
           itemCount: _lines.length,
-          onReorderItem: (from, to) {
-            setState(() => _lines.insert(to, _lines.removeAt(from)));
+          // `onReorder`, not the newer `onReorderItem`: CI builds with
+          // Flutter 3.41 (.github/workflows/web.yml), which lacks it.
+          // ignore: deprecated_member_use
+          onReorder: (from, to) {
+            // `to` counts the moved line still in place.
+            final target = to > from ? to - 1 : to;
+            setState(() => _lines.insert(target, _lines.removeAt(from)));
             _report();
           },
           itemBuilder: (context, index) {
