@@ -62,10 +62,19 @@ class _StageEditCardState extends State<StageEditCard> {
 
   Widget _buildCard(bool dropping) {
     final highlighted = ctx.highlightId == stage.id;
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(TaskStyle.editCardRadius),
         boxShadow: TaskStyle.editCardShadow,
+      ),
+      // A dark frame round the whole stage, its details and its tasks, drawn
+      // on top so it frames everything inside the rounded corners.
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(TaskStyle.editCardRadius),
+        border: Border.all(
+          color: TaskStyle.editStageBorder,
+          width: TaskStyle.editStageBorderWidth,
+        ),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(TaskStyle.editCardRadius),

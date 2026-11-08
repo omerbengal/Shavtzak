@@ -192,6 +192,9 @@ abstract final class TaskStyle {
   ];
   static const double editMaxWidth = 1280;
   static const double editCardRadius = 14;
+  // The frame round a whole stage card.
+  static const Color editStageBorder = Color(0xFF111827);
+  static const double editStageBorderWidth = 2;
   static const double editCardEdgeWidth = 5;
   static const double editCardGap = 16;
   static const double editRadius = 6;
