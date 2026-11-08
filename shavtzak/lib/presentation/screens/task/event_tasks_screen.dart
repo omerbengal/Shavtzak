@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/debug/logger.dart';
 import '../../../core/debug/search_action_logger.dart';
+import '../../../core/services/environment_service.dart';
 import '../../../core/services/task_import_files.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -21,6 +22,7 @@ import '../../../domain/entities/team_member.dart';
 import '../../bloc/task/task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/debug_log_long_press.dart';
 import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
 import 'row_hold.dart';
@@ -356,7 +358,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
               ),
               onChanged: _onQueryChanged,
             )
-          : _buildTitle(event),
+          : _buildTitle(event, user),
       automaticallyImplyLeading: false,
       actions: [
         if (_searching)
@@ -378,8 +380,21 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     );
   }
 
-  /// The event's name and days, with a mark saying they open the list.
-  Widget _buildTitle(Event? event) {
+  /// The event's name and days, with a mark saying they open the list. A
+  /// long press shows the bug button that copies the debug log, as a long
+  /// press on the active bottom tab does elsewhere.
+  Widget _buildTitle(Event? event, TeamMember user) {
+    return DebugLogLongPress(
+      route: widget.place.eventRoute(widget.eventId),
+      userDisplay: user.name,
+      isAdmin: user.isAdmin,
+      env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
+      heroTag: 'debug-share-mini-fab-du-yomi',
+      child: _buildTitleButton(event),
+    );
+  }
+
+  Widget _buildTitleButton(Event? event) {
     return Semantics(
       button: true,
       label: 'לרשימת אירועי הדו יומי',

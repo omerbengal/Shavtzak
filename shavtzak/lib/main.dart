@@ -35,6 +35,7 @@ import 'core/services/backend_api_service.dart';
 import 'core/services/drive_service.dart';
 import 'core/services/audit_context_service.dart';
 import 'core/services/app_version_service.dart';
+import 'core/services/firestore_reconnect_service.dart';
 import 'presentation/widgets/keep_focused_field_visible.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
 import 'presentation/widgets/version_blocking_overlay.dart';
@@ -64,6 +65,19 @@ import 'core/theme/app_theme.dart';
 
 // Debug
 import 'core/debug/logging_bloc_observer.dart';
+
+/// Reopens Firestore's live connection once it is shown to be stuck.
+final FirestoreReconnectService _firestoreReconnect = FirestoreReconnectService(
+  disableNetwork: () => FirebaseFirestore.instance.disableNetwork(),
+  enableNetwork: () => FirebaseFirestore.instance.enableNetwork(),
+  // One small document every member can read (the version gate's), read
+  // from the server: on the web this goes through the same connection the
+  // listeners use, so an answer proves it is alive.
+  probe: () => FirebaseFirestore.instance
+      .collection('utilities')
+      .doc('information')
+      .get(const GetOptions(source: Source.server)),
+);
 
 Future<void> main() async {
   // CRITICAL: Capture the initial URL hash BEFORE any Flutter code runs (web only)
@@ -176,6 +190,20 @@ Future<void> _initialize(Future<void> fontsReady) async {
     // Initialize realtime app version guard (non-blocking).
     _timed('AppVersionService.init',
         () => AppVersionService.instance.initialize());
+
+    // Check the live connection when the app comes back into view or the
+    // device comes back online; reconnect only if the check gets no answer.
+    if (kIsWeb) {
+      _firestoreReconnect.watchVisibility();
+      var wasOnline = ConnectivityService.instance.isOnline;
+      ConnectivityService.instance.addListener(() {
+        final isOnline = ConnectivityService.instance.isOnline;
+        if (isOnline && !wasOnline) {
+          unawaited(_firestoreReconnect.check('online'));
+        }
+        wasOnline = isOnline;
+      });
+    }
 
     final database = _timed('FirestoreDatabase creation',
         () => LoggingDatabase(FirestoreDatabase()));
@@ -445,7 +473,13 @@ class MyApp extends StatelessWidget {
               // members who never follow the link pay nothing for it.
               BlocProvider(
                 create: (context) {
-                  return TaskBloc(repository: context.read<TaskRepository>());
+                  return TaskBloc(
+                    repository: context.read<TaskRepository>(),
+                    // A save that never came back through the stream means
+                    // the live connection is stuck: reopen it.
+                    onStaleStream: (reason) =>
+                        unawaited(_firestoreReconnect.reconnect(reason)),
+                  );
                 },
               ),
               BlocProvider(

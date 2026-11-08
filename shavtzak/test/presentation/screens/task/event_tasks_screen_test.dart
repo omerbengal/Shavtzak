@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:excel/excel.dart' show DateCellValue;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/services/environment_service.dart';
 import 'package:shavtzak/core/services/task_import_files.dart';
@@ -221,6 +221,40 @@ void main() {
       );
       expect(find.byTooltip('הגדרות'), findsNothing);
       expect(find.byKey(const ValueKey('nav_logout_button')), findsNothing);
+    });
+
+    testWidgets('a long press on the title shows the bug button, in both '
+        'places; it copies the log and goes', (tester) async {
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = (call.arguments as Map)['text'] as String?;
+          }
+          return null;
+        },
+      );
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+
+      for (final place in TasksPlace.values) {
+        await pumpScreen(tester, user: admin, tasks: [mine], place: place);
+        expect(find.byKey(const Key('debug-log-mini-fab')), findsNothing);
+
+        await tester.longPress(find.byKey(const Key('tasks-title')));
+        await tester.pump();
+        expect(find.byKey(const Key('debug-log-mini-fab')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('debug-log-mini-fab')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('debug-log-mini-fab')), findsNothing);
+        expect(copied, contains(place.eventRoute('e1')));
+        copied = null;
+        // Let the snackbar go before the next place.
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+      }
     });
 
     testWidgets('every member can open both tabs', (tester) async {

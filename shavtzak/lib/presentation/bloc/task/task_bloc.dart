@@ -4,7 +4,9 @@ import 'dart:developer' as developer;
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
+import '../../../core/debug/logger.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/task_edit_overlay.dart';
 import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/imported_stage.dart';
@@ -119,22 +121,63 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
   // backend and an unrelated stream update cannot undo it meanwhile.
   final Map<String, _PendingProgress> _pending = <String, _PendingProgress>{};
 
+  // Stage and task edits the backend accepted that the stream has not brought
+  // back yet. Laid over [_board], so whoever saved sees their edit at once
+  // even when the stream is slow, or stuck until a reconnect.
+  final EditOverlay<Stage> _stageOverlay = EditOverlay(sameStageEdit);
+  final EditOverlay<TaskItem> _taskOverlay = EditOverlay(sameTaskEdit);
+
+  // Saves the backend accepted, each waiting to show up in the stream.
+  final List<_AwaitedWrite> _awaited = <_AwaitedWrite>[];
+
+  final void Function(String reason)? _onStaleStream;
+  final Duration _staleAfter;
+
   /// [clock] is the current time, injected by tests.
+  ///
+  /// [onStaleStream] is called when a save the backend accepted has not come
+  /// back through the stream within [staleAfter]: the live connection is
+  /// probably stuck, and the caller reconnects it.
   TaskBloc({
     required TaskRepository repository,
     DateTime Function()? clock,
+    void Function(String reason)? onStaleStream,
+    Duration staleAfter = const Duration(seconds: 5),
   })  : _repository = repository,
         _clock = clock ?? DateTime.now,
+        _onStaleStream = onStaleStream,
+        _staleAfter = staleAfter,
         super(const TasksInitial()) {
     on<LoadTasks>(_onLoadTasks);
+    on<_ShowBoard>((event, emit) => _emitBoard(emit));
     on<CreateStage>(
-      (event, emit) =>
-          _run(event.completion, () => _repository.insertStage(event.stage)),
+      (event, emit) => _run(
+        event.completion,
+        () => _repository.insertStage(event.stage),
+        awaited: _AwaitedWrite(
+          'stageCreate',
+          (board) => board.stages.any((stage) => stage.id == event.stage.id),
+        ),
+      ),
     );
-    on<UpdateStage>(
-      (event, emit) =>
-          _run(event.completion, () => _repository.updateStage(event.stage)),
-    );
+    on<UpdateStage>((event, emit) {
+      final stage = event.stage;
+      return _run(
+        event.completion,
+        () => _repository.updateStage(stage),
+        awaited: _AwaitedWrite(
+          'stageUpdate',
+          (board) => board.stages.any(
+            (live) => live.id == stage.id && sameStageEdit(live, stage),
+          ),
+          onTimeout: () => _stageOverlay.failed(stage.id),
+        ),
+        onSuccess: () {
+          _stageOverlay.sent(stage.id, stage);
+          _emitBoard(emit);
+        },
+      );
+    });
     on<ImportStages>(
       (event, emit) => _run(
         event.completion,
@@ -148,20 +191,52 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
       ),
     );
     on<DeleteStage>(
-      (event, emit) =>
-          _run(event.completion, () => _repository.deleteStage(event.stageId)),
+      (event, emit) => _run(
+        event.completion,
+        () => _repository.deleteStage(event.stageId),
+        awaited: _AwaitedWrite(
+          'stageDelete',
+          (board) => board.stages.every((stage) => stage.id != event.stageId),
+        ),
+      ),
     );
     on<CreateTask>(
-      (event, emit) =>
-          _run(event.completion, () => _repository.insertTask(event.task)),
+      (event, emit) => _run(
+        event.completion,
+        () => _repository.insertTask(event.task),
+        awaited: _AwaitedWrite(
+          'taskCreate',
+          (board) => board.tasks.any((task) => task.id == event.task.id),
+        ),
+      ),
     );
-    on<UpdateTask>(
-      (event, emit) =>
-          _run(event.completion, () => _repository.updateTask(event.task)),
-    );
+    on<UpdateTask>((event, emit) {
+      final task = event.task;
+      return _run(
+        event.completion,
+        () => _repository.updateTask(task),
+        awaited: _AwaitedWrite(
+          'taskUpdate',
+          (board) => board.tasks.any(
+            (live) => live.id == task.id && sameTaskEdit(live, task),
+          ),
+          onTimeout: () => _taskOverlay.failed(task.id),
+        ),
+        onSuccess: () {
+          _taskOverlay.sent(task.id, task);
+          _emitBoard(emit);
+        },
+      );
+    });
     on<DeleteTask>(
-      (event, emit) =>
-          _run(event.completion, () => _repository.deleteTask(event.taskId)),
+      (event, emit) => _run(
+        event.completion,
+        () => _repository.deleteTask(event.taskId),
+        awaited: _AwaitedWrite(
+          'taskDelete',
+          (board) => board.tasks.every((task) => task.id != event.taskId),
+        ),
+      ),
     );
     on<ToggleSubtask>(
       (event, emit) => _runProgress(
@@ -219,6 +294,11 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
         onData: (board) {
           _board = board;
           _dropConfirmedProgress(board);
+          _stageOverlay
+              .reconcile({for (final stage in board.stages) stage.id: stage});
+          _taskOverlay
+              .reconcile({for (final task in board.tasks) task.id: task});
+          _settleAwaited(board);
           return _loaded(board);
         },
       );
@@ -241,17 +321,95 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
 
   /// [board] as the screen should show it: with every unconfirmed tick applied.
   TasksLoaded _loaded(TaskBoard board) {
+    final stages = _stageOverlay.isEmpty
+        ? board.stages
+        : [
+            for (final stage in board.stages)
+              _stageOverlay.resolve(stage.id, stage),
+          ];
+    final stagesById = {for (final stage in stages) stage.id: stage};
+    final membersById = {for (final member in board.members) member.id: member};
     return TasksLoaded(
       [
         for (final task in board.tasks)
           _pending.values
               .where((change) => change.taskId == task.id)
-              .fold(task, (shown, change) => change.applyTo(shown)),
+              .fold(
+                _withEdits(task, stagesById, membersById),
+                (shown, change) => change.applyTo(shown),
+              ),
       ],
       events: board.events,
-      stages: board.stages,
+      stages: stages,
       members: board.members,
     );
+  }
+
+  /// [task] with its accepted-but-unseen edit, and its stage as shown.
+  TaskItem _withEdits(
+    TaskItem task,
+    Map<String, Stage> stagesById,
+    Map<String, TeamMember> membersById,
+  ) {
+    if (_taskOverlay.isEmpty && _stageOverlay.isEmpty) return task;
+    final edit = _taskOverlay.resolve(task.id, task);
+    final shown = identical(edit, task)
+        ? task
+        : withTaskEdit(
+            task,
+            edit,
+            assignees: [
+              for (final id in edit.assigneeIds)
+                if (membersById[id] != null) membersById[id]!,
+            ],
+          );
+    final stage = stagesById[shown.stageId];
+    return stage == null || identical(stage, shown.stage)
+        ? shown
+        : shown.copyWith(stage: stage);
+  }
+
+  /// Wait for [write] to show up in the stream. When it has not within
+  /// [_staleAfter], the stream is probably stuck: report it once, and give
+  /// the reconnect as long again before dropping what is laid over the board.
+  void _await(_AwaitedWrite write) {
+    final board = _board;
+    if (board != null && write.isIn(board)) {
+      write.onTimeout?.call();
+      return;
+    }
+    // Nobody to tell: what is laid over the board goes once the stream
+    // carries it.
+    if (_onStaleStream == null) return;
+    _awaited.add(write);
+    write.timer = Timer(_staleAfter, () {
+      if (!_awaited.contains(write)) return;
+      Logger.warning('tasks:staleStream', {'write': write.label});
+      _onStaleStream('tasks:${write.label}');
+      write.timer = Timer(_staleAfter, () {
+        if (!_awaited.remove(write)) return;
+        write.onTimeout?.call();
+        if (!isClosed) add(const _ShowBoard());
+      });
+    });
+  }
+
+  /// Forget every awaited write [board] carries.
+  void _settleAwaited(TaskBoard board) {
+    _awaited.removeWhere((write) {
+      if (!write.isIn(board)) return false;
+      write.timer?.cancel();
+      return true;
+    });
+  }
+
+  @override
+  Future<void> close() {
+    for (final write in _awaited) {
+      write.timer?.cancel();
+    }
+    _awaited.clear();
+    return super.close();
   }
 
   /// Forget the ticks [board] has caught up with. A tick the backend already
@@ -284,6 +442,12 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
     try {
       await action();
       change.isSettled = true;
+      _await(_AwaitedWrite(
+        'progress',
+        (board) => board.tasks.any(
+          (task) => task.id == change.taskId && change.isReflectedIn(task),
+        ),
+      ));
       completeCrudAction(completion, const CrudActionResult.success());
     } catch (error, stackTrace) {
       developer.log(
@@ -305,10 +469,14 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
 
   Future<void> _run(
     CrudActionCompleter? completion,
-    Future<void> Function() action,
-  ) async {
+    Future<void> Function() action, {
+    _AwaitedWrite? awaited,
+    void Function()? onSuccess,
+  }) async {
     try {
       await action();
+      onSuccess?.call();
+      if (awaited != null) _await(awaited);
       completeCrudAction(completion, const CrudActionResult.success());
     } catch (error, stackTrace) {
       developer.log(
@@ -323,4 +491,27 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
       );
     }
   }
+}
+
+/// A save the backend accepted, waiting to show up in the stream.
+class _AwaitedWrite {
+  _AwaitedWrite(this.label, this.isIn, {this.onTimeout});
+
+  /// What was saved, for the log.
+  final String label;
+
+  /// Whether the board, as the stream delivered it, carries the save.
+  final bool Function(TaskBoard board) isIn;
+
+  /// Drops what this save laid over the board. Called once the stream has
+  /// had its chance: right away when it is already in, else after a
+  /// reconnect did not bring it.
+  final void Function()? onTimeout;
+
+  Timer? timer;
+}
+
+/// Re-emit the board, after something laid over it was dropped.
+class _ShowBoard extends TaskEvent {
+  const _ShowBoard();
 }

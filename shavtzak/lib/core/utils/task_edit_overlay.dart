@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 
 import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
+import '../../domain/entities/team_member.dart';
 
 /// Whether [a] and [b] carry the same fields a manager edits on the editing
 /// screen: what `task.update` writes, ignoring ticks and timestamps.
@@ -60,4 +61,33 @@ class EditOverlay<T> {
       return live == null || _same(live, value);
     });
   }
+}
+
+/// [live] with the fields a task edit writes taken from [edit]: title,
+/// description, assembly time, assignees and the subtask list.
+///
+/// Everything else stays as [live] has it, so ticks made meanwhile still show.
+/// A subtask kept by the edit keeps its live tick; a new one starts open.
+/// [assignees] are the members [edit] names, already looked up.
+TaskItem withTaskEdit(
+  TaskItem live,
+  TaskItem edit, {
+  required List<TeamMember> assignees,
+}) {
+  final liveDone = {
+    for (final subtask in live.subtasks) subtask.id: subtask.isDone,
+  };
+  return live.copyWith(
+    stageId: edit.stageId,
+    title: edit.title,
+    description: edit.description,
+    assemblyTime: edit.assemblyTime,
+    clearAssemblyTime: edit.assemblyTime == null,
+    assigneeIds: edit.assigneeIds,
+    assignees: assignees,
+    subtasks: [
+      for (final subtask in edit.subtasks)
+        subtask.copyWith(isDone: liveDone[subtask.id] ?? false),
+    ],
+  );
 }
