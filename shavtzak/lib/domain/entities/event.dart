@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'event_item.dart';
 import 'participant_group.dart';
 import 'slot_annotation.dart';
 
@@ -25,6 +26,8 @@ class Event extends Equatable {
   // Independent of any assignment; shown on empty gaps and carried onto the
   // member when a gap is filled. See docs/superpowers/specs/2026-07-22-*.
   final Map<String, SlotAnnotation> slotAnnotations;
+  // What the event has ("מה יש באירוע"), in the order the admin entered them.
+  final List<EventItem> items;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -59,6 +62,7 @@ class Event extends Equatable {
     this.categoryId,
     required this.roleRequirements,
     this.slotAnnotations = const {},
+    this.items = const [],
     required this.createdAt,
     required this.updatedAt,
     this.driveFolderId,
@@ -176,6 +180,7 @@ class Event extends Equatable {
     String? categoryId,
     Map<String, int>? roleRequirements,
     Map<String, SlotAnnotation>? slotAnnotations,
+    List<EventItem>? items,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? driveFolderId,
@@ -205,6 +210,7 @@ class Event extends Equatable {
       categoryId: clearCategoryId ? null : (categoryId ?? this.categoryId),
       roleRequirements: roleRequirements ?? this.roleRequirements,
       slotAnnotations: slotAnnotations ?? this.slotAnnotations,
+      items: items ?? this.items,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       driveFolderId: driveFolderId ?? this.driveFolderId,
@@ -236,6 +242,7 @@ class Event extends Equatable {
         categoryId,
         roleRequirements,
         slotAnnotations,
+        items,
         createdAt,
         updatedAt,
         driveFolderId,
