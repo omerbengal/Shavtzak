@@ -56,3 +56,45 @@ FocusNode createRtlCursorFixedFocusNode(TextEditingController controller) {
   addRtlCursorFix(focusNode, controller);
   return focusNode;
 }
+
+/// A text controller for a right-to-left field of several lines.
+///
+/// A click in the empty space past the end of a right-to-left line (to its
+/// left) belongs at the end of that line. Flutter's text engine answers
+/// "right after the line's line break" instead, which is the start of the
+/// NEXT line, and the caret jumps there. See [keepCaretOnItsLine].
+class RtlTextEditingController extends TextEditingController {
+  RtlTextEditingController({super.text});
+
+  @override
+  set value(TextEditingValue newValue) {
+    super.value = keepCaretOnItsLine(newValue);
+  }
+}
+
+/// [value] with a caret that the engine put right after a line break, for a
+/// click past the end of the line before it, stepped back before that line
+/// break.
+///
+/// The engine marks that answer as leaning back towards the clicked line
+/// ([TextAffinity.upstream]). Nothing else puts a caret right after a line
+/// break leaning back: the arrow keys, typing and a click on the next line
+/// itself all lean forward. So that mark alone tells the two apart.
+TextEditingValue keepCaretOnItsLine(TextEditingValue value) {
+  const lineFeed = 0x0A;
+  final selection = value.selection;
+  if (!selection.isValid ||
+      !selection.isCollapsed ||
+      selection.affinity != TextAffinity.upstream) {
+    return value;
+  }
+  final offset = selection.extentOffset;
+  if (offset < 1 ||
+      offset > value.text.length ||
+      value.text.codeUnitAt(offset - 1) != lineFeed) {
+    return value;
+  }
+  return value.copyWith(
+    selection: TextSelection.collapsed(offset: offset - 1),
+  );
+}

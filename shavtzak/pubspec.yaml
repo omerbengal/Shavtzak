@@ -107,7 +107,12 @@ flutter:
   assets:
     - assets/images/
 
-  # Custom fonts for Hebrew support
+  # Custom fonts for Hebrew support.
+  # These files are not the plain downloads: each carries an added zero-width
+  # glyph for the line break, without which the caret and the selection are
+  # drawn off the letters in Hebrew text of several lines. After replacing
+  # one, run tool/patch_font_line_break.py
+  # (test/core/fonts/rubik_line_break_test.dart fails until you do).
   fonts:
     - family: Rubik
       fonts:

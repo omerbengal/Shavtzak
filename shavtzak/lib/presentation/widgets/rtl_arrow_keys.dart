@@ -15,14 +15,22 @@ import 'package:flutter/widgets.dart';
 /// them into Flutter's own caret moves with the direction swapped, so ← goes
 /// forward in the text (left on screen) and → goes back (right on screen).
 /// Character, word and line moves, with and without Shift, are all covered.
-/// Up and down, Home and End are left alone: they are not mirrored.
+///
+/// With [multiline], ↑ and ↓ become Flutter's own moves too. The hidden input
+/// lays the text out in its own font and direction, so its lines are not the
+/// lines on screen, and left to it ↓ lands the caret in a column the user
+/// never aimed at. In a field of one line they are left alone, as are Home
+/// and End everywhere.
 ///
 /// Only on the web and only under a right-to-left [Directionality]; elsewhere
 /// it is the child itself.
 class RtlArrowKeys extends StatelessWidget {
-  const RtlArrowKeys({super.key, required this.child});
+  const RtlArrowKeys({super.key, required this.child, this.multiline = false});
 
   final Widget child;
+
+  /// Whether the field holds several lines.
+  final bool multiline;
 
   @override
   Widget build(BuildContext context) {
@@ -30,13 +38,19 @@ class RtlArrowKeys extends StatelessWidget {
       return child;
     }
     return Shortcuts(
-        shortcuts: rtlArrowShortcuts(defaultTargetPlatform), child: child);
+      shortcuts: rtlArrowShortcuts(defaultTargetPlatform, multiline: multiline),
+      child: child,
+    );
   }
 }
 
 /// The arrow keys, mirrored, for [platform] (the word and line modifiers
-/// differ between the Mac and everything else). Public for tests.
-Map<ShortcutActivator, Intent> rtlArrowShortcuts(TargetPlatform platform) {
+/// differ between the Mac and everything else), plus ↑ and ↓ when
+/// [multiline]. Public for tests.
+Map<ShortcutActivator, Intent> rtlArrowShortcuts(
+  TargetPlatform platform, {
+  bool multiline = false,
+}) {
   const left = LogicalKeyboardKey.arrowLeft;
   const right = LogicalKeyboardKey.arrowRight;
   // On screen, ← is forward in a right-to-left text.
@@ -94,5 +108,14 @@ Map<ShortcutActivator, Intent> rtlArrowShortcuts(TargetPlatform platform) {
             forward: f, collapseSelection: false),
       ),
     },
+    if (multiline)
+      for (final shift in const [false, true]) ...{
+        SingleActivator(LogicalKeyboardKey.arrowUp, shift: shift):
+            ExtendSelectionVerticallyToAdjacentLineIntent(
+                forward: false, collapseSelection: !shift),
+        SingleActivator(LogicalKeyboardKey.arrowDown, shift: shift):
+            ExtendSelectionVerticallyToAdjacentLineIntent(
+                forward: true, collapseSelection: !shift),
+      },
   };
 }

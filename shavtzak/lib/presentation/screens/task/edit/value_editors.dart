@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
@@ -42,8 +44,9 @@ class TextValueEditor extends StatefulWidget {
 }
 
 class _TextValueEditorState extends State<TextValueEditor> {
+  // Keeps a click past the end of a line on that line.
   late final TextEditingController _controller =
-      TextEditingController(text: widget.initial);
+      RtlTextEditingController(text: widget.initial);
   late final FocusNode _focus = createRtlCursorFixedFocusNode(_controller);
 
   @override
@@ -56,25 +59,31 @@ class _TextValueEditorState extends State<TextValueEditor> {
   @override
   Widget build(BuildContext context) {
     final field = RtlArrowKeys(
+        multiline: widget.multiline,
         child: TextField(
-      key: const Key('edit-text'),
-      controller: _controller,
-      focusNode: _focus,
-      autofocus: true,
-      minLines: widget.multiline ? 2 : 1,
-      maxLines: widget.multiline ? null : 1,
-      keyboardType:
-          widget.multiline ? TextInputType.multiline : TextInputType.text,
-      textInputAction:
-          widget.multiline ? TextInputAction.newline : TextInputAction.done,
-      decoration: InputDecoration(
-        isDense: true,
-        hintText: widget.hint,
-        border: const OutlineInputBorder(),
-      ),
-      onChanged: widget.onChanged,
-      onSubmitted: widget.multiline ? null : (_) => widget.onSubmit(),
-    ));
+          key: const Key('edit-text'),
+          controller: _controller,
+          focusNode: _focus,
+          autofocus: true,
+          minLines: widget.multiline ? 2 : 1,
+          maxLines: widget.multiline ? null : 1,
+          keyboardType:
+              widget.multiline ? TextInputType.multiline : TextInputType.text,
+          textInputAction:
+              widget.multiline ? TextInputAction.newline : TextInputAction.done,
+          // Not Flutter's default on an iPhone and in Safari, which stretches
+          // a selection towards the line's edge and in Hebrew stretches the
+          // wrong way: one selected word was highlighted up to the field's
+          // left edge, over the words after it.
+          selectionWidthStyle: ui.BoxWidthStyle.tight,
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: widget.hint,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: widget.onChanged,
+          onSubmitted: widget.multiline ? null : (_) => widget.onSubmit(),
+        ));
     if (!widget.multiline) return field;
     return CallbackShortcuts(
       bindings: {
@@ -452,8 +461,8 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
           itemCount: _lines.length,
-          // `onReorder`, not the newer `onReorderItem`: CI builds with
-          // Flutter 3.41 (.github/workflows/web.yml), which lacks it.
+          // `onReorder`, not the newer `onReorderItem`, which Flutter 3.41
+          // lacks (the site was built with it until November 2026).
           // ignore: deprecated_member_use
           onReorder: (from, to) {
             // `to` counts the moved line still in place.

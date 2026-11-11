@@ -228,6 +228,59 @@
         font-size: 13px;
       }
     }
+
+    /* iPhone and iPad only (nothing else knows -webkit-touch-callout):
+       touches inside a text field go to Flutter, not to the browser's hidden
+       text input that Flutter lays over the focused field. Left to receive
+       them, Safari also moves the caret for the same touch, by its own
+       layout of the text (another font, direction and line height than the
+       ones on screen), and its answer wins: a tap put the caret lines away
+       from the finger. Other browsers are spared this by Flutter itself,
+       which cancels their mouse events on that input. The keyboard still
+       opens, because ios_keyboard_fix.js focuses the input inside the tap. */
+    @supports (-webkit-touch-callout: none) {
+      .flt-text-editing {
+        pointer-events: none;
+      }
+
+      /* That input still draws the iPhone's own selection highlight (the grey
+         one) and places its Cut / Copy / Paste menu, by its own layout of the
+         text. Give it the layout that is on screen, or the grey lands beside
+         the word Flutter highlighted:
+         - the app's font, which Flutter loads for its canvas only, so the
+           page itself did not have it;
+         - the text's direction, which Flutter turns into an alignment only;
+         - the 3 px Flutter keeps free at the right for the caret.
+         Its line height comes from Flutter itself, from 3.47 on. */
+      @font-face {
+        font-family: 'Rubik';
+        font-weight: 400;
+        src: url('assets/assets/fonts/Rubik-Regular.ttf') format('truetype');
+      }
+      @font-face {
+        font-family: 'Rubik';
+        font-weight: 500;
+        src: url('assets/assets/fonts/Rubik-Medium.ttf') format('truetype');
+      }
+      @font-face {
+        font-family: 'Rubik';
+        font-weight: 600;
+        src: url('assets/assets/fonts/Rubik-Medium.ttf') format('truetype');
+      }
+      @font-face {
+        font-family: 'Rubik';
+        font-weight: 700;
+        src: url('assets/assets/fonts/Rubik-Bold.ttf') format('truetype');
+      }
+      .flt-text-editing {
+        box-sizing: border-box;
+        padding-right: 3px !important;
+      }
+      /* Right-aligned is how Flutter marks a right-to-left field. */
+      .flt-text-editing[style*="text-align: right"] {
+        direction: rtl;
+      }
+    }
   </style>
 
   <!-- GitHub Pages Hash Routing Fix -->

@@ -60,12 +60,38 @@ void main() {
       expect(lookup(mac, const SingleActivator(left, control: true)), isNull);
     });
 
-    test('up and down are left alone', () {
+    test('up and down are left alone in a field of one line', () {
       final map = rtlArrowShortcuts(TargetPlatform.windows);
       expect(lookup(map, const SingleActivator(LogicalKeyboardKey.arrowUp)),
           isNull);
       expect(lookup(map, const SingleActivator(LogicalKeyboardKey.arrowDown)),
           isNull);
+    });
+
+    test('in a field of several lines, up and down move by the lines shown',
+        () {
+      for (final platform in [TargetPlatform.windows, TargetPlatform.macOS]) {
+        final map = rtlArrowShortcuts(platform, multiline: true);
+        final up =
+            lookup(map, const SingleActivator(LogicalKeyboardKey.arrowUp))
+                as ExtendSelectionVerticallyToAdjacentLineIntent;
+        final down =
+            lookup(map, const SingleActivator(LogicalKeyboardKey.arrowDown))
+                as ExtendSelectionVerticallyToAdjacentLineIntent;
+        expect(up.forward, isFalse);
+        expect(down.forward, isTrue);
+        expect(up.collapseSelection, isTrue);
+        expect(down.collapseSelection, isTrue);
+
+        final shiftDown = lookup(
+            map,
+            const SingleActivator(LogicalKeyboardKey.arrowDown,
+                shift: true)) as ExtendSelectionVerticallyToAdjacentLineIntent;
+        expect(shiftDown.forward, isTrue);
+        expect(shiftDown.collapseSelection, isFalse);
+        // Left and right are still there.
+        expect(forwardOf(lookup(map, const SingleActivator(left))), isTrue);
+      }
     });
   });
 
