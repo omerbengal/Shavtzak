@@ -47,7 +47,7 @@ import type {
   ConstraintSyncReport,
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
-import {normalizeEventItems} from './event_items';
+import {applyEventItemCatalogueMutation, normalizeEventItemChoices} from './event_items';
 import {
   TaskActor,
   TaskDoc,
@@ -2961,7 +2961,7 @@ function eventDocFromJson(event: Record<string, unknown>): Record<string, unknow
       event['inviteAllPermanentWhenUnassigned'] ?? false,
     // Absent key (an old build) -> undefined -> stripped, so the partial
     // update keeps the stored items; an explicit [] clears them.
-    items: normalizeEventItems(event['items']),
+    items: normalizeEventItemChoices(event['items']),
   });
 }
 
@@ -6604,6 +6604,30 @@ async function executeMutation(
       await writeAuditLog(db, collections, actor, operation, 'category', auditEntityId, auditDetails, {
         before: auditBefore,
         after: auditAfter,
+      });
+      return {ok: true};
+    }
+
+    // "מה יש באירוע" items: a managed list beside the categories.
+    case 'eventItem.insert':
+    case 'eventItem.update':
+    case 'eventItem.delete':
+    case 'eventItem.permanentlyDelete':
+    case 'eventItem.restore': {
+      requireAdmin(actor);
+      const listsRef = db.collection('utilities').doc('Lists');
+      const listsData = await getUtilitiesListsDoc();
+      const catalogue = Array.isArray(listsData['EventItems'])
+        ? (listsData['EventItems'] as Array<Record<string, unknown>>)
+        : [];
+      const change = applyEventItemCatalogueMutation(catalogue, operation, payload, new Date().toISOString());
+      await listsRef.set({EventItems: change.items}, {merge: true});
+      await writeAuditLog(db, collections, actor, operation, 'eventItem', change.entityId, {
+        count: change.items.length,
+        name: change.after?.['name'] ?? change.before?.['name'],
+      }, {
+        before: change.before,
+        after: change.after,
       });
       return {ok: true};
     }
