@@ -61,6 +61,22 @@ Category makeCategory({
 // 2026-07-05 is a Sunday.
 final today = DateTime(2026, 7, 5);
 
+EventItem _catalogueItem(String id, String name, String? emoji, int order) =>
+    EventItem(
+      id: id,
+      name: name,
+      emoji: emoji,
+      sortOrder: order,
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+    );
+
+final _catalogue = [
+  _catalogueItem('scan', 'סריקה', '🤳🏻', 0),
+  _catalogueItem('menorah', 'חנוכייה', '🕎', 1),
+  _catalogueItem('band', 'להקה', null, 2),
+];
+
 void main() {
   group('buildShareEvent — time semantics (mirror of calendar sync)', () {
     test('assembly, gathering and end lines when no actual-show time', () {
@@ -155,22 +171,34 @@ void main() {
   });
 
   group('buildShareEvent — location, past, continuation', () {
-    test('items line: emoji, or the name without one; none on continuation',
-        () {
+    test(
+        'items line: emoji, or the name without one; only items switched on '
+        'for the calendar; none on continuation', () {
       final event = makeEvent().copyWith(items: const [
-        EventItem(name: 'סריקה', emoji: '🤳🏻'),
-        EventItem(name: 'חנוכייה', emoji: '🕎'),
-        EventItem(name: 'להקה'),
+        EventItemChoice(itemId: 'band'),
+        EventItemChoice(itemId: 'menorah'),
+        EventItemChoice(itemId: 'scan'),
+        EventItemChoice(itemId: 'gone'),
       ]);
       expect(
         CalendarShareDataBuilder.buildShareEvent(event,
-                today: today, isContinuation: false)
+                today: today, isContinuation: false, eventItems: _catalogue)
             .itemsLine,
         '🤳🏻, 🕎, להקה',
       );
+      final menorahOff = event.copyWith(items: const [
+        EventItemChoice(itemId: 'band'),
+        EventItemChoice(itemId: 'menorah', showInCalendarExport: false),
+      ]);
+      expect(
+        CalendarShareDataBuilder.buildShareEvent(menorahOff,
+                today: today, isContinuation: false, eventItems: _catalogue)
+            .itemsLine,
+        'להקה',
+      );
       expect(
         CalendarShareDataBuilder.buildShareEvent(event,
-                today: today, isContinuation: true)
+                today: today, isContinuation: true, eventItems: _catalogue)
             .itemsLine,
         '',
       );

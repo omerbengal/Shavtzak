@@ -27,7 +27,7 @@ class Event extends Equatable {
   // member when a gap is filled. See docs/superpowers/specs/2026-07-22-*.
   final Map<String, SlotAnnotation> slotAnnotations;
   // What the event has ("מה יש באירוע"), in the order the admin entered them.
-  final List<EventItem> items;
+  final List<EventItemChoice> items;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -180,7 +180,7 @@ class Event extends Equatable {
     String? categoryId,
     Map<String, int>? roleRequirements,
     Map<String, SlotAnnotation>? slotAnnotations,
-    List<EventItem>? items,
+    List<EventItemChoice>? items,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? driveFolderId,

@@ -3,6 +3,7 @@ import '../../../../../core/utils/event_items.dart';
 import '../../../../../core/utils/event_sorting.dart';
 import '../../../../../domain/entities/category.dart';
 import '../../../../../domain/entities/event.dart';
+import '../../../../../domain/entities/event_item.dart';
 import '../../../../widgets/map_location_picker.dart';
 import 'calendar_share_models.dart';
 
@@ -21,6 +22,7 @@ class CalendarShareDataBuilder {
     required CalendarShareMode mode,
     required DateTime today,
     required List<Category> categories,
+    List<EventItem> eventItems = const [],
   }) {
     final start = _dateOnly(rangeStart);
     final end = _dateOnly(rangeEnd);
@@ -63,6 +65,7 @@ class CalendarShareDataBuilder {
           events: active,
           today: today,
           colorByCategoryId: colorByCategoryId,
+          eventItems: eventItems,
         ),
         legend: legend,
       );
@@ -76,6 +79,7 @@ class CalendarShareDataBuilder {
         events: active,
         today: today,
         colorByCategoryId: colorByCategoryId,
+        eventItems: eventItems,
       ),
       legend: legend,
     );
@@ -93,6 +97,7 @@ class CalendarShareDataBuilder {
     required List<Event> events,
     required DateTime today,
     required Map<String, int> colorByCategoryId,
+    required List<EventItem> eventItems,
   }) {
     final weeks = <CalendarShareWeek>[];
     var cursor = gridStart;
@@ -114,7 +119,7 @@ class CalendarShareDataBuilder {
           isPast: date.isBefore(today),
           events: inRange
               ? _eventsForDay(
-                  events, date, rangeStart, today, colorByCategoryId)
+                  events, date, rangeStart, today, colorByCategoryId, eventItems)
               : const [],
         ));
       }
@@ -130,6 +135,7 @@ class CalendarShareDataBuilder {
     required List<Event> events,
     required DateTime today,
     required Map<String, int> colorByCategoryId,
+    required List<EventItem> eventItems,
   }) {
     final months = <CalendarShareMonth>[];
     var year = rangeStart.year;
@@ -149,6 +155,7 @@ class CalendarShareDataBuilder {
           events: events,
           today: today,
           colorByCategoryId: colorByCategoryId,
+          eventItems: eventItems,
         ),
       ));
       month++;
@@ -171,6 +178,7 @@ class CalendarShareDataBuilder {
     DateTime rangeStart,
     DateTime today,
     Map<String, int> colorByCategoryId,
+    List<EventItem> eventItems,
   ) {
     final allDayResults = <CalendarShareEvent>[];
     final timedResults = <CalendarShareEvent>[];
@@ -188,6 +196,7 @@ class CalendarShareDataBuilder {
         categoryColorValue: event.categoryId == null
             ? null
             : colorByCategoryId[event.categoryId],
+        eventItems: eventItems,
       );
       (_isAllDayEvent(event) ? allDayResults : timedResults).add(shareEvent);
     }
@@ -237,6 +246,7 @@ class CalendarShareDataBuilder {
     required DateTime today,
     required bool isContinuation,
     int? categoryColorValue,
+    List<EventItem> eventItems = const [],
   }) {
     final isPast = _dateOnly(event.endDate).isBefore(today);
     if (isContinuation) {
@@ -255,7 +265,12 @@ class CalendarShareDataBuilder {
       timeLines: _buildTimeLines(event),
       participantsLine: _buildParticipantsLine(event),
       locationLine: location,
-      itemsLine: eventItemsCompactLine(event.items) ?? '',
+      itemsLine: eventItemsCompactLine(eventItemsOf(
+            event.items,
+            eventItems,
+            where: (choice) => choice.showInCalendarExport,
+          )) ??
+          '',
       isPast: isPast,
       categoryColorValue: categoryColorValue,
     );

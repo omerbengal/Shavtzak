@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
+import '../../domain/entities/event_item.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
@@ -2579,6 +2580,53 @@ class FirestoreDatabase implements DatabaseInterface {
           categories.where((cat) => !cat.isArchived).toList();
       return activeCategories;
     });
+  }
+
+  // ========== Event items ("מה יש באירוע") ==========
+  // Stored like the categories: utilities/Lists, EventItems field (array).
+
+  @override
+  Stream<List<EventItem>> watchEventItems() {
+    return _firestore
+        .collection('utilities')
+        .doc('Lists')
+        .snapshots()
+        .map<List<EventItem>>(
+            (snapshot) => EventItem.listFromJson(snapshot.data()?['EventItems']))
+        .handleError((error) {
+      throw DatabaseException('Failed to watch event items: $error');
+    });
+  }
+
+  @override
+  Future<void> insertEventItem(EventItem item) =>
+      _eventItemMutation('eventItem.insert', {'eventItem': item.toJson()});
+
+  @override
+  Future<void> updateEventItem(EventItem item) =>
+      _eventItemMutation('eventItem.update', {'eventItem': item.toJson()});
+
+  @override
+  Future<void> deleteEventItem(String id) =>
+      _eventItemMutation('eventItem.delete', {'eventItemId': id});
+
+  @override
+  Future<void> permanentlyDeleteEventItem(String id) =>
+      _eventItemMutation('eventItem.permanentlyDelete', {'eventItemId': id});
+
+  @override
+  Future<void> restoreEventItem(String id) =>
+      _eventItemMutation('eventItem.restore', {'eventItemId': id});
+
+  Future<void> _eventItemMutation(
+    String operation,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      await _invokeMutation(operation, payload: payload);
+    } catch (e) {
+      throw DatabaseException('Failed $operation: $e');
+    }
   }
 
   // ========== Tasks ==========

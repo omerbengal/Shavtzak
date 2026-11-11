@@ -4,6 +4,7 @@ import '../../../../../core/debug/logger.dart';
 import '../../../../../core/utils/israel_calendar.dart';
 import '../../../../../domain/entities/category.dart';
 import '../../../../../domain/entities/event.dart';
+import '../../../../../domain/entities/event_item.dart';
 import '../../../../widgets/date_picker_dialog.dart';
 import 'calendar_share_data_builder.dart';
 import 'calendar_share_models.dart';
@@ -21,6 +22,7 @@ Future<void> startCalendarShareFlow(
   BuildContext context,
   List<Event> events, {
   required List<Category> categories,
+  List<EventItem> eventItems = const [],
 }) async {
   DateTime? initialStart;
   DateTime? initialEnd;
@@ -78,6 +80,7 @@ Future<void> startCalendarShareFlow(
       mode: mode,
       today: IsraelCalendar.calendarDay(DateTime.now()),
       categories: categories,
+      eventItems: eventItems,
     );
     await showDialog(
       context: context,

@@ -82,7 +82,7 @@ Real-time updates use `emit.forEach` with Firestore streams for live data synchr
 
 **Collections**:
 - `teamMembers` - Team member records
-- `events` - Event records. `items: [{name, emoji|null}]` = "מה יש באירוע" (shown on the event picture, the calendar picture and the member's card; no catalogue — the form suggests names from other events with the emoji they last had). An `event.update` without the `items` key keeps the stored items (old builds)
+- `events` - Event records. `items: [{itemId, showInEventExport, showInCalendarExport}]` = "מה יש באירוע": ids into the managed list `utilities/Lists` → `EventItems` (`{id, name, emoji|null, sortOrder, isArchived}`, managed in "ניהול מה יש באירוע" on the events screen like the categories, backend `eventItem.*`, `EventItemBloc`). The switches pick the event picture / the calendar picture; the member's card shows every item. An archived item stays on its events; a deleted one is skipped. An `event.update` without the `items` key keeps the stored items (old builds)
 - `assignments` - Assignment records (junction table with foreign keys)
 - `tasks` - Task records for the דו יומי task screens (subtasks embedded as an array; `stageId` + optional `assemblyTime`)
 - `stages` - Stages of a דו יומי event (`eventId`, `date` as a plain `yyyy-MM-dd`, contacts embedded); deleting a stage deletes its tasks
@@ -468,7 +468,7 @@ _subscription = _repository.watchItems().listen(
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (2085 passing as of 2026-11-11; Functions: 472). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
+- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (2090 passing as of 2026-11-11; Functions: 479). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
 

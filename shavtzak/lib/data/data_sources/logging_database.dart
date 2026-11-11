@@ -9,6 +9,7 @@ import '../../core/constants/constraint_status.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
+import '../../domain/entities/event_item.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
@@ -1378,6 +1379,55 @@ class LoggingDatabase implements DatabaseInterface {
         op: 'watchActiveCategories',
         ctx: const {'collection': 'categories', 'filter': 'active'},
         inner: () => _inner.watchActiveCategories(),
+      );
+
+  // ===== Event items =====
+
+  @override
+  Stream<List<EventItem>> watchEventItems() => _wrapStream(
+        op: 'watchEventItems',
+        ctx: const {'collection': 'eventItems'},
+        inner: () => _inner.watchEventItems(),
+      );
+
+  @override
+  Future<void> insertEventItem(EventItem item) => _runFuture(
+        op: 'insertEventItem',
+        ctx: {'collection': 'eventItems', 'id': item.id},
+        countOf: (_) => null,
+        action: () => _inner.insertEventItem(item),
+      );
+
+  @override
+  Future<void> updateEventItem(EventItem item) => _runFuture(
+        op: 'updateEventItem',
+        ctx: {'collection': 'eventItems', 'id': item.id},
+        countOf: (_) => null,
+        action: () => _inner.updateEventItem(item),
+      );
+
+  @override
+  Future<void> deleteEventItem(String id) => _runFuture(
+        op: 'deleteEventItem',
+        ctx: {'collection': 'eventItems', 'id': id},
+        countOf: (_) => null,
+        action: () => _inner.deleteEventItem(id),
+      );
+
+  @override
+  Future<void> permanentlyDeleteEventItem(String id) => _runFuture(
+        op: 'permanentlyDeleteEventItem',
+        ctx: {'collection': 'eventItems', 'id': id},
+        countOf: (_) => null,
+        action: () => _inner.permanentlyDeleteEventItem(id),
+      );
+
+  @override
+  Future<void> restoreEventItem(String id) => _runFuture(
+        op: 'restoreEventItem',
+        ctx: {'collection': 'eventItems', 'id': id},
+        countOf: (_) => null,
+        action: () => _inner.restoreEventItem(id),
       );
 
   // ===== Tasks =====

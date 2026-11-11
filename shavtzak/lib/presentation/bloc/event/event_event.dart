@@ -134,7 +134,7 @@ class DuplicateEvent extends EventEvent {
   final String newAssemblyTime;
   final String newActualShowStartTime;
   final List<ParticipantGroup> newParticipantGroups;
-  final List<EventItem> newItems;
+  final List<EventItemChoice> newItems;
   final bool newRequiresArmed;
   final Map<String, int> newRoleRequirements;
   final bool duplicateAssignments;

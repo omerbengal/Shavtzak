@@ -26,6 +26,7 @@ import '../../../core/debug/logger.dart';
 import '../../widgets/map_location_picker.dart';
 import 'widgets/category_filter_modal.dart';
 import 'widgets/category_management_dialog.dart';
+import 'widgets/event_item_management_dialog.dart';
 import 'widgets/event_constraint_collisions_dialog.dart';
 import 'widgets/event_form_modal.dart';
 import 'widgets/event_drive_files_section.dart';
@@ -218,6 +219,20 @@ class _EventListScreenState extends State<EventListScreen> {
                   showDialog(
                     context: context,
                     builder: (context) => const RoleManagementDialog(),
+                  );
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              IconButton(
+                icon: const Icon(Icons.inventory_2_outlined),
+                tooltip: 'ניהול מה יש באירוע',
+                onPressed: () {
+                  Logger.action('open:eventItemManagementDialog');
+                  showDialog(
+                    context: context,
+                    builder: (context) => const EventItemManagementDialog(),
                   );
                 },
                 iconSize: 22,

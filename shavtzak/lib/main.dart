@@ -26,6 +26,7 @@ import 'data/repositories/preset_repository.dart';
 import 'data/repositories/task_repository.dart';
 import 'data/repositories/role_repository.dart';
 import 'data/repositories/category_repository.dart';
+import 'data/repositories/event_item_repository.dart';
 import 'domain/entities/team_member.dart';
 import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
@@ -56,6 +57,8 @@ import 'presentation/bloc/role/role_bloc.dart';
 import 'presentation/bloc/role/role_event.dart';
 import 'presentation/bloc/category/category_bloc.dart';
 import 'presentation/bloc/category/category_event.dart';
+import 'presentation/bloc/event_item/event_item_bloc.dart';
+import 'presentation/bloc/event_item/event_item_event.dart';
 
 // Router
 import 'core/router/app_router.dart';
@@ -237,6 +240,7 @@ Future<void> _initialize(Future<void> fontsReady) async {
         task: TaskRepository(database),
         role: RoleRepository(database),
         category: CategoryRepository(database),
+        eventItem: EventItemRepository(database),
         userSelection: UserSelectionRepository(
           database: database,
           userCacheService: userCacheService,
@@ -292,6 +296,7 @@ Future<void> _initialize(Future<void> fontsReady) async {
         taskRepository: repositories.task,
         roleRepository: repositories.role,
         categoryRepository: repositories.category,
+        eventItemRepository: repositories.eventItem,
         userSelectionRepository: repositories.userSelection,
         calendarSyncBloc: bloc,
         preAuthenticatedUser: preAuthenticatedUser,
@@ -355,6 +360,7 @@ class MyApp extends StatelessWidget {
   final TaskRepository taskRepository;
   final RoleRepository roleRepository;
   final CategoryRepository categoryRepository;
+  final EventItemRepository eventItemRepository;
   final UserSelectionRepository userSelectionRepository;
   final CalendarSyncBloc calendarSyncBloc;
   final TeamMember? preAuthenticatedUser;
@@ -371,6 +377,7 @@ class MyApp extends StatelessWidget {
     required this.taskRepository,
     required this.roleRepository,
     required this.categoryRepository,
+    required this.eventItemRepository,
     required this.userSelectionRepository,
     required this.calendarSyncBloc,
     this.preAuthenticatedUser,
@@ -394,6 +401,7 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: taskRepository),
         RepositoryProvider.value(value: roleRepository),
         RepositoryProvider.value(value: categoryRepository),
+        RepositoryProvider.value(value: eventItemRepository),
         RepositoryProvider.value(value: userSelectionRepository),
       ],
       child: ListenableBuilder(
@@ -502,6 +510,17 @@ class MyApp extends StatelessWidget {
                   return categoryBloc;
                 },
               ),
+              BlocProvider(
+                create: (context) {
+                  final eventItemBloc = EventItemBloc(
+                    context.read<EventItemRepository>(),
+                  );
+                  if (preAuthenticatedUser != null) {
+                    eventItemBloc.add(const LoadEventItems());
+                  }
+                  return eventItemBloc;
+                },
+              ),
             ],
             child: Builder(
               builder: (context) {
@@ -511,6 +530,7 @@ class MyApp extends StatelessWidget {
                 final teamBloc = context.read<TeamBloc>();
                 final roleBloc = context.read<RoleBloc>();
                 final categoryBloc = context.read<CategoryBloc>();
+                final eventItemBloc = context.read<EventItemBloc>();
 
                 return MultiBlocListener(
                   listeners: [
@@ -553,6 +573,7 @@ class MyApp extends StatelessWidget {
                           teamBloc.add(const LoadTeamMembers());
                           roleBloc.add(const LoadRoles());
                           categoryBloc.add(const LoadCategories());
+                          eventItemBloc.add(const LoadEventItems());
                         }
                       },
                     ),

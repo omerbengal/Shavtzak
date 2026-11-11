@@ -1,6 +1,7 @@
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
+import '../../domain/entities/event_item.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
@@ -518,6 +519,23 @@ abstract class DatabaseInterface {
 
   /// Watch active categories in real-time
   Stream<List<Category>> watchActiveCategories();
+
+  // ========== Event items ("מה יש באירוע") ==========
+  // A managed list beside the categories (utilities/Lists, EventItems).
+
+  /// Every item, archived ones included, in their order.
+  Stream<List<EventItem>> watchEventItems();
+
+  Future<void> insertEventItem(EventItem item);
+
+  Future<void> updateEventItem(EventItem item);
+
+  /// Archive (soft delete).
+  Future<void> deleteEventItem(String id);
+
+  Future<void> permanentlyDeleteEventItem(String id);
+
+  Future<void> restoreEventItem(String id);
 
   // ========== Tasks ==========
 

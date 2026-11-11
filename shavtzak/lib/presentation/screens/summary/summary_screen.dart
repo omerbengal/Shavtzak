@@ -32,6 +32,8 @@ import 'widgets/staffing_status_chart.dart';
 import 'widgets/checklist_compliance_chart.dart';
 import 'widgets/event_summary_tile.dart';
 import 'widgets/category_summary_card.dart';
+import '../../bloc/event_item/event_item_state.dart';
+import '../../bloc/event_item/event_item_bloc.dart';
 
 /// Summary screen - dashboard for managers
 /// Accessible directly via /summary route (not part of main navigation)
@@ -633,7 +635,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
       if (!mounted) {
         return;
       }
-      await startCalendarShareFlow(context, events, categories: categories);
+      await startCalendarShareFlow(
+        context,
+        events,
+        categories: categories,
+        eventItems: context.read<EventItemBloc>().state.catalogue,
+      );
     } catch (e) {
       Logger.action('error:calendarShareFlow', {'error': e.toString()});
       if (!mounted) {

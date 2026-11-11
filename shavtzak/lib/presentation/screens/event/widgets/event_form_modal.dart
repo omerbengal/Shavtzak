@@ -18,6 +18,8 @@ import '../../../../domain/entities/event_item.dart';
 import '../../../../domain/entities/participant_group.dart';
 import 'participant_group_rows.dart';
 import 'event_items_field.dart';
+import '../../../bloc/event_item/event_item_bloc.dart';
+import '../../../bloc/event_item/event_item_state.dart';
 import 'event_time_field.dart';
 import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../data/repositories/assignment_repository.dart';
@@ -95,7 +97,7 @@ class _EventFormModalState extends State<EventFormModal> {
   bool _isDirty = false;
 
   /// What the event has ("מה יש באירוע").
-  List<EventItem> _items = const [];
+  List<EventItemChoice> _items = const [];
   bool _validateName = false; // Enable name validation after blur or submit
   String? _dateError; // Track date validation error
   final _nameFocusNode = FocusNode(); // For name field blur detection
@@ -2692,15 +2694,11 @@ class _EventFormModalState extends State<EventFormModal> {
                                         // What the event has
                                         const SizedBox(height: 8),
                                         EventItemsField(
-                                          items: _items,
-                                          otherEvents:
-                                              context.select<EventBloc,
-                                                  List<Event>>((bloc) {
-                                            final state = bloc.state;
-                                            return state is EventsLoaded
-                                                ? state.events
-                                                : const <Event>[];
-                                          }),
+                                          choices: _items,
+                                          catalogue: context
+                                              .watch<EventItemBloc>()
+                                              .state
+                                              .catalogue,
                                           onChanged: (items) => setState(() {
                                             _items = items;
                                             _isDirty = true;

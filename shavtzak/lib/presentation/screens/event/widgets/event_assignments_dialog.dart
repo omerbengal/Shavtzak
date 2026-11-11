@@ -21,6 +21,8 @@ import '../../../widgets/same_day_assignment_mark.dart';
 import 'event_assignments_share_data_builder.dart';
 import 'event_assignments_share_models.dart';
 import 'event_assignments_share_preview_dialog.dart';
+import '../../../bloc/event_item/event_item_state.dart';
+import '../../../bloc/event_item/event_item_bloc.dart';
 
 /// Dialog showing all assignments for an event.
 /// Default mode groups by role. Optional label mode groups by labels first,
@@ -344,6 +346,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
         groupingMode: _sortByLabel
             ? EventAssignmentsGroupingMode.label
             : EventAssignmentsGroupingMode.role,
+        eventItems: context.read<EventItemBloc>().state.catalogue,
       );
 
       if (!mounted || data.sections.isEmpty) {

@@ -23,6 +23,9 @@ import 'package:shavtzak/data/repositories/event_repository.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
+import 'package:shavtzak/presentation/bloc/event_item/event_item_bloc.dart';
+import 'package:shavtzak/presentation/bloc/event_item/event_item_event.dart';
+import 'package:shavtzak/presentation/bloc/event_item/event_item_state.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
@@ -50,6 +53,9 @@ class _MockLabelRepository extends Mock implements AssignmentLabelRepository {}
 
 class _MockCategoryBloc extends MockBloc<CategoryEvent, CategoryState>
     implements CategoryBloc {}
+
+class _MockEventItemBloc extends MockBloc<EventItemEvent, EventItemState>
+    implements EventItemBloc {}
 
 class _MockRoleBloc extends MockBloc<RoleEvent, RoleState>
     implements RoleBloc {}
@@ -124,6 +130,9 @@ void main() {
 
     final eventBloc = bloc ?? EventBloc(eventRepository, assignmentRepository);
     if (bloc == null) addTearDown(eventBloc.close);
+    final eventItemBloc = _MockEventItemBloc();
+    whenListen(eventItemBloc, const Stream<EventItemState>.empty(),
+        initialState: const EventItemInitial());
     final categoryBloc = _MockCategoryBloc();
     whenListen(categoryBloc, const Stream<CategoryState>.empty(),
         initialState: const CategoryInitial());
@@ -147,6 +156,7 @@ void main() {
           providers: [
             BlocProvider<EventBloc>.value(value: eventBloc),
             BlocProvider<CategoryBloc>.value(value: categoryBloc),
+            BlocProvider<EventItemBloc>.value(value: eventItemBloc),
             BlocProvider<RoleBloc>.value(value: roleBloc),
             BlocProvider<AssignmentBloc>.value(value: assignmentBloc),
           ],

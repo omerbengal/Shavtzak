@@ -10,6 +10,22 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/screens/event/widgets/event_assignments_share_data_builder.dart';
 import 'package:shavtzak/presentation/screens/event/widgets/event_assignments_share_models.dart';
 
+EventItem _catalogueItem(String id, String name, String? emoji, int order) =>
+    EventItem(
+      id: id,
+      name: name,
+      emoji: emoji,
+      sortOrder: order,
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+    );
+
+final _catalogue = [
+  _catalogueItem('scan', 'סריקה', '🤳🏻', 0),
+  _catalogueItem('menorah', 'חנוכייה', '🕎', 1),
+  _catalogueItem('band', 'להקה', null, 2),
+];
+
 void main() {
   group('EventAssignmentsShareDataBuilder', () {
     group('items and missing roles', () {
@@ -26,6 +42,7 @@ void main() {
             activeRoles: roles,
             labels: const [],
             groupingMode: EventAssignmentsGroupingMode.role,
+            eventItems: _catalogue,
           );
 
       test('lists the event items and what each role still misses', () {
@@ -36,9 +53,11 @@ void main() {
             'driver': 1,
             'archived': 2,
           },
+          // חנוכייה is switched off for this picture.
           items: const [
-            EventItem(name: 'סריקה', emoji: '🤳🏻'),
-            EventItem(name: 'להקה'),
+            EventItemChoice(itemId: 'band', showInCalendarExport: false),
+            EventItemChoice(itemId: 'menorah', showInEventExport: false),
+            EventItemChoice(itemId: 'scan'),
           ],
         );
         final data = build(event, [

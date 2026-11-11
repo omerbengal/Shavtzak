@@ -25,7 +25,7 @@ class EventModel {
   final String? categoryId; // Foreign key to Category
   final Map<String, int> roleRequirements; // Stored as string keys in Firestore
   final Map<String, SlotAnnotation> slotAnnotations;
-  final List<EventItem> items;
+  final List<EventItemChoice> items;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -167,7 +167,7 @@ class EventModel {
       categoryId: entity.categoryId,
       roleRequirements: Map<String, int>.from(entity.roleRequirements),
       slotAnnotations: Map<String, SlotAnnotation>.from(entity.slotAnnotations),
-      items: List<EventItem>.from(entity.items),
+      items: List<EventItemChoice>.from(entity.items),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       driveFolderId: entity.driveFolderId,
@@ -200,7 +200,7 @@ class EventModel {
       categoryId: categoryId,
       roleRequirements: Map<String, int>.from(roleRequirements),
       slotAnnotations: Map<String, SlotAnnotation>.from(slotAnnotations),
-      items: List<EventItem>.from(items),
+      items: List<EventItemChoice>.from(items),
       createdAt: createdAt,
       updatedAt: updatedAt,
       driveFolderId: driveFolderId,
@@ -239,7 +239,7 @@ class EventModel {
       roleRequirements:
           Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
       slotAnnotations: _parseSlotAnnotations(data['slotAnnotations']),
-      items: EventItem.listFromJson(data['items']),
+      items: EventItemChoice.listFromJson(data['items']),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       driveFolderId: data['driveFolderId'] as String?,
@@ -311,7 +311,7 @@ class EventModel {
       roleRequirements:
           Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
       slotAnnotations: _parseSlotAnnotations(json['slotAnnotations']),
-      items: EventItem.listFromJson(json['items']),
+      items: EventItemChoice.listFromJson(json['items']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       driveFolderId: json['driveFolderId'] as String?,

@@ -1,205 +1,191 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/utils/event_items.dart';
-import '../../../../core/utils/rtl_text_field_utils.dart';
-import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/event_item.dart';
 
 /// The event form's "מה יש באירוע" section.
 ///
-/// The items are chips: the name, a round emoji slot (tap to set, change or
-/// clear it) and ✕. Below them a field: typing offers names already used on
-/// [otherEvents] (with the emoji they last had, see [suggestEventItems]) and,
-/// for a name not on this event yet, adding it as new.
-class EventItemsField extends StatefulWidget {
-  static const inputKey = ValueKey('event-items-input');
-  static const emojiInputKey = ValueKey('event-item-emoji-input');
+/// A dropdown of checkboxes picks the event's items from [catalogue] (the
+/// list kept in "ניהול מה יש באירוע"). Each picked item gets a row with its
+/// name and emoji and two on/off buttons: "להציג בייצוא אירוע" (the event's
+/// picture) and "להציג בייצוא לוח שנה" (the calendar picture). A new pick
+/// starts with both on.
+class EventItemsField extends StatelessWidget {
+  static const dropdownKey = ValueKey('event-items-dropdown');
 
-  /// Longest name the backend keeps.
-  static const maxNameLength = 40;
+  final List<EventItemChoice> choices;
 
-  final List<EventItem> items;
-  final List<Event> otherEvents;
-  final ValueChanged<List<EventItem>> onChanged;
+  /// Every item, archived ones included (an archived item an event already
+  /// has stays on it; it is just not offered to new ones).
+  final List<EventItem> catalogue;
+  final ValueChanged<List<EventItemChoice>> onChanged;
 
   const EventItemsField({
     super.key,
-    required this.items,
-    required this.otherEvents,
+    required this.choices,
+    required this.catalogue,
     required this.onChanged,
   });
 
-  @override
-  State<EventItemsField> createState() => _EventItemsFieldState();
-}
+  static ValueKey<String> optionKey(String itemId) =>
+      ValueKey('event-item-option-$itemId');
+  static ValueKey<String> eventExportKey(String itemId) =>
+      ValueKey('event-item-event-export-$itemId');
+  static ValueKey<String> calendarExportKey(String itemId) =>
+      ValueKey('event-item-calendar-export-$itemId');
 
-class _EventItemsFieldState extends State<EventItemsField> {
-  final _controller = TextEditingController();
-  late final FocusNode _focusNode = createRtlCursorFixedFocusNode(_controller);
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(() => setState(() {}));
+  EventItemChoice? _choiceFor(String itemId) {
+    for (final choice in choices) {
+      if (choice.itemId == itemId) return choice;
+    }
+    return null;
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
+  void _toggle(EventItem item) {
+    if (_choiceFor(item.id) != null) {
+      onChanged(choices.where((c) => c.itemId != item.id).toList());
+    } else {
+      onChanged([...choices, EventItemChoice(itemId: item.id)]);
+    }
   }
 
-  String get _typed => _controller.text.trim();
-
-  bool _isOnEvent(String name) =>
-      widget.items.any((item) => item.name == name);
-
-  void _add(EventItem item) {
-    if (_isOnEvent(item.name)) return;
-    widget.onChanged([...widget.items, item]);
-    _controller.clear();
-    setState(() {});
-  }
-
-  /// Enter adds the typed name: the suggestion with exactly that name when
-  /// there is one (keeping its emoji), else as new.
-  void _submit(List<EventItem> suggestions) {
-    final name = _typed;
-    if (name.isEmpty || _isOnEvent(name)) return;
-    final exact = suggestions.where((item) => item.name == name);
-    _add(exact.isNotEmpty ? exact.first : EventItem(name: name));
-    _focusNode.requestFocus();
-  }
-
-  void _remove(EventItem item) {
-    widget.onChanged(widget.items.where((i) => i.name != item.name).toList());
-  }
-
-  Future<void> _editEmoji(EventItem item) async {
-    final result = await showDialog<_EmojiChoice>(
-      context: context,
-      builder: (context) => _EmojiDialog(item: item),
-    );
-    if (result == null || !mounted) return;
-    widget.onChanged([
-      for (final i in widget.items)
-        if (i.name == item.name) i.copyWith(emoji: () => result.emoji) else i,
+  void _update(EventItemChoice updated) {
+    onChanged([
+      for (final choice in choices)
+        choice.itemId == updated.itemId ? updated : choice,
     ]);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final typed = _typed;
-    final showSuggestions = typed.isNotEmpty || _focusNode.hasFocus;
-    final suggestions = showSuggestions
-        ? suggestEventItems(typed, widget.otherEvents, widget.items)
-            .take(6)
-            .toList()
-        : const <EventItem>[];
-    final canAddNew = typed.isNotEmpty &&
-        !_isOnEvent(typed) &&
-        !suggestions.any((item) => item.name == typed);
+    final picked = eventItemsOf(choices, catalogue);
+    // Offered: every active item, plus archived ones this event already has.
+    final offered = catalogue
+        .where((item) => !item.isArchived || _choiceFor(item.id) != null)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Text('מה יש באירוע', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 8),
-        if (widget.items.isNotEmpty) ...[
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final item in widget.items) _chip(item, theme),
-            ],
+        MenuAnchor(
+          style: const MenuStyle(
+            maximumSize: WidgetStatePropertyAll(Size(double.infinity, 360)),
           ),
-          const SizedBox(height: 10),
-        ],
-        TextField(
-          key: EventItemsField.inputKey,
-          controller: _controller,
-          focusNode: _focusNode,
-          maxLength: EventItemsField.maxNameLength,
-          decoration: const InputDecoration(
-            hintText: 'לדוגמה: סריקה, חנוכייה, להקה',
-            prefixIcon: Icon(Icons.add_circle_outline),
-            border: OutlineInputBorder(),
-            counterText: '',
-            isDense: true,
-          ),
-          textInputAction: TextInputAction.done,
-          onChanged: (_) => setState(() {}),
-          onSubmitted: (_) => _submit(suggestions),
-        ),
-        if (suggestions.isNotEmpty || canAddNew)
-          Card(
-            margin: const EdgeInsets.only(top: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final item in suggestions)
-                  ListTile(
-                    dense: true,
-                    title: Text(item.label),
-                    subtitle: const Text('מאירועים קודמים'),
-                    onTap: () => _add(item),
-                  ),
-                if (canAddNew)
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.add),
-                    title: Text('הוספת "$typed" כחדש'),
-                    onTap: () => _add(EventItem(name: typed)),
-                  ),
-              ],
+          menuChildren: [
+            for (final item in offered)
+              CheckboxMenuButton(
+                key: optionKey(item.id),
+                value: _choiceFor(item.id) != null,
+                closeOnActivate: false,
+                onChanged: (_) => _toggle(item),
+                child: Text(
+                  item.isArchived ? '${item.label} (בארכיון)' : item.label,
+                ),
+              ),
+          ],
+          builder: (context, controller, _) => InkWell(
+            key: dropdownKey,
+            borderRadius: BorderRadius.circular(4),
+            onTap: offered.isEmpty
+                ? null
+                : () => controller.isOpen ? controller.close() : controller.open(),
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: 'מה יש באירוע',
+                border: const OutlineInputBorder(),
+                suffixIcon: const Icon(Icons.arrow_drop_down),
+                helperText: offered.isEmpty
+                    ? 'אין פריטים עדיין. מוסיפים אותם ב"ניהול מה יש באירוע" במסך האירועים'
+                    : null,
+                helperMaxLines: 2,
+              ),
+              child: Text(
+                picked.isEmpty ? 'בחירה' : 'נבחרו ${picked.length}',
+                style: TextStyle(
+                  color: picked.isEmpty ? Colors.grey.shade600 : null,
+                ),
+              ),
             ),
+          ),
+        ),
+        for (final item in picked)
+          _PickedItemRow(
+            item: item,
+            choice: _choiceFor(item.id)!,
+            onChanged: _update,
+            onRemove: () => _toggle(item),
           ),
       ],
     );
   }
+}
 
-  Widget _chip(EventItem item, ThemeData theme) {
+class _PickedItemRow extends StatelessWidget {
+  final EventItem item;
+  final EventItemChoice choice;
+  final ValueChanged<EventItemChoice> onChanged;
+  final VoidCallback onRemove;
+
+  const _PickedItemRow({
+    required this.item,
+    required this.choice,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(4, 6, 12, 8),
       decoration: BoxDecoration(
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(item.name),
-          const SizedBox(width: 6),
-          Tooltip(
-            message: item.emoji == null ? 'הוספת אמוג\'י' : 'שינוי אמוג\'י',
-            child: InkWell(
-              key: ValueKey('event-item-emoji-${item.name}'),
-              customBorder: const CircleBorder(),
-              onTap: () => _editEmoji(item),
-              child: Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: theme.dividerColor),
+          Row(
+            children: [
+              if (item.emoji != null) ...[
+                Text(item.emoji!, style: const TextStyle(fontSize: 20)),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  item.isArchived ? '${item.name} (בארכיון)' : item.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                child: item.emoji == null
-                    ? Icon(Icons.add_reaction_outlined,
-                        size: 18, color: theme.hintColor)
-                    : Text(item.emoji!, style: const TextStyle(fontSize: 17)),
               ),
-            ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'הסרה מהאירוע',
+                visualDensity: VisualDensity.compact,
+                onPressed: onRemove,
+              ),
+            ],
           ),
-          IconButton(
-            key: ValueKey('event-item-remove-${item.name}'),
-            tooltip: 'הסרה',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.close, size: 18),
-            onPressed: () => _remove(item),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _ExportToggle(
+                key: EventItemsField.eventExportKey(item.id),
+                label: 'להציג בייצוא אירוע',
+                isOn: choice.showInEventExport,
+                onTap: () => onChanged(choice.copyWith(
+                    showInEventExport: !choice.showInEventExport)),
+              ),
+              _ExportToggle(
+                key: EventItemsField.calendarExportKey(item.id),
+                label: 'להציג בייצוא לוח שנה',
+                isOn: choice.showInCalendarExport,
+                onTap: () => onChanged(choice.copyWith(
+                    showInCalendarExport: !choice.showInCalendarExport)),
+              ),
+            ],
           ),
         ],
       ),
@@ -207,70 +193,54 @@ class _EventItemsFieldState extends State<EventItemsField> {
   }
 }
 
-/// What the emoji dialog decided: [emoji] null means "no emoji".
-class _EmojiChoice {
-  final String? emoji;
-  const _EmojiChoice(this.emoji);
-}
+/// On: light green with a dark green check. Off: a plain outlined button.
+class _ExportToggle extends StatelessWidget {
+  final String label;
+  final bool isOn;
+  final VoidCallback onTap;
 
-class _EmojiDialog extends StatefulWidget {
-  final EventItem item;
-  const _EmojiDialog({required this.item});
-
-  @override
-  State<_EmojiDialog> createState() => _EmojiDialogState();
-}
-
-class _EmojiDialogState extends State<_EmojiDialog> {
-  late final _controller = TextEditingController(text: widget.item.emoji);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  /// One emoji: the first grapheme, so a skin-toned 🤳🏻 counts as one.
-  String? get _emoji {
-    final first = _controller.text.trim().characters.take(1).toString();
-    return first.isEmpty ? null : first;
-  }
+  const _ExportToggle({
+    super.key,
+    required this.label,
+    required this.isOn,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: Text('אמוג\'י ל${widget.item.name}'),
-        content: TextField(
-          key: EventItemsField.emojiInputKey,
-          controller: _controller,
-          autofocus: true,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 28),
-          decoration: const InputDecoration(
-            hintText: '🙂',
-            helperText: 'אמוג\'י אחד מהמקלדת',
-          ),
-          onSubmitted: (_) =>
-              Navigator.of(context).pop(_EmojiChoice(_emoji)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-          if (widget.item.emoji != null)
-            TextButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(const _EmojiChoice(null)),
-              child: const Text('בלי אמוג\'י'),
+    return Semantics(
+      toggled: isOn,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isOn ? Colors.green.shade50 : null,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isOn ? Colors.green.shade400 : Colors.grey.shade400,
             ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(_EmojiChoice(_emoji)),
-            child: const Text('שמירה'),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isOn) ...[
+                Icon(Icons.check, size: 16, color: Colors.green.shade800),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isOn ? Colors.green.shade900 : Colors.grey.shade800,
+                  fontWeight: isOn ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

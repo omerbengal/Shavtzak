@@ -18,20 +18,18 @@ Map<String, dynamic> _baseJson() => {
 
 void main() {
   group('EventModel items', () {
-    test('reads items, an empty emoji counts as none', () {
+    test('reads item choices; a missing switch is on, id-less entries dropped', () {
       final event = EventModel.fromJson({
         ..._baseJson(),
         'items': [
+          {'itemId': 'scan', 'showInEventExport': true, 'showInCalendarExport': false},
+          {'itemId': 'band'},
           {'name': 'סריקה', 'emoji': '🤳🏻'},
-          {'name': 'להקה', 'emoji': null},
-          {'name': 'חנוכייה', 'emoji': ''},
-          {'name': '  '},
         ],
       }).toEntity();
       expect(event.items, const [
-        EventItem(name: 'סריקה', emoji: '🤳🏻'),
-        EventItem(name: 'להקה'),
-        EventItem(name: 'חנוכייה'),
+        EventItemChoice(itemId: 'scan', showInCalendarExport: false),
+        EventItemChoice(itemId: 'band'),
       ]);
     });
 
@@ -42,9 +40,11 @@ void main() {
     test('toJson always carries items so a save can clear them', () {
       final entity = EventModel.fromJson(_baseJson())
           .toEntity()
-          .copyWith(items: const [EventItem(name: 'סריקה', emoji: '🤳🏻')]);
+          .copyWith(items: const [
+        EventItemChoice(itemId: 'scan', showInEventExport: false),
+      ]);
       expect(EventModel.fromEntity(entity).toJson()['items'], [
-        {'name': 'סריקה', 'emoji': '🤳🏻'},
+        {'itemId': 'scan', 'showInEventExport': false, 'showInCalendarExport': true},
       ]);
       expect(
         EventModel.fromEntity(entity.copyWith(items: const []))

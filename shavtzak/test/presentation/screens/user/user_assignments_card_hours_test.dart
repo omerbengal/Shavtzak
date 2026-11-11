@@ -17,6 +17,9 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
+import 'package:shavtzak/presentation/bloc/event_item/event_item_bloc.dart';
+import 'package:shavtzak/presentation/bloc/event_item/event_item_event.dart';
+import 'package:shavtzak/presentation/bloc/event_item/event_item_state.dart';
 import 'package:shavtzak/presentation/bloc/role/role_bloc.dart';
 import 'package:shavtzak/presentation/bloc/role/role_event.dart';
 import 'package:shavtzak/presentation/bloc/role/role_state.dart';
@@ -35,6 +38,19 @@ class MockUserSelectionBloc
 class MockRoleBloc extends MockBloc<RoleEvent, RoleState> implements RoleBloc {}
 
 final DateTime _stamp = DateTime(2026, 1, 1);
+
+class MockEventItemBloc extends MockBloc<EventItemEvent, EventItemState>
+    implements EventItemBloc {}
+
+EventItem _catalogueItem(String id, String name, String? emoji, int order) =>
+    EventItem(
+      id: id,
+      name: name,
+      emoji: emoji,
+      sortOrder: order,
+      createdAt: _stamp,
+      updatedAt: _stamp,
+    );
 
 TeamMember _dana() => TeamMember(
       id: 'dana',
@@ -126,11 +142,24 @@ void main() {
   late MockAssignmentBloc assignmentBloc;
   late MockUserSelectionBloc userBloc;
   late MockRoleBloc roleBloc;
+  late MockEventItemBloc eventItemBloc;
 
   setUp(() {
     assignmentBloc = MockAssignmentBloc();
     userBloc = MockUserSelectionBloc();
     roleBloc = MockRoleBloc();
+    eventItemBloc = MockEventItemBloc();
+    whenListen(
+      eventItemBloc,
+      const Stream<EventItemState>.empty(),
+      initialState: EventItemsLoaded(
+        activeItems: [
+          _catalogueItem('scan', 'סריקה', '🤳🏻', 0),
+          _catalogueItem('band', 'להקה', null, 1),
+        ],
+        archivedItems: const [],
+      ),
+    );
     whenListen(
       userBloc,
       const Stream<UserSelectionState>.empty(),
@@ -162,6 +191,7 @@ void main() {
             BlocProvider<AssignmentBloc>.value(value: assignmentBloc),
             BlocProvider<UserSelectionBloc>.value(value: userBloc),
             BlocProvider<RoleBloc>.value(value: roleBloc),
+            BlocProvider<EventItemBloc>.value(value: eventItemBloc),
           ],
           child: const UserAssignmentsScreen(),
         ),
@@ -239,9 +269,10 @@ void main() {
 
     testWidgets('an event with items shows what it has before "who is with me"',
         (tester) async {
+      // The card shows every item, whatever the export switches say.
       final withItems = event().copyWith(items: const [
-        EventItem(name: 'סריקה', emoji: '🤳🏻'),
-        EventItem(name: 'להקה'),
+        EventItemChoice(itemId: 'band', showInEventExport: false),
+        EventItemChoice(itemId: 'scan', showInCalendarExport: false),
       ]);
       await pumpScreen(tester, [assignment(withItems)]);
 

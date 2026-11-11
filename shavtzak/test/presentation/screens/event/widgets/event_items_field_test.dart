@@ -1,43 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/event_item.dart';
 import 'package:shavtzak/presentation/screens/event/widgets/event_items_field.dart';
 
-Event _past(List<EventItem> items) => Event(
-      id: 'old',
-      name: 'old',
-      startDate: DateTime(2026, 1, 1),
-      endDate: DateTime(2026, 1, 1),
-      startTime: '',
-      endTime: '',
-      assemblyTime: '',
-      requiresArmed: false,
-      roleRequirements: const {},
+EventItem _item(String id, String name, String? emoji, int order,
+        {bool archived = false}) =>
+    EventItem(
+      id: id,
+      name: name,
+      emoji: emoji,
+      sortOrder: order,
+      isArchived: archived,
       createdAt: DateTime(2026, 1, 1),
       updatedAt: DateTime(2026, 1, 1),
-      items: items,
     );
 
-void main() {
-  late List<EventItem> current;
+final _scan = _item('scan', 'סריקה', '🤳🏻', 0);
+final _band = _item('band', 'להקה', null, 1);
+final _old = _item('old', 'זיקוקים', '🎆', 2, archived: true);
+final _gone = _item('gone', 'ישן', null, 3, archived: true);
 
-  Future<void> pump(WidgetTester tester, List<EventItem> items) async {
-    current = items;
+void main() {
+  late List<EventItemChoice> choices;
+
+  Future<void> pump(WidgetTester tester, List<EventItemChoice> initial) async {
+    choices = initial;
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Directionality(
-          textDirection: TextDirection.rtl,
-          child: StatefulBuilder(
-            builder: (context, setState) => EventItemsField(
-              items: current,
-              otherEvents: [
-                _past(const [
-                  EventItem(name: 'סריקה', emoji: '🤳🏻'),
-                  EventItem(name: 'חנוכייה', emoji: '🕎'),
-                ]),
-              ],
-              onChanged: (next) => setState(() => current = next),
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => SingleChildScrollView(
+              child: EventItemsField(
+                choices: choices,
+                catalogue: [_scan, _band, _old, _gone],
+                onChanged: (next) => setState(() => choices = next),
+              ),
             ),
           ),
         ),
@@ -45,69 +43,83 @@ void main() {
     ));
   }
 
-  testWidgets('typing offers an item from another event, with its emoji',
+  testWidgets('the dropdown offers active items and ticks add them, both switches on',
       (tester) async {
     await pump(tester, const []);
+    expect(find.text('בחירה'), findsOneWidget);
 
-    await tester.enterText(find.byKey(EventItemsField.inputKey), 'סר');
-    await tester.pump();
-    await tester.tap(find.text('סריקה 🤳🏻'));
-    await tester.pump();
-
-    expect(current, const [EventItem(name: 'סריקה', emoji: '🤳🏻')]);
-  });
-
-  testWidgets('a new name is added without an emoji', (tester) async {
-    await pump(tester, const []);
-
-    await tester.enterText(find.byKey(EventItemsField.inputKey), 'להקה');
-    await tester.pump();
-    await tester.tap(find.text('הוספת "להקה" כחדש'));
-    await tester.pump();
-
-    expect(current, const [EventItem(name: 'להקה')]);
-  });
-
-  testWidgets('the emoji slot sets one emoji and can clear it',
-      (tester) async {
-    await pump(tester, const [EventItem(name: 'להקה')]);
-
-    await tester.tap(find.byKey(const ValueKey('event-item-emoji-להקה')));
+    await tester.tap(find.byKey(EventItemsField.dropdownKey));
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byKey(EventItemsField.emojiInputKey), '🎸🎺');
-    await tester.tap(find.text('שמירה'));
-    await tester.pumpAndSettle();
-    expect(current, const [EventItem(name: 'להקה', emoji: '🎸')]);
+    expect(find.byKey(EventItemsField.optionKey('scan')), findsWidgets);
+    expect(find.byKey(EventItemsField.optionKey('band')), findsWidgets);
+    // Archived items are not offered to an event that does not have them.
+    expect(find.byKey(EventItemsField.optionKey('old')), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('event-item-emoji-להקה')));
+    await tester.tap(find.byKey(EventItemsField.optionKey('band')).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('בלי אמוג\'י'));
+    await tester.tap(find.byKey(EventItemsField.optionKey('scan')).first);
     await tester.pumpAndSettle();
-    expect(current, const [EventItem(name: 'להקה')]);
-  });
 
-  testWidgets('✕ removes an item', (tester) async {
-    await pump(tester, const [
-      EventItem(name: 'להקה'),
-      EventItem(name: 'סריקה', emoji: '🤳🏻'),
+    expect(choices, const [
+      EventItemChoice(itemId: 'band'),
+      EventItemChoice(itemId: 'scan'),
     ]);
-
-    await tester.tap(find.byKey(const ValueKey('event-item-remove-להקה')));
-    await tester.pump();
-
-    expect(current, const [EventItem(name: 'סריקה', emoji: '🤳🏻')]);
+    expect(find.text('נבחרו 2'), findsOneWidget);
   });
 
-  testWidgets('a name already on the event is not offered or added twice',
+  testWidgets('unticking removes the item', (tester) async {
+    await pump(tester, const [EventItemChoice(itemId: 'scan')]);
+    await tester.tap(find.byKey(EventItemsField.dropdownKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(EventItemsField.optionKey('scan')).first);
+    await tester.pumpAndSettle();
+    expect(choices, isEmpty);
+  });
+
+  testWidgets('each picked row shows name and emoji and flips its switches',
       (tester) async {
-    await pump(tester, const [EventItem(name: 'סריקה', emoji: '🤳🏻')]);
+    await pump(tester, const [EventItemChoice(itemId: 'scan')]);
+    expect(find.text('סריקה'), findsOneWidget);
+    expect(find.text('🤳🏻'), findsOneWidget);
+    expect(find.text('להציג בייצוא אירוע'), findsOneWidget);
+    expect(find.text('להציג בייצוא לוח שנה'), findsOneWidget);
+    // On = a check beside the label.
+    expect(find.byIcon(Icons.check), findsNWidgets(2));
 
-    await tester.enterText(find.byKey(EventItemsField.inputKey), 'סריקה');
+    await tester.tap(find.byKey(EventItemsField.calendarExportKey('scan')));
     await tester.pump();
+    expect(choices, const [
+      EventItemChoice(itemId: 'scan', showInCalendarExport: false),
+    ]);
+    expect(find.byIcon(Icons.check), findsOneWidget);
 
-    expect(find.text('הוספת "סריקה" כחדש'), findsNothing);
-    // The chip shows the name and the emoji apart; no suggestion row.
-    expect(find.text('סריקה 🤳🏻'), findsNothing);
+    await tester.tap(find.byKey(EventItemsField.eventExportKey('scan')));
+    await tester.pump();
+    expect(choices, const [
+      EventItemChoice(
+          itemId: 'scan', showInEventExport: false, showInCalendarExport: false),
+    ]);
+  });
+
+  testWidgets('an archived item the event has stays, marked, and can be removed',
+      (tester) async {
+    await pump(tester, const [EventItemChoice(itemId: 'old')]);
+    expect(find.text('זיקוקים (בארכיון)'), findsOneWidget);
+    await tester.tap(find.byTooltip('הסרה מהאירוע'));
+    await tester.pump();
+    expect(choices, isEmpty);
+  });
+
+  testWidgets('with an empty list it says where items are added', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: EventItemsField(
+          choices: const [],
+          catalogue: const [],
+          onChanged: (_) {},
+        ),
+      ),
+    ));
+    expect(find.textContaining('ניהול מה יש באירוע'), findsOneWidget);
   });
 }

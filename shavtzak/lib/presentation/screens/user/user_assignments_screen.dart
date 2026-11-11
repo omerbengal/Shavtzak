@@ -23,6 +23,8 @@ import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
+import '../../bloc/event_item/event_item_bloc.dart';
+import '../../bloc/event_item/event_item_state.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/parking_location_picker_dialog.dart';
 import '../../widgets/event_team_members_dialog.dart';
@@ -1207,7 +1209,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               ),
 
             // 6. What the event has (מה יש באירוע)
-            if (eventItemsSentence(event.items) case final items?)
+            if (eventItemsSentence(eventItemsOf(
+                  event.items,
+                  context.watch<EventItemBloc>().state.catalogue,
+                )) case final items?)
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.only(top: 4, bottom: 6),

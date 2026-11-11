@@ -1,11 +1,12 @@
 import '../../../../core/utils/custom_hours.dart';
-import '../../../../core/utils/event_items.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/assignment_label.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/role.dart';
 import '../../../widgets/map_location_picker.dart';
 import 'event_assignments_share_models.dart';
+import '../../../../domain/entities/event_item.dart';
+import '../../../../core/utils/event_items.dart';
 
 class EventAssignmentsShareDataBuilder {
   static EventAssignmentsShareData build({
@@ -14,6 +15,7 @@ class EventAssignmentsShareDataBuilder {
     required List<Role> activeRoles,
     required List<AssignmentLabel> labels,
     required EventAssignmentsGroupingMode groupingMode,
+    List<EventItem> eventItems = const [],
   }) {
     EventAssignmentsShareRow buildRow(Assignment assignment) {
       return EventAssignmentsShareRow(
@@ -44,7 +46,11 @@ class EventAssignmentsShareDataBuilder {
       participantsLine: _formatParticipantsLine(event),
       locationLine: _formatLocationLine(event.location),
       eventNoteLine: event.comments.trim(),
-      itemsLine: eventItemsSentence(event.items),
+      itemsLine: eventItemsSentence(eventItemsOf(
+        event.items,
+        eventItems,
+        where: (choice) => choice.showInEventExport,
+      )),
       missingRolesLine: missingRolesLine(event, assignments, activeRoles),
       sections: sections,
     );
