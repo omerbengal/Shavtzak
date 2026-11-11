@@ -3,6 +3,7 @@ import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/assignment_label.dart';
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/event_item.dart';
 import 'package:shavtzak/domain/entities/participant_group.dart';
 import 'package:shavtzak/domain/entities/role.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
@@ -11,6 +12,73 @@ import 'package:shavtzak/presentation/screens/event/widgets/event_assignments_sh
 
 void main() {
   group('EventAssignmentsShareDataBuilder', () {
+    group('items and missing roles', () {
+      final roles = [
+        _role('commander', 'מפקד אירוע', 0),
+        _role('medic', 'חובשים', 1),
+        _role('driver', 'נהג', 2),
+      ];
+
+      EventAssignmentsShareData build(Event event, List<Assignment> list) =>
+          EventAssignmentsShareDataBuilder.build(
+            event: event,
+            assignments: list,
+            activeRoles: roles,
+            labels: const [],
+            groupingMode: EventAssignmentsGroupingMode.role,
+          );
+
+      test('lists the event items and what each role still misses', () {
+        final event = _event(DateTime(2026, 5, 4, 10)).copyWith(
+          roleRequirements: const {
+            'commander': 1,
+            'medic': 3,
+            'driver': 1,
+            'archived': 2,
+          },
+          items: const [
+            EventItem(name: 'סריקה', emoji: '🤳🏻'),
+            EventItem(name: 'להקה'),
+          ],
+        );
+        final data = build(event, [
+          _assignment(
+              id: 'a1',
+              roleType: 'commander',
+              slotIndex: 0,
+              member: _member('m1', 'נועה כהן')),
+          _assignment(
+              id: 'a2',
+              roleType: 'medic',
+              slotIndex: 0,
+              member: _member('m2', 'אורי ברק')),
+        ]);
+
+        expect(data.itemsLine, 'באירוע זה יש: סריקה 🤳🏻, להקה');
+        expect(data.missingRolesLine, 'תפקידים חסרים: 2 חובשים | 1 נהג');
+      });
+
+      test('no lines when nothing is missing and the event has no items', () {
+        final event = _event(DateTime(2026, 5, 4, 10))
+            .copyWith(roleRequirements: const {'commander': 1});
+        final data = build(event, [
+          _assignment(
+              id: 'a1',
+              roleType: 'commander',
+              slotIndex: 0,
+              member: _member('m1', 'נועה כהן')),
+          _assignment(
+              id: 'a2',
+              roleType: 'commander',
+              slotIndex: 1,
+              member: _member('m2', 'אורי ברק')),
+        ]);
+
+        expect(data.itemsLine, isNull);
+        expect(data.missingRolesLine, isNull);
+      });
+    });
+
     test('builds role-grouped data with full numbered notes in visual order',
         () {
       final now = DateTime(2026, 5, 4, 10);

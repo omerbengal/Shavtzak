@@ -79,4 +79,30 @@ void main() {
 
     expect(find.text('•'), findsNWidgets(2));
   });
+
+  testWidgets('shows the items line and the missing roles line',
+      (tester) async {
+    const data = EventAssignmentsShareData(
+      eventName: 'טקס פתיחה',
+      dateLine: 'יום שני 4 במאי',
+      timeLine: '',
+      locationLine: '',
+      itemsLine: 'באירוע זה יש: סריקה 🤳🏻, להקה',
+      missingRolesLine: 'תפקידים חסרים: 1 נהג | 3 צלם',
+      sections: [],
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: EventAssignmentsShareCard(data: data),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('באירוע זה יש: סריקה 🤳🏻, להקה'), findsOneWidget);
+    expect(find.text('תפקידים חסרים: 1 נהג | 3 צלם'), findsOneWidget);
+  });
 }

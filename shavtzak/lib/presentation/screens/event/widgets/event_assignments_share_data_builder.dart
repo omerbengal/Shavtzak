@@ -1,4 +1,5 @@
 import '../../../../core/utils/custom_hours.dart';
+import '../../../../core/utils/event_items.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/assignment_label.dart';
 import '../../../../domain/entities/event.dart';
@@ -43,8 +44,34 @@ class EventAssignmentsShareDataBuilder {
       participantsLine: _formatParticipantsLine(event),
       locationLine: _formatLocationLine(event.location),
       eventNoteLine: event.comments.trim(),
+      itemsLine: eventItemsSentence(event.items),
+      missingRolesLine: missingRolesLine(event, assignments, activeRoles),
       sections: sections,
     );
+  }
+
+  /// `תפקידים חסרים: 1 נהג | 3 צלם`: for each of [activeRoles], in their
+  /// order, the event's quota minus the assignments in that role (every
+  /// assignment holds a slot, populated or not), listed when above zero.
+  /// Quotas of roles not in [activeRoles] are ignored. Null when nothing is
+  /// missing.
+  static String? missingRolesLine(
+    Event event,
+    List<Assignment> assignments,
+    List<Role> activeRoles,
+  ) {
+    final assigned = <String, int>{};
+    for (final assignment in assignments) {
+      assigned.update(assignment.roleType, (count) => count + 1,
+          ifAbsent: () => 1);
+    }
+    final parts = <String>[
+      for (final role in activeRoles)
+        if (event.getRequiredCountForRole(role.key) - (assigned[role.key] ?? 0)
+            case final missing when missing > 0)
+          '$missing ${role.hebrewName}',
+    ];
+    return parts.isEmpty ? null : 'תפקידים חסרים: ${parts.join(' | ')}';
   }
 
   /// The note shown right under [assignment]'s member in the picture, or

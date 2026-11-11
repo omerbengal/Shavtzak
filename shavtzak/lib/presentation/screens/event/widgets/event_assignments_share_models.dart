@@ -5,6 +5,12 @@ class EventAssignmentsShareData {
   final String participantsLine;
   final String locationLine;
   final String eventNoteLine;
+
+  /// `באירוע זה יש: …` (see eventItemsSentence), null when the event has none.
+  final String? itemsLine;
+
+  /// `תפקידים חסרים: 1 נהג | 3 צלם`, null when every quota is filled.
+  final String? missingRolesLine;
   final List<EventAssignmentsShareSection> sections;
 
   const EventAssignmentsShareData({
@@ -14,6 +20,8 @@ class EventAssignmentsShareData {
     this.participantsLine = '',
     required this.locationLine,
     this.eventNoteLine = '',
+    this.itemsLine,
+    this.missingRolesLine,
     required this.sections,
   });
 }

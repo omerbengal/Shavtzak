@@ -29,6 +29,10 @@ class EventAssignmentsShareCard extends StatelessWidget {
               _Header(data: data),
               const SizedBox(height: 24),
               ..._buildSections(data.sections),
+              if (data.missingRolesLine case final missing?) ...[
+                _MissingRoles(text: missing),
+                const SizedBox(height: 18),
+              ],
               const SizedBox(height: 20),
               const Text(
                 'נוצר משבצק',
@@ -103,7 +107,47 @@ class _Header extends StatelessWidget {
           const SizedBox(height: 4),
           _EventNote(note: data.eventNoteLine),
         ],
+        if (data.itemsLine case final items?) ...[
+          const SizedBox(height: 10),
+          Text(
+            items,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+class _MissingRoles extends StatelessWidget {
+  final String text;
+
+  const _MissingRoles({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.shade300),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.orange.shade900,
+          fontSize: 21,
+          fontWeight: FontWeight.w700,
+          height: 1.35,
+        ),
+      ),
     );
   }
 }
