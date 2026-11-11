@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/custom_hours_resolution.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/event_item.dart';
 import '../../../domain/entities/participant_group.dart';
 import '../../../core/utils/crud_action_result.dart';
 
@@ -133,6 +134,7 @@ class DuplicateEvent extends EventEvent {
   final String newAssemblyTime;
   final String newActualShowStartTime;
   final List<ParticipantGroup> newParticipantGroups;
+  final List<EventItem> newItems;
   final bool newRequiresArmed;
   final Map<String, int> newRoleRequirements;
   final bool duplicateAssignments;
@@ -156,6 +158,7 @@ class DuplicateEvent extends EventEvent {
     required this.newAssemblyTime,
     this.newActualShowStartTime = '',
     this.newParticipantGroups = const [],
+    this.newItems = const [],
     required this.newRequiresArmed,
     required this.newRoleRequirements,
     this.duplicateAssignments = false,
@@ -178,6 +181,7 @@ class DuplicateEvent extends EventEvent {
         newAssemblyTime,
         newActualShowStartTime,
         newParticipantGroups,
+        newItems,
         newRequiresArmed,
         newRoleRequirements,
         duplicateAssignments,

@@ -524,6 +524,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         assemblyTime: event.newAssemblyTime,
         actualShowStartTime: event.newActualShowStartTime,
         participantGroups: event.newParticipantGroups,
+        items: event.newItems,
         requiresArmed: event.newRequiresArmed,
         roleRequirements: Map.from(event.newRoleRequirements),
         categoryId: event.categoryId,

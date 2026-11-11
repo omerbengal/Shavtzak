@@ -14,8 +14,10 @@ import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/custom_hours_resolution.dart';
 import '../../../../domain/entities/event.dart';
+import '../../../../domain/entities/event_item.dart';
 import '../../../../domain/entities/participant_group.dart';
 import 'participant_group_rows.dart';
+import 'event_items_field.dart';
 import 'event_time_field.dart';
 import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../data/repositories/assignment_repository.dart';
@@ -91,6 +93,9 @@ class _EventFormModalState extends State<EventFormModal> {
   bool _requiresArmed = false;
   Map<String, int> _roleRequirements = {};
   bool _isDirty = false;
+
+  /// What the event has ("מה יש באירוע").
+  List<EventItem> _items = const [];
   bool _validateName = false; // Enable name validation after blur or submit
   String? _dateError; // Track date validation error
   final _nameFocusNode = FocusNode(); // For name field blur detection
@@ -163,6 +168,7 @@ class _EventFormModalState extends State<EventFormModal> {
           : '';
       _parkingEditorIds = widget.event!.parkingEditorIds;
       _commentsController.text = widget.event!.comments;
+      _items = widget.event!.items;
       _startTimeController.text = widget.event!.startTime;
       _endTimeController.text = widget.event!.endTime;
       _teamEndTimeController.text = widget.event!.teamEndTime;
@@ -465,6 +471,7 @@ class _EventFormModalState extends State<EventFormModal> {
             newAssemblyTime: _assemblyTimeController.text,
             newActualShowStartTime: _actualShowStartTimeController.text,
             newParticipantGroups: _parseParticipantGroups(),
+            newItems: _items,
             newRequiresArmed: _requiresArmed,
             newRoleRequirements: Map.from(_roleRequirements),
             duplicateAssignments: _duplicateAssignments,
@@ -510,6 +517,7 @@ class _EventFormModalState extends State<EventFormModal> {
       parkingEditorIds: _parkingEditorIds,
       requiresArmed: _requiresArmed,
       comments: _commentsController.text.trim(),
+      items: _items,
       categoryId: _selectedCategoryId,
       roleRequirements: _roleRequirements,
       createdAt: _isEditMode ? widget.event!.createdAt : now,
@@ -2680,6 +2688,25 @@ class _EventFormModalState extends State<EventFormModal> {
                                             );
                                           },
                                         ),
+
+                                        // What the event has
+                                        const SizedBox(height: 8),
+                                        EventItemsField(
+                                          items: _items,
+                                          otherEvents:
+                                              context.select<EventBloc,
+                                                  List<Event>>((bloc) {
+                                            final state = bloc.state;
+                                            return state is EventsLoaded
+                                                ? state.events
+                                                : const <Event>[];
+                                          }),
+                                          onChanged: (items) => setState(() {
+                                            _items = items;
+                                            _isDirty = true;
+                                          }),
+                                        ),
+                                        const SizedBox(height: 16),
 
                                         // Comments
                                         TextFormField(
