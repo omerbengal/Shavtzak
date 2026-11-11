@@ -20,7 +20,13 @@ jobs:
           # stops being a valid check on the release build: 3.27.1 CI vs 3.41.9
           # local turned DropdownButtonFormField's `initialValue` (a post-3.33
           # rename) into a red main. See memory / commit 21c9367.
-          flutter-version: '3.41.9'
+          #
+          # 3.47 is also the first to give the browser's hidden text input its
+          # line height. Before it that input's lines were 19 px against the
+          # 24 px on screen, and on an iPhone the system's own selection
+          # highlight and Cut / Copy menu drifted a line further up for every
+          # five lines of text (web/index.html lines the rest of it up).
+          flutter-version: '3.47.7'
           channel: 'stable'
       
       - name: Install dependencies
