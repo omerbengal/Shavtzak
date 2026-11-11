@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/utils/event_items.dart';
 import '../../../core/debug/logger.dart';
 import '../../../core/utils/web_url_launcher.dart';
 import '../../../core/utils/crud_action_result.dart';
@@ -1202,6 +1203,28 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+
+            // 6. What the event has (מה יש באירוע)
+            if (eventItemsSentence(event.items) case final items?)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(top: 4, bottom: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isUpcoming ? Colors.blue.shade50 : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  items,
+                  style: TextStyle(
+                    fontSize: _getResponsiveFontSize(context,
+                        minSize: 13.0, maxSize: 14.0),
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
                 ),
               ),
 

@@ -11,6 +11,7 @@ import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/utils/event_stretch.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/event_item.dart';
 import 'package:shavtzak/domain/entities/role.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
@@ -234,6 +235,20 @@ void main() {
       await pumpScreen(tester, [assignment(event())]);
 
       expect(cardTexts(tester), todaysCard());
+    });
+
+    testWidgets('an event with items shows what it has before "who is with me"',
+        (tester) async {
+      final withItems = event().copyWith(items: const [
+        EventItem(name: 'סריקה', emoji: '🤳🏻'),
+        EventItem(name: 'להקה'),
+      ]);
+      await pumpScreen(tester, [assignment(withItems)]);
+
+      final expected = todaysCard();
+      expected.insert(expected.indexOf('מי איתי באירוע?'),
+          'באירוע זה יש: סריקה 🤳🏻, להקה');
+      expect(cardTexts(tester), expected);
     });
   });
 
