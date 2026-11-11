@@ -14,7 +14,8 @@
 // the view losing focus, so it keeps its text connection. A tap in a field
 // that was already focused (moving the cursor) is left alone.
 //
-// Add `?kbdlog` to the address to see the tap's events on screen.
+// Add `?kbdlog` to the address to see the tap's events on screen, with every
+// move of the input's caret and every touch the browser takes over.
 (function () {
   var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -28,6 +29,19 @@
     LOG = location.href.indexOf('kbdlog') >= 0;
   }
   if (!isIOS && !LOG) return;
+
+  // index.html gives Flutter's hidden input the app's font, so that the
+  // iPhone's own selection highlight lands on the text. Start loading it
+  // once the page's styles are in, so the first selection already has it.
+  if (isIOS) {
+    document.addEventListener('DOMContentLoaded', function () {
+      try {
+        if (document.fonts && document.fonts.load) document.fonts.load('16px Rubik');
+      } catch (_) {
+        // Only a head start; the input loads the font itself when it needs it.
+      }
+    });
+  }
 
   var DUMMY_ID = 'ios-keyboard-fix-dummy';
   var tap = null;
@@ -49,7 +63,7 @@
     }
     lines.push(Math.round(performance.now() - t0) + 'ms ' + text);
     while (lines.length > 22) lines.shift();
-    if (box) box.textContent = 'kbd fix v5 ios=' + isIOS + '\n' + lines.join('\n');
+    if (box) box.textContent = 'kbd fix v6 ios=' + isIOS + '\n' + lines.join('\n');
   }
   function describe(el) {
     if (!el) return 'none';
@@ -100,6 +114,17 @@
   if (LOG) {
     if (document.body) log('loaded');
     else document.addEventListener('DOMContentLoaded', function () { log('loaded'); });
+    // For caret problems: every move of the hidden input's caret, and
+    // whether the browser takes a touch away from Flutter mid-drag.
+    document.addEventListener('selectionchange', function () {
+      var input = flutterInput(document.activeElement);
+      log('selectionchange' + (input ? ' ' + input.selectionStart + '..' + input.selectionEnd : ''));
+    }, true);
+    ['pointercancel', 'touchcancel'].forEach(function (type) {
+      document.addEventListener(type, function (event) {
+        log(type + ' on ' + describe(event.target));
+      }, true);
+    });
   }
 
   document.addEventListener('touchstart', function () {
