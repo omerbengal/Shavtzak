@@ -53,7 +53,8 @@ export function memberHoursCells(
   customEndAt: unknown,
 ): MemberHoursCells | null {
   const window = customHoursInterval(customStartAt, customEndAt);
-  if (window == null) return null;
+  // An event whose days cannot be read (bad data) keeps the row as it was.
+  if (window == null || event.firstDayKey.length === 0 || event.lastDayKey.length === 0) return null;
 
   const [ownFirst, ownLast] = wallDayKeysTouched(window);
   const firstNote = ownFirst === event.firstDayKey ? '' : ` (האירוע מ-${dayMonth(event.firstDayKey)})`;

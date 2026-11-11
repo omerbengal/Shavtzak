@@ -71,6 +71,13 @@ test('a departure at exactly midnight reads as the next day 00:00 and an event w
   });
 });
 
+test('an event without readable days gives no cells instead of throwing', () => {
+  assert.equal(
+    memberHoursCells({...oneDay, firstDayKey: '', lastDayKey: ''}, '2026-12-10T14:00', '2026-12-10T23:00'),
+    null,
+  );
+});
+
 test('unreadable or backwards hours give no cells', () => {
   assert.equal(memberHoursCells(oneDay, undefined, undefined), null);
   assert.equal(memberHoursCells(oneDay, '2026-12-10T25:00', '2026-12-10T23:00'), null);

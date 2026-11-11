@@ -30,6 +30,13 @@ test('null or a non-list clears the items', () => {
   assert.deepEqual(normalizeEventItems([]), []);
 });
 
+test('a long name is never cut through an emoji, and a family emoji is kept whole', () => {
+  const family = '👨🏻‍👩🏻‍👧🏻‍👦🏻';
+  const [item] = normalizeEventItems([{name: `${'א'.repeat(38)} 🤳🏻`, emoji: family}])!;
+  assert.equal(item.name, `${'א'.repeat(38)} 🤳🏻`);
+  assert.equal(item.emoji, family);
+});
+
 test('over-long names and emoji are cut', () => {
   const [item] = normalizeEventItems([{name: 'א'.repeat(60), emoji: '🕎'.repeat(20)}])!;
   assert.equal(item.name.length, 40);
