@@ -47,6 +47,7 @@ import type {
   ConstraintSyncReport,
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
+import {normalizeEventItems} from './event_items';
 import {
   TaskActor,
   TaskDoc,
@@ -2958,6 +2959,9 @@ function eventDocFromJson(event: Record<string, unknown>): Record<string, unknow
     isDeactivated: event['isDeactivated'] ?? false,
     inviteAllPermanentWhenUnassigned:
       event['inviteAllPermanentWhenUnassigned'] ?? false,
+    // Absent key (an old build) -> undefined -> stripped, so the partial
+    // update keeps the stored items; an explicit [] clears them.
+    items: normalizeEventItems(event['items']),
   });
 }
 
