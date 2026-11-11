@@ -1,4 +1,5 @@
 import '../../../../../core/utils/date_utils.dart' as app_date_utils;
+import '../../../../../core/utils/event_items.dart';
 import '../../../../../core/utils/event_sorting.dart';
 import '../../../../../domain/entities/category.dart';
 import '../../../../../domain/entities/event.dart';
@@ -254,6 +255,7 @@ class CalendarShareDataBuilder {
       timeLines: _buildTimeLines(event),
       participantsLine: _buildParticipantsLine(event),
       locationLine: location,
+      itemsLine: eventItemsCompactLine(event.items) ?? '',
       isPast: isPast,
       categoryColorValue: categoryColorValue,
     );

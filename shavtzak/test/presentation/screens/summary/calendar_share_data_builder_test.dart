@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/domain/entities/category.dart';
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/event_item.dart';
 import 'package:shavtzak/presentation/screens/summary/widgets/calendar_share/calendar_share_data_builder.dart';
 import 'package:shavtzak/presentation/screens/summary/widgets/calendar_share/calendar_share_models.dart';
 
@@ -154,6 +155,33 @@ void main() {
   });
 
   group('buildShareEvent — location, past, continuation', () {
+    test('items line: emoji, or the name without one; none on continuation',
+        () {
+      final event = makeEvent().copyWith(items: const [
+        EventItem(name: 'סריקה', emoji: '🤳🏻'),
+        EventItem(name: 'חנוכייה', emoji: '🕎'),
+        EventItem(name: 'להקה'),
+      ]);
+      expect(
+        CalendarShareDataBuilder.buildShareEvent(event,
+                today: today, isContinuation: false)
+            .itemsLine,
+        '🤳🏻, 🕎, להקה',
+      );
+      expect(
+        CalendarShareDataBuilder.buildShareEvent(event,
+                today: today, isContinuation: true)
+            .itemsLine,
+        '',
+      );
+      expect(
+        CalendarShareDataBuilder.buildShareEvent(makeEvent(),
+                today: today, isContinuation: false)
+            .itemsLine,
+        '',
+      );
+    });
+
     test('strips hidden coordinates from location', () {
       final share = CalendarShareDataBuilder.buildShareEvent(
         makeEvent(),

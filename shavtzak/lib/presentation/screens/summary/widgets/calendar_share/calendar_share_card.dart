@@ -329,6 +329,12 @@ class _EventBlock extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 2),
                 child: Text('📍 ${event.locationLine}', style: detailStyle),
               ),
+            // What the event has; wraps rather than shrinking.
+            if (event.itemsLine.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(event.itemsLine, style: detailStyle),
+              ),
           ],
         ),
       ),

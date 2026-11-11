@@ -22,6 +22,10 @@ class CalendarShareEvent {
   /// continuation days.
   final String participantsLine;
 
+  /// What the event has, as `🤳🏻, 🕎, להקה` (eventItemsCompactLine). Empty
+  /// when it has none or on continuation days.
+  final String itemsLine;
+
   final bool isPast;
 
   /// True on the 2nd+ visible day of a multi-day event ("(המשך)" rendering).
@@ -35,6 +39,7 @@ class CalendarShareEvent {
     this.timeLines = const [],
     this.participantsLine = '',
     this.locationLine = '',
+    this.itemsLine = '',
     required this.isPast,
     this.isContinuation = false,
     this.categoryColorValue,
