@@ -865,3 +865,47 @@ test('per-event export: a member with two sets of hours in one event is judged b
     'D: דנה כהן (משובץ גם בA)',
   ]);
 });
+
+test('a member with own hours gets their days, arrival and departure; others keep the event times', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {
+        id: 'a-hours',
+        data: {
+          eventId: 'e1',
+          teamMemberId: 'm1',
+          roleType: 'medic',
+          notes: 'מביא ציוד',
+          customStartAt: '2026-12-10T14:00',
+          customEndAt: '2026-12-10T23:00',
+        },
+      },
+      {id: 'a-plain', data: {eventId: 'e1', teamMemberId: 'm2', roleType: 'medic'}},
+    ],
+    eventsData: {
+      e1: {
+        name: 'חתונה',
+        startDate: new Date('2026-12-09T22:00:00.000Z'),
+        endDate: new Date('2026-12-09T22:00:00.000Z'),
+        assemblyTime: '12:00',
+        startTime: '13:00',
+        endTime: '22:00',
+        teamEndTime: '01:00',
+      },
+    },
+    memberNames: {m1: 'אדם אחד', m2: 'בת שתיים'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perPerson',
+    selectedEventIds: [],
+    now: new Date('2026-12-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows[0], [
+    'אדם אחד', 'חובש', 'חתונה', '10/12/2026', '', '14:00 (התייצבות צוות 12:00)',
+    '13:00', '22:00', '', 'יציאה 10.12 23:00 (סיום צוות משוער 11.12 01:00) · מביא ציוד',
+  ]);
+  assert.deepEqual(sheet.rows[1], [
+    'בת שתיים', 'חובש', 'חתונה', '10/12/2026', '', '12:00', '13:00', '22:00', '', '',
+  ]);
+});

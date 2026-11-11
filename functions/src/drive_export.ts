@@ -1,5 +1,6 @@
 import {Firestore, Timestamp} from 'firebase-admin/firestore';
 import {customHoursInterval, wallDayKeysTouched} from './event_stretch';
+import {memberHoursCells} from './member_hours_cells';
 
 export type DriveAction =
   | 'createFolder'
@@ -1031,6 +1032,21 @@ function serializeAssignmentsOnly(
       const singleDay =
         startDateKey.length > 0 && endDateKey.length > 0 && startDateKey === endDateKey;
       const roleKey = asString(doc.data['roleType']);
+      // A member with hours of their own: their days, arrival and departure,
+      // as on their card in /user/assignments. The sort keys stay the event's.
+      const ownHours = memberHoursCells(
+        {
+          firstDayKey: startDateKey,
+          lastDayKey: endDateKey,
+          assemblyTime: asString(eventData['assemblyTime']),
+          startTime: asString(eventData['startTime']),
+          endTime: asString(eventData['endTime']),
+          teamEndTime: asString(eventData['teamEndTime']),
+        },
+        doc.data['customStartAt'],
+        doc.data['customEndAt'],
+      );
+      const notes = asString(doc.data['notes']);
       return {
         teamMember: memberNames[asString(doc.data['teamMemberId'])] ?? '',
         teamMemberId: asString(doc.data['teamMemberId']),
@@ -1038,14 +1054,20 @@ function serializeAssignmentsOnly(
         roleType: roleHebrewNames[roleKey] ?? roleKey,
         eventId,
         event: asString(eventData['name']),
-        eventStartDate: formatIsraelCalendarDateKey(startDateKey),
-        eventEndDate: singleDay ? '' : formatIsraelCalendarDateKey(endDateKey),
+        eventStartDate: ownHours?.startDate ?? formatIsraelCalendarDateKey(startDateKey),
+        eventEndDate:
+          ownHours?.endDate ?? (singleDay ? '' : formatIsraelCalendarDateKey(endDateKey)),
         eventStartDateKey: startDateKey,
         eventStartTime: asString(eventData['startTime']),
         eventEndTime: asString(eventData['endTime']),
         location: cleanLocation(eventData['location']),
-        assemblyTime: asString(eventData['assemblyTime']),
-        notes: asString(doc.data['notes']),
+        assemblyTime: ownHours?.assembly ?? asString(eventData['assemblyTime']),
+        notes:
+          ownHours == null
+            ? notes
+            : notes.trim().length === 0
+              ? ownHours.departureNote
+              : `${ownHours.departureNote} · ${notes}`,
       };
     })
     .filter(
