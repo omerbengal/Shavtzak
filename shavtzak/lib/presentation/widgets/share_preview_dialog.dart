@@ -24,6 +24,10 @@ class SharePreviewDialog extends StatefulWidget {
   final String copyLogAction;
   final bool autoStartShare;
 
+  /// The PNG's width in pixels; null = the card's own size, 1:1. A card laid
+  /// out at phone size is captured at a higher resolution to reach it.
+  final double? outputWidth;
+
   const SharePreviewDialog({
     super.key,
     required this.card,
@@ -35,6 +39,7 @@ class SharePreviewDialog extends StatefulWidget {
     required this.shareLogAction,
     required this.copyLogAction,
     this.autoStartShare = true,
+    this.outputWidth,
   });
 
   @override
@@ -136,7 +141,12 @@ class _SharePreviewDialogState extends State<SharePreviewDialog> {
       throw StateError('Share card is not ready for capture');
     }
 
-    final image = await renderObject.toImage(pixelRatio: 1.0);
+    final outputWidth = widget.outputWidth;
+    final cardWidth = renderObject.size.width;
+    final image = await renderObject.toImage(
+      pixelRatio:
+          outputWidth == null || cardWidth <= 0 ? 1.0 : outputWidth / cardWidth,
+    );
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();
 

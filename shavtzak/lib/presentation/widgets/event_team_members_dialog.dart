@@ -10,16 +10,28 @@ import '../bloc/role/role_bloc.dart';
 import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
 import '../../core/debug/logger.dart';
-import '../../core/utils/search_utils.dart';
-import 'assignment_hours_line.dart';
-import 'name_search_field.dart';
+import '../../domain/entities/assignment_label.dart';
+import '../../domain/entities/event.dart';
+import '../../domain/entities/event_item.dart';
+import '../screens/event/widgets/event_assignments_fit_picture.dart';
+import '../screens/event/widgets/event_assignments_share_data_builder.dart';
+import '../screens/event/widgets/event_assignments_share_models.dart';
 
-/// Dialog showing all team members assigned to an event, grouped by role
-/// Uses the same UI layout as EventAssignmentsDialog
+/// "מי איתי באירוע?": the event's assignments drawn as its export picture
+/// ("תמונת שיבוצים"), live, all of it on one screen, with a phone button per
+/// member and the viewer's own row as "אני". No sharing from here.
 class EventTeamMembersDialog extends StatefulWidget {
-  final String eventId;
+  final Event event;
   final String currentUserId;
-  final String eventName;
+
+  /// The labels, to order members as the export does. Null = none.
+  final Stream<List<AssignmentLabel>>? labels;
+
+  /// The "מה יש באירוע" catalogue, for the picture's items line.
+  final List<EventItem> eventItems;
+
+  static const double _inset = 6;
+  static const double _maxWidth = 620;
 
   /// Optional injected BLoC. When null (production), the dialog creates and owns
   /// its own AssignmentBloc. Tests inject one so they can drive the stream.
@@ -27,21 +39,24 @@ class EventTeamMembersDialog extends StatefulWidget {
 
   const EventTeamMembersDialog({
     super.key,
-    required this.eventId,
+    required this.event,
     required this.currentUserId,
-    required this.eventName,
+    this.labels,
+    this.eventItems = const [],
     this.assignmentBloc,
   });
+
+  String get eventId => event.id;
 
   @override
   State<EventTeamMembersDialog> createState() => _EventTeamMembersDialogState();
 }
 
-
 class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   late final AssignmentBloc _assignmentBloc;
   late final bool _ownsBloc;
-  String _searchQuery = '';
+  late final Stream<List<AssignmentLabel>> _labels =
+      widget.labels ?? Stream.value(const []);
 
   @override
   void initState() {
@@ -87,77 +102,82 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
       child: BlocProvider<AssignmentBloc>.value(
         value: _assignmentBloc,
         child: Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.9,
-              constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'מי איתי ב${widget.eventName}?',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+          // As much of the screen as there is: the whole picture fits in it.
+          insetPadding: const EdgeInsets.all(EventTeamMembersDialog._inset),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            width: EventTeamMembersDialog._maxWidth,
+            height: MediaQuery.sizeOf(context).height,
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'מי איתי באירוע?',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () {
-                          Logger.action('tap:close:eventTeamMembersDialog');
-                          Navigator.of(context).pop();
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Content
-                  Expanded(
-                    child: BlocBuilder<AssignmentBloc, AssignmentState>(
-                      builder: (context, state) {
-                        // Paint from the real-time stream.
-                        if (state is AssignmentsLoaded) {
-                          final assignments = state.assignments
-                              .where((a) => a.eventId == widget.eventId)
-                              .toList();
-                          return assignments.isEmpty
-                              ? _buildEmptyState()
-                              : _buildAssignmentsList(context, assignments);
-                        }
-
-                        // Definitive "no assignments" from the stream.
-                        if (state is AssignmentsEmpty) {
-                          return _buildEmptyState();
-                        }
-
-                        if (state is AssignmentError) {
-                          return Center(
-                            child: Text(
-                              'שגיאה בטעינת נתונים',
-                              style: TextStyle(fontSize: 16, color: Colors.red.shade600),
-                            ),
-                          );
-                        }
-
-                        // Initial/loading: brief spinner until the stream's
-                        // first emission (typically ~100ms).
-                        return const Center(child: CircularProgressIndicator());
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        Logger.action('tap:close:eventTeamMembersDialog');
+                        Navigator.of(context).pop();
                       },
                     ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                // Content
+                Expanded(
+                  child: BlocBuilder<AssignmentBloc, AssignmentState>(
+                    builder: (context, state) {
+                      // Paint from the real-time stream.
+                      if (state is AssignmentsLoaded) {
+                        final assignments = state.assignments
+                            .where((a) => a.eventId == widget.eventId)
+                            .toList();
+                        return assignments.isEmpty
+                            ? _buildEmptyState()
+                            : _buildPicture(context, assignments);
+                      }
+
+                      // Definitive "no assignments" from the stream.
+                      if (state is AssignmentsEmpty) {
+                        return _buildEmptyState();
+                      }
+
+                      if (state is AssignmentError) {
+                        return Center(
+                          child: Text(
+                            'שגיאה בטעינת נתונים',
+                            style: TextStyle(
+                                fontSize: 16, color: Colors.red.shade600),
+                          ),
+                        );
+                      }
+
+                      // Initial/loading: brief spinner until the stream's
+                      // first emission (typically ~100ms).
+                      return const Center(child: CircularProgressIndicator());
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
+      ),
     );
   }
 
@@ -170,232 +190,81 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
     );
   }
 
-  Widget _buildAssignmentsList(BuildContext context, List<Assignment> assignments) {
+  /// The event's export picture, laid out narrow (readable once shrunk) and
+  /// shrunk so all of it fits the popup: no scrolling.
+  Widget _buildPicture(BuildContext context, List<Assignment> assignments) {
     return BlocBuilder<RoleBloc, RoleState>(
       builder: (context, roleState) {
         if (roleState is! RolesLoaded) {
           return const Center(child: CircularProgressIndicator());
         }
-
-        final activeRoles = roleState.activeRoles;
-
-        // Group assignments by role key
-        final assignmentsByRole = <String, List<Assignment>>{};
-        for (final assignment in assignments.where((a) =>
-            nameMatchesSearch(a.teamMember?.name ?? '', _searchQuery))) {
-          assignmentsByRole.putIfAbsent(assignment.roleType, () => []);
-          assignmentsByRole[assignment.roleType]!.add(assignment);
-        }
-
-        // Sort team members alphabetically within each role
-        for (final roleKey in assignmentsByRole.keys) {
-          assignmentsByRole[roleKey]!.sort((a, b) {
-            final aName = a.teamMember?.name ?? '';
-            final bName = b.teamMember?.name ?? '';
-            return aName.compareTo(bName);
-          });
-        }
-
-        // Build list: only show roles that have assignments, in sortOrder
-        final roleSections = <Widget>[];
-        for (final role in activeRoles) {
-          final roleAssignments = assignmentsByRole[role.key];
-          if (roleAssignments == null || roleAssignments.isEmpty) continue;
-          roleSections.add(_buildRoleSection(role, roleAssignments));
-        }
-
-        if (roleSections.isEmpty && _searchQuery.trim().isEmpty) {
-          return _buildEmptyState();
-        }
-
-        return Column(
-          children: [
-            NameSearchField(
-              onChanged: (value) => setState(() => _searchQuery = value),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: roleSections.isEmpty
-                  ? const NameSearchNoResults()
-                  : ListView(children: roleSections),
-            ),
-          ],
+        final roles = List<Role>.from(roleState.activeRoles)
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        return StreamBuilder<List<AssignmentLabel>>(
+          stream: _labels,
+          builder: (context, labelSnap) {
+            // The stream's copy of the event is the freshest one.
+            final event = assignments
+                    .map((a) => a.event)
+                    .whereType<Event>()
+                    .firstOrNull ??
+                widget.event;
+            final data = EventAssignmentsShareDataBuilder.build(
+              event: event,
+              assignments: assignments,
+              activeRoles: roles,
+              labels: labelSnap.data ?? const [],
+              groupingMode: EventAssignmentsGroupingMode.role,
+              eventItems: widget.eventItems,
+            );
+            if (data.sections.isEmpty) return _buildEmptyState();
+            return EventAssignmentsFitPicture(
+              pictureKey: const Key('who-is-with-me-picture'),
+              data: data,
+              currentMemberId: widget.currentUserId,
+              onCall: _confirmCall,
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildRoleSection(Role role, List<Assignment> assignments) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Role header with count
-            Row(
-              children: [
-                Icon(
-                  Icons.badge_outlined,
-                  size: 24,
-                  color: Colors.blue.shade700,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    role.hebrewName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${assignments.length}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade700,
-                    ),
-                  ),
-                ),
-              ],
+  /// A row of the shrunk picture is a small target, so a tap first names who
+  /// is about to be called; the call itself is one big button.
+  Future<void> _confirmCall(EventAssignmentsShareRow row) async {
+    final phone = row.phoneNumber;
+    if (phone == null) return;
+    Logger.action('tap:callRow', {'memberId': row.memberId});
+    final call = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          key: const Key('confirm-call'),
+          title: Text('להתקשר ל${row.memberName}?'),
+          content: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Text(phone, style: const TextStyle(fontSize: 18)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
             ),
-            const SizedBox(height: 8),
-            // Team members
-            ...assignments.map((assignment) {
-              final member = assignment.teamMember;
-              if (member == null) return const SizedBox.shrink();
-              final isCurrentUser = member.id == widget.currentUserId;
-              final hasPhoneNumber =
-                  (member.phoneNumber != null && member.phoneNumber!.isNotEmpty) ||
-                      (assignment.alternativePhoneNumber != null &&
-                          assignment.alternativePhoneNumber!.isNotEmpty);
-
-              return Padding(
-                padding: const EdgeInsets.only(right: 28, bottom: 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 18,
-                          color: isCurrentUser
-                              ? Colors.green.shade700
-                              : Colors.grey.shade600,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            isCurrentUser ? 'אני' : member.name,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight:
-                                  isCurrentUser ? FontWeight.bold : FontWeight.w400,
-                              color:
-                                  isCurrentUser ? Colors.green.shade700 : null,
-                            ),
-                          ),
-                        ),
-                        // Current user: disabled phone icon.
-                        if (isCurrentUser) ...[
-                          Tooltip(
-                            message: 'לא ניתן להתקשר לעצמך 🙈',
-                            child: Icon(
-                              Icons.phone,
-                              size: 22,
-                              color: Colors.grey.shade400,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ] else if (hasPhoneNumber) ...[
-                          // Phone icon with fallback: member phone → assignment alternative phone
-                          InkWell(
-                            onTap: () {
-                              Logger.action('tap:callPhone', {'memberId': member.id});
-                              _makePhoneCall(
-                                (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
-                                    ? member.phoneNumber!
-                                    : assignment.alternativePhoneNumber!,
-                              );
-                            },
-                            child: Icon(
-                              Icons.phone,
-                              size: 22,
-                              color: Colors.blue.shade700,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                      ],
-                    ),
-                    // The member's own hours, when they have any
-                    AssignmentHoursLine(assignment: assignment),
-                    // Notes display
-                    if (assignment.notes.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 26, top: 4),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.purple.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.purple.shade200),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.note_alt_outlined,
-                                size: 14,
-                                color: Colors.purple.shade700,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text.rich(
-                                  TextSpan(
-                                    children: [
-                                      TextSpan(
-                                        text: 'הערות לשיבוץ: ',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.purple.shade800,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text: assignment.notes,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.purple.shade900,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }),
+            FilledButton.icon(
+              key: const Key('confirm-call-button'),
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.phone),
+              label: const Text('התקשר'),
+            ),
           ],
         ),
       ),
     );
+    if (call != true) return;
+    Logger.action('tap:callPhone', {'memberId': row.memberId});
+    await _makePhoneCall(phone);
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {

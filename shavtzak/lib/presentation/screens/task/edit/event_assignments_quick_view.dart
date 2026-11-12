@@ -13,7 +13,7 @@ import '../../../bloc/event_item/event_item_state.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_event.dart';
 import '../../../bloc/role/role_state.dart';
-import '../../event/widgets/event_assignments_share_card.dart';
+import '../../event/widgets/event_assignments_fit_picture.dart';
 import '../../event/widgets/event_assignments_share_data_builder.dart';
 import '../../event/widgets/event_assignments_share_models.dart';
 import '../task_style.dart';
@@ -41,9 +41,8 @@ class _EventAssignmentsQuickViewState extends State<EventAssignmentsQuickView> {
   late final Stream<List<Assignment>> _assignments = context
       .read<AssignmentRepository>()
       .watchAssignmentsByEvent(widget.event.id);
-  late final Stream<List<AssignmentLabel>> _labels = context
-      .read<AssignmentLabelRepository>()
-      .watchAssignmentLabels();
+  late final Stream<List<AssignmentLabel>> _labels =
+      context.read<AssignmentLabelRepository>().watchAssignmentLabels();
 
   @override
   void initState() {
@@ -161,20 +160,18 @@ class EventAssignmentsQuickViewBody extends StatelessWidget {
             if (data.sections.isEmpty) {
               return _message('אין עדיין שיבוצים לאירוע');
             }
-            return SingleChildScrollView(
-              key: const Key('assignments-quick-view-scroll'),
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+            // The same picture as "מי איתי": all of it at once, in as many
+            // columns as fit; on a wide window at most
+            // assignmentsPictureMaxWidth wide.
+            return Padding(
+              key: const Key('assignments-quick-view-picture'),
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
               child: Center(
-                // The picture is 1080 px wide: shrunk to the panel, and on a
-                // wide window to at most assignmentsPictureMaxWidth.
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(
                     maxWidth: TaskStyle.assignmentsPictureMaxWidth,
                   ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: EventAssignmentsShareCard(data: data),
-                  ),
+                  child: EventAssignmentsFitPicture(data: data),
                 ),
               ),
             );
@@ -185,9 +182,9 @@ class EventAssignmentsQuickViewBody extends StatelessWidget {
   }
 
   Widget _message(String text) => Center(
-    child: Text(
-      text,
-      style: const TextStyle(color: TaskStyle.editMuted, fontSize: 16),
-    ),
-  );
+        child: Text(
+          text,
+          style: const TextStyle(color: TaskStyle.editMuted, fontSize: 16),
+        ),
+      );
 }

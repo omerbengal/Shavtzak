@@ -1,3 +1,4 @@
+import '../../core/utils/hold_cache_until_server.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
 
@@ -860,11 +861,17 @@ class FirestoreDatabase implements DatabaseInterface {
   /// Watch assignments for a specific event in real-time
   @override
   Stream<List<Assignment>> watchAssignmentsByEvent(String eventId) {
-    return _firestore
-        .collection(_assignmentsCollection)
-        .where('eventId', isEqualTo: eventId)
-        .snapshots()
-        .asyncMap((snapshot) async {
+    // A first answer from this device's cache is usually partial (a member's
+    // device holds mostly their own assignments): hold it until the server
+    // confirms, so the list never flashes "only you" before the real one.
+    return holdCacheUntilServer<QuerySnapshot<Map<String, dynamic>>>(
+      _firestore
+          .collection(_assignmentsCollection)
+          .where('eventId', isEqualTo: eventId)
+          .snapshots(includeMetadataChanges: true),
+      isFromCache: (snapshot) => snapshot.metadata.isFromCache,
+      isMetadataOnly: (snapshot) => snapshot.docChanges.isEmpty,
+    ).asyncMap((snapshot) async {
       // Raw snapshot arrived, BEFORE populate. Distinguishes "listen target
       // wedged" (this never logs) from "populate get hung" (this logs but the
       // wrapper's DB_STREAM_EMIT never does).
@@ -1099,7 +1106,8 @@ class FirestoreDatabase implements DatabaseInterface {
     void addError(Object error) {
       if (!controller.isClosed) {
         controller.addError(
-          DatabaseException('Failed to watch assignments in time window: $error'),
+          DatabaseException(
+              'Failed to watch assignments in time window: $error'),
         );
       }
     }
@@ -2591,8 +2599,8 @@ class FirestoreDatabase implements DatabaseInterface {
         .collection('utilities')
         .doc('Lists')
         .snapshots()
-        .map<List<EventItem>>(
-            (snapshot) => EventItem.listFromJson(snapshot.data()?['EventItems']))
+        .map<List<EventItem>>((snapshot) =>
+            EventItem.listFromJson(snapshot.data()?['EventItems']))
         .handleError((error) {
       throw DatabaseException('Failed to watch event items: $error');
     });

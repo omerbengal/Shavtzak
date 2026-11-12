@@ -141,9 +141,15 @@ void main() {
 
       expect(data.eventName, 'טקס פתיחה');
       expect(data.dateLine, 'יום שני 4 במאי');
+      expect(data.assemblyLine, 'התייצבות - 17:00');
       expect(data.timeLine,
-          'התייצבות - 17:00 | התכנסות קהל - 18:00 | תחילת מופע - 19:30 | סיום מופע משוער - 22:00');
+          'התכנסות קהל - 18:00 | תחילת מופע - 19:30 | סיום מופע משוער - 22:00');
       expect(data.locationLine, 'מיקום: היכל התרבות');
+      // Line 1: date | assembly | location; line 2: the other times.
+      expect(data.detailLines, [
+        'יום שני 4 במאי | התייצבות - 17:00 | מיקום: היכל התרבות',
+        'התכנסות קהל - 18:00 | תחילת מופע - 19:30 | סיום מופע משוער - 22:00',
+      ]);
       expect(data.eventNoteLine, 'נא להביא חולצות ייצוגיות.');
       expect(data.sections.map((section) => section.title),
           ['מפקד אירוע', 'חובשים']);

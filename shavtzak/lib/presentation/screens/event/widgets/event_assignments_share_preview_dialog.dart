@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../widgets/share_preview_dialog.dart';
-import 'event_assignments_share_card.dart';
+import 'event_assignments_fit_picture.dart';
 import 'event_assignments_share_models.dart';
 
 /// Thin wrapper over [SharePreviewDialog] for the assignments-image share.
@@ -20,7 +20,9 @@ class EventAssignmentsSharePreviewDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SharePreviewDialog(
-      card: EventAssignmentsShareCard(data: data),
+      // Laid out for a phone (where it is opened), saved 1080 px wide.
+      card: EventAssignmentsExportPicture(data: data),
+      outputWidth: EventAssignmentsFitPicture.exportPixelWidth,
       appBarTitle: 'תמונת שיבוצים',
       filename: _buildFilename(data.eventName),
       shareTitle: 'תמונת שיבוצים',

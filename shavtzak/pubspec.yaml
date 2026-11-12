@@ -82,6 +82,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  fake_async: ^1.3.0
 
   # Lints and Code Quality
   flutter_lints: ^5.0.0

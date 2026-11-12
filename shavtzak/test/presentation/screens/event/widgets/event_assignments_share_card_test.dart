@@ -10,7 +10,9 @@ void main() {
     final data = EventAssignmentsShareData(
       eventName: 'טקס פתיחה',
       dateLine: 'יום שני 4 במאי',
-      timeLine: 'התייצבות - 17:00 | תחילת מופע - 19:30',
+      assemblyLine: 'התייצבות - 17:00',
+      timeLine: 'התכנסות קהל - 18:00 | סיום מופע משוער - 22:00',
+      participantsLine: 'כמות משתתפים: 500',
       locationLine: 'מיקום: היכל התרבות',
       eventNoteLine: 'נא להביא חולצות ייצוגיות.',
       sections: const [
@@ -38,9 +40,16 @@ void main() {
     );
 
     expect(find.text('טקס פתיחה'), findsOneWidget);
-    expect(find.text('יום שני 4 במאי'), findsOneWidget);
-    expect(find.text('התייצבות - 17:00 | תחילת מופע - 19:30'), findsOneWidget);
-    expect(find.text('מיקום: היכל התרבות'), findsOneWidget);
+    // Three lines, in this order, top to bottom.
+    final line1 = find
+        .text('יום שני 4 במאי | התייצבות - 17:00 | מיקום: היכל התרבות');
+    final line2 = find.text('התכנסות קהל - 18:00 | סיום מופע משוער - 22:00');
+    final line3 = find.text('כמות משתתפים: 500');
+    expect(line1, findsOneWidget);
+    expect(line2, findsOneWidget);
+    expect(line3, findsOneWidget);
+    expect(tester.getTopLeft(line1).dy, lessThan(tester.getTopLeft(line2).dy));
+    expect(tester.getTopLeft(line2).dy, lessThan(tester.getTopLeft(line3).dy));
     expect(find.text('נא להביא חולצות ייצוגיות.'), findsOneWidget);
     expect(find.text('מפקד אירוע'), findsOneWidget);
     expect(find.text('נועה כהן'), findsOneWidget);
@@ -104,5 +113,104 @@ void main() {
 
     expect(find.text('באירוע זה יש: סריקה 🤳🏻, להקה'), findsOneWidget);
     expect(find.text('תפקידים חסרים: 1 נהג | 3 צלם'), findsOneWidget);
+  });
+
+  group('two columns', () {
+    EventAssignmentsShareSection section(String title, int rows) =>
+        EventAssignmentsShareSection(
+          title: title,
+          rows: [
+            for (var i = 0; i < rows; i++)
+              EventAssignmentsShareRow(memberName: '$title $i'),
+          ],
+        );
+
+    List<int> sizes(List<List<EventAssignmentsShareSection>> parts) =>
+        [for (final part in parts) part.length];
+
+    test('two columns: cut in order where they are most even', () {
+      final sections = [
+        section('א', 3),
+        section('ב', 8),
+        section('ג', 6),
+        section('ד', 5),
+        section('ה', 3),
+      ];
+      // Heights 5,10,8,7,5: 15 | 20 is the most even in-order cut.
+      expect(sizes(EventAssignmentsShareCard.splitColumns(sections, 2)),
+          [2, 3]);
+    });
+
+    test('three columns keep the order and the tallest as short as can be',
+        () {
+      final sections = [
+        section('א', 3),
+        section('ב', 8),
+        section('ג', 6),
+        section('ד', 5),
+        section('ה', 3),
+      ];
+      // 5,10,8,7,5 → 15 | 8 | 12 (tallest 15; nothing shorter is possible
+      // since ב alone with a neighbour already makes 15+).
+      final parts = EventAssignmentsShareCard.splitColumns(sections, 3);
+      expect(parts.expand((p) => p).toList(), sections);
+      expect(parts.length, 3);
+      expect(sizes(parts), [2, 1, 2]);
+    });
+
+    test('never more columns than cards', () {
+      expect(
+        EventAssignmentsShareCard.splitColumns(
+                [section('א', 2), section('ב', 2)], 4)
+            .length,
+        2,
+      );
+    });
+
+    testWidgets('the export stays one column', (tester) async {
+      final data = EventAssignmentsShareData(
+        eventName: 'אירוע',
+        dateLine: 'יום',
+        timeLine: '',
+        participantsLine: '',
+        locationLine: '',
+        eventNoteLine: '',
+        sections: [section('א', 1), section('ב', 1)],
+      );
+      await tester.pumpWidget(MaterialApp(
+        home: SingleChildScrollView(
+          child: FittedBox(child: EventAssignmentsShareCard(data: data)),
+        ),
+      ));
+      // Both role titles share a left edge: stacked, not side by side.
+      expect(tester.getTopRight(find.text('א')).dx,
+          tester.getTopRight(find.text('ב')).dx);
+      expect(find.byIcon(Icons.phone), findsNothing);
+    });
+  });
+
+  testWidgets('a long detail line stays on one line, shrunk to fit',
+      (tester) async {
+    const long = 'התכנסות קהל - 16:30 | תחילת מופע - 18:00 | '
+        'סיום מופע משוער - 22:30 | סיום צוות משוער - 23:30';
+    final data = EventAssignmentsShareData(
+      eventName: 'אירוע',
+      dateLine: 'יום',
+      timeLine: long,
+      locationLine: '',
+      sections: const [],
+    );
+    await tester.pumpWidget(MaterialApp(
+      home: SingleChildScrollView(
+        child: Center(
+          child: EventAssignmentsShareCard(data: data, width: 400, columns: 3),
+        ),
+      ),
+    ));
+    final text = tester.widget<Text>(find.text(long));
+    expect(text.maxLines, 1);
+    final box = tester.getRect(find.text(long));
+    expect(box.width, lessThanOrEqualTo(400));
+    expect(tester.takeException(), isNull);
   });
 }

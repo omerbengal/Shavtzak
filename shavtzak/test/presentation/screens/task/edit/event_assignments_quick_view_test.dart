@@ -120,12 +120,15 @@ void main() {
     expect(find.textContaining('מביאה רכב'), findsOneWidget);
     expect(find.textContaining('יוסי'), findsOneWidget);
     expect(find.textContaining('שעות'), findsOneWidget);
-    // Shrunk to the panel, not overflowing it.
+    // All of it inside the panel, no scrolling, roles side by side.
     expect(tester.takeException(), isNull);
-    expect(
-      tester.getSize(find.byType(EventAssignmentsShareCard)).width,
-      EventAssignmentsShareCard.captureWidth,
-    );
+    expect(find.byType(Scrollable), findsNothing);
+    final shown = tester.getRect(find.byType(EventAssignmentsShareCard));
+    expect(shown.left, greaterThanOrEqualTo(0));
+    expect(shown.right, lessThanOrEqualTo(400));
+    expect(shown.bottom, lessThanOrEqualTo(900));
+    expect(tester.getTopLeft(find.text('מפקד')).dy,
+        tester.getTopLeft(find.text('חובש')).dy);
   });
 
   testWidgets('on a wide window the picture is at most 720 px wide',
@@ -134,7 +137,8 @@ void main() {
     assignments.add([_assignment('a1', 'commander', _member('m1', 'דנה'))]);
     await tester.pumpAndSettle();
     final shown = tester.getRect(find.byType(EventAssignmentsShareCard));
-    expect(shown.width, moreOrLessEquals(720, epsilon: 0.5));
+    expect(shown.width, lessThanOrEqualTo(720));
+    expect(shown.width, greaterThan(700));
   });
 
   testWidgets('the close button is larger on a wide window', (tester) async {

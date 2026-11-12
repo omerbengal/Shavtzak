@@ -1,3 +1,4 @@
+import '../../../data/repositories/assignment_label_repository.dart';
 import 'dart:async';
 
 import 'package:equatable/equatable.dart';
@@ -1239,7 +1240,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () =>
-                    _showEventTeamMembers(context, event.id, event.name),
+                    _showEventTeamMembers(context, event),
                 icon: Icon(
                   Icons.groups,
                   size: _getResponsiveIconSize(context,
@@ -2051,18 +2052,19 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   }
 
   /// Show dialog with all team members assigned to the event
-  void _showEventTeamMembers(
-      BuildContext context, String eventId, String eventName) {
-    Logger.action('open:whoIsWithMe', {'eventId': eventId});
+  void _showEventTeamMembers(BuildContext context, Event event) {
+    Logger.action('open:whoIsWithMe', {'eventId': event.id});
     final userState = context.read<UserSelectionBloc>().state;
     if (userState is! UserAuthenticated) return;
 
     showDialog(
       context: context,
       builder: (context) => EventTeamMembersDialog(
-        eventId: eventId,
+        event: event,
         currentUserId: userState.user.id,
-        eventName: eventName,
+        labels:
+            context.read<AssignmentLabelRepository>().watchAssignmentLabels(),
+        eventItems: context.read<EventItemBloc>().state.catalogue,
       ),
     );
   }

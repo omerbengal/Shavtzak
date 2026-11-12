@@ -1,6 +1,11 @@
 class EventAssignmentsShareData {
   final String eventName;
   final String dateLine;
+
+  /// `התייצבות - 17:00`, '' without an assembly time.
+  final String assemblyLine;
+
+  /// The other times: audience, show start, show end, team end.
   final String timeLine;
   final String participantsLine;
   final String locationLine;
@@ -16,6 +21,7 @@ class EventAssignmentsShareData {
   const EventAssignmentsShareData({
     required this.eventName,
     required this.dateLine,
+    this.assemblyLine = '',
     required this.timeLine,
     this.participantsLine = '',
     required this.locationLine,
@@ -24,6 +30,22 @@ class EventAssignmentsShareData {
     this.missingRolesLine,
     required this.sections,
   });
+
+  /// The lines under the event's name:
+  /// 1. day and date | assembly | location
+  /// 2. audience | show start | show end | team end
+  /// 3. participants
+  /// Empty parts and lines are left out.
+  List<String> get detailLines => [
+        for (final line in [
+          [dateLine, assemblyLine, locationLine]
+              .where((part) => part.trim().isNotEmpty)
+              .join(' | '),
+          timeLine,
+          participantsLine,
+        ])
+          if (line.trim().isNotEmpty) line,
+      ];
 }
 
 class EventAssignmentsShareSection {
@@ -47,9 +69,16 @@ class EventAssignmentsShareRow {
   /// right under the name.
   final String? noteText;
 
+  /// Who this row is, and the number to call them on (their own phone, else
+  /// the assignment's alternative one). Only the "מי איתי" view uses them.
+  final String? memberId;
+  final String? phoneNumber;
+
   const EventAssignmentsShareRow({
     required this.memberName,
     this.noteText,
+    this.memberId,
+    this.phoneNumber,
   });
 }
 

@@ -18,9 +18,16 @@ class EventAssignmentsShareDataBuilder {
     List<EventItem> eventItems = const [],
   }) {
     EventAssignmentsShareRow buildRow(Assignment assignment) {
+      final member = assignment.teamMember!;
+      final ownPhone = member.phoneNumber?.trim() ?? '';
+      final altPhone = assignment.alternativePhoneNumber?.trim() ?? '';
       return EventAssignmentsShareRow(
-        memberName: assignment.teamMember!.name,
+        memberName: member.name,
         noteText: _noteText(assignment, event),
+        memberId: member.id,
+        phoneNumber: ownPhone.isNotEmpty
+            ? ownPhone
+            : (altPhone.isNotEmpty ? altPhone : null),
       );
     }
 
@@ -42,6 +49,8 @@ class EventAssignmentsShareDataBuilder {
     return EventAssignmentsShareData(
       eventName: event.name,
       dateLine: _formatEventDatesHebrew(event),
+      assemblyLine:
+          event.assemblyTime.isEmpty ? '' : 'התייצבות - ${event.assemblyTime}',
       timeLine: _formatTimeFields(event),
       participantsLine: _formatParticipantsLine(event),
       locationLine: _formatLocationLine(event.location),
@@ -300,11 +309,9 @@ class EventAssignmentsShareDataBuilder {
   }
 
   static String _formatTimeFields(Event event) {
+    // The assembly time is on the first line, with the date (assemblyLine).
     final parts = <String>[];
 
-    if (event.assemblyTime.isNotEmpty) {
-      parts.add('התייצבות - ${event.assemblyTime}');
-    }
     if (event.startTime.isNotEmpty) {
       parts.add('התכנסות קהל - ${event.startTime}');
     }

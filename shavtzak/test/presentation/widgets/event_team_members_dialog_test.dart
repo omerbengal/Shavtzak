@@ -66,7 +66,7 @@ void main() {
   late StreamController<List<Assignment>> eventAssignmentStream;
   late AssignmentBloc assignmentBloc;
 
-  TeamMember memberFor(String id, String name) => TeamMember(
+  TeamMember memberFor(String id, String name, {String? phone}) => TeamMember(
         id: id,
         name: name,
         isActive: true,
@@ -75,6 +75,7 @@ void main() {
         createdAt: now,
         updatedAt: now,
         uniqueKey: 'uk-$id',
+        phoneNumber: phone,
       );
 
   Assignment assignmentFor(String id, TeamMember member) => Assignment(
@@ -134,15 +135,34 @@ void main() {
     await roleBloc.close();
   });
 
-  Future<void> pumpDialog(WidgetTester tester) async {
+  final event = Event(
+    id: eventId,
+    name: 'אירוע בדיקה',
+    startDate: DateTime(2026, 10, 27),
+    endDate: DateTime(2026, 10, 27),
+    startTime: '19:00',
+    endTime: '22:30',
+    assemblyTime: '18:00',
+    requiresArmed: false,
+    roleRequirements: const {'medic': 1},
+    createdAt: now,
+    updatedAt: now,
+  );
+
+  Future<void> pumpDialog(
+    WidgetTester tester, {
+    Size size = const Size(390, 844),
+  }) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
         home: BlocProvider<RoleBloc>.value(
           value: roleBloc,
           child: EventTeamMembersDialog(
-            eventId: eventId,
-            currentUserId: 'me-not-them',
-            eventName: 'אירוע בדיקה',
+            event: event,
+            currentUserId: 'me',
             assignmentBloc: assignmentBloc,
           ),
         ),
@@ -202,109 +222,120 @@ void main() {
     },
   );
 
-  testWidgets('the search box narrows the list by name', (tester) async {
+  testWidgets('shows the export picture, no search box', (tester) async {
     await pumpDialog(tester);
     await tester.pump();
-
     await emitAssignments(tester, [
-      assignmentFor('a1', memberFor('tm1', 'דני')),
-      assignmentFor('a2', memberFor('tm2', 'רותי')),
+      assignmentFor('a1', memberFor('tm1', 'דני')).copyWith(
+        notes: 'מביא ציוד',
+        customStartAt: () => '2026-10-27T19:00',
+        customEndAt: () => '2026-10-27T21:00',
+      ),
     ]);
-    expect(find.text('דני'), findsOneWidget);
-    expect(find.text('רותי'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), 'רות');
-    await tester.pump();
-    expect(find.text('דני'), findsNothing);
-    expect(find.text('רותי'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), 'משה');
-    await tester.pump();
-    expect(find.text('לא נמצאו אנשים בשם הזה'), findsOneWidget);
+    expect(find.byKey(const Key('who-is-with-me-picture')), findsOneWidget);
+    expect(find.text('אירוע בדיקה'), findsOneWidget); // the picture's header
+    expect(find.text('חובש'), findsOneWidget);
+    expect(find.textContaining('מביא ציוד'), findsOneWidget);
+    expect(find.textContaining('שעות'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
   });
 
-  group('custom hours', () {
-    testWidgets('a member with hours shows them above the notes box',
-        (tester) async {
-      await pumpDialog(tester);
-      await tester.pump();
+  testWidgets('the viewer\'s own row reads "אני"', (tester) async {
+    await pumpDialog(tester);
+    await tester.pump();
+    await emitAssignments(tester, [
+      assignmentFor('a1', memberFor('me', 'אני עצמי', phone: '050')),
+      assignmentFor('a2', memberFor('tm2', 'רותי', phone: '052')),
+    ]);
 
-      await emitAssignments(tester, [
-        assignmentFor('a1', memberFor('tm1', 'דני')).copyWith(
-          notes: 'מביא ציוד',
-          customStartAt: () => '2026-10-27T14:00',
-          customEndAt: () => '2026-10-27T23:00',
-        ),
-      ]);
+    expect(find.text('אני'), findsOneWidget);
+    expect(find.text('אני עצמי'), findsNothing);
+    // Own row does not call.
+    expect(find.byKey(const ValueKey('call-me')), findsNothing);
+    expect(find.byKey(const ValueKey('call-tm2')), findsOneWidget);
+  });
 
-      final hours = find.text('שעות: 27.10 14:00–23:00');
-      final notes = find.textContaining('הערות לשיבוץ');
-      expect(hours, findsOneWidget);
-      expect(notes, findsOneWidget);
-      expect(tester.getTopLeft(hours).dy,
-          lessThan(tester.getTopLeft(notes).dy));
-    });
+  testWidgets('tapping a row asks before calling; cancel calls nobody',
+      (tester) async {
+    await pumpDialog(tester);
+    await tester.pump();
+    await emitAssignments(tester, [
+      assignmentFor('a1', memberFor('tm1', 'דני', phone: '0501234567')),
+    ]);
 
-    testWidgets('hours spanning two days name both days', (tester) async {
-      await pumpDialog(tester);
-      await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('call-tm1')));
+    await tester.pumpAndSettle();
+    expect(find.text('להתקשר לדני?'), findsOneWidget);
+    expect(find.text('0501234567'), findsOneWidget);
 
-      await emitAssignments(tester, [
-        assignmentFor('a1', memberFor('tm1', 'דני')).copyWith(
-          customStartAt: () => '2026-10-27T14:00',
-          customEndAt: () => '2026-10-28T02:00',
-        ),
-      ]);
+    await tester.tap(find.text('ביטול'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('confirm-call')), findsNothing);
+  });
 
-      expect(find.text('שעות: 27.10 14:00 – 28.10 02:00'), findsOneWidget);
-    });
+  testWidgets('a member with no phone (and no alternative) is not tappable',
+      (tester) async {
+    await pumpDialog(tester);
+    await tester.pump();
+    await emitAssignments(tester, [
+      assignmentFor('a1', memberFor('tm1', 'דני')),
+      assignmentFor('a2', memberFor('tm2', 'רותי'))
+          .copyWith(alternativePhoneNumber: () => '0529999999'),
+    ]);
 
-    testWidgets('with the assignment\'s event attached, days read by weekday',
-        (tester) async {
-      await pumpDialog(tester);
-      await tester.pump();
+    expect(find.byKey(const ValueKey('call-tm1')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('call-tm2')));
+    await tester.pumpAndSettle();
+    expect(find.text('0529999999'), findsOneWidget);
+  });
 
-      // 27.10.2026 is a Tuesday.
-      final twoDayEvent = Event(
-        id: eventId,
-        name: 'כנס חורף',
-        startDate: DateTime(2026, 10, 27),
-        endDate: DateTime(2026, 10, 28),
-        startTime: '19:00',
-        endTime: '22:30',
-        assemblyTime: '12:00',
-        requiresArmed: false,
-        roleRequirements: const {'medic': 1},
-        createdAt: now,
-        updatedAt: now,
-      );
-      await emitAssignments(tester, [
-        assignmentFor('a1', memberFor('tm1', 'דני')).copyWith(
-          event: twoDayEvent,
-          customStartAt: () => '2026-10-27T22:00',
-          customEndAt: () => '2026-10-28T02:00',
-        ),
-      ]);
+  testWidgets('a big event fits on one phone screen, no scrolling',
+      (tester) async {
+    await pumpDialog(tester);
+    await tester.pump();
+    await emitAssignments(tester, [
+      for (var i = 0; i < 30; i++)
+        assignmentFor('a$i', memberFor('tm$i', 'חבר צוות $i')),
+    ]);
 
-      expect(find.text("שעות: יום ג' 22:00 – יום ד' 02:00"), findsOneWidget);
-    });
+    expect(tester.takeException(), isNull);
+    expect(find.byType(Scrollable), findsNothing);
+    final picture =
+        tester.getRect(find.byKey(const Key('who-is-with-me-picture')));
+    expect(picture.top, greaterThanOrEqualTo(0));
+    expect(picture.bottom, lessThanOrEqualTo(844));
+    expect(picture.left, greaterThanOrEqualTo(0));
+    expect(picture.right, lessThanOrEqualTo(390));
+  });
 
-    testWidgets('members without hours, or with hours that cannot be read, '
-        'get no hours line', (tester) async {
-      await pumpDialog(tester);
-      await tester.pump();
+  testWidgets('a tall event still fills the popup\'s width', (tester) async {
+    await pumpDialog(tester);
+    await tester.pump();
+    await emitAssignments(tester, [
+      for (var i = 0; i < 40; i++)
+        assignmentFor('a$i', memberFor('tm$i', 'חבר צוות $i')),
+    ]);
 
-      await emitAssignments(tester, [
-        assignmentFor('a1', memberFor('tm1', 'דני')),
-        assignmentFor('a2', memberFor('tm2', 'רותי')).copyWith(
-          customStartAt: () => '2026-10-27T23:00',
-          customEndAt: () => '2026-10-27T14:00',
-        ),
-      ]);
+    expect(tester.takeException(), isNull);
+    final picture =
+        tester.getRect(find.byKey(const Key('who-is-with-me-picture')));
+    // 390 screen − 2×6 popup margin − 2×4 popup padding = 370, centred.
+    expect(picture.width, moreOrLessEquals(370, epsilon: 2));
+    expect(picture.left, moreOrLessEquals(390 - picture.right, epsilon: 1));
+    expect(picture.bottom, lessThanOrEqualTo(844));
+  });
 
-      expect(find.text('דני'), findsOneWidget);
-      expect(find.text('רותי'), findsOneWidget);
-      expect(find.textContaining('שעות:'), findsNothing);
-    });
+  testWidgets('follows the assignments live', (tester) async {
+    await pumpDialog(tester);
+    await tester.pump();
+    await emitAssignments(
+        tester, [assignmentFor('a1', memberFor('tm1', 'דני'))]);
+    expect(find.text('דני'), findsOneWidget);
+
+    await emitAssignments(
+        tester, [assignmentFor('a1', memberFor('tm3', 'משה'))]);
+    expect(find.text('דני'), findsNothing);
+    expect(find.text('משה'), findsOneWidget);
   });
 }
