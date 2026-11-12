@@ -22,7 +22,9 @@ import '../../../bloc/user_selection/user_selection_state.dart';
 import '../task_screen_actions.dart';
 import '../task_style.dart';
 import '../tasks_place.dart';
+import '../../../widgets/edge_slide_over.dart';
 import 'edit_context.dart';
+import 'event_assignments_quick_view.dart';
 import 'edit_rules.dart';
 import 'stage_edit_card.dart';
 
@@ -484,11 +486,19 @@ class _EventEditScreenState extends State<EventEditScreen>
           ctx: ctx,
         ));
       }
-      return _scaffold(
-        board.event,
-        KeyedSubtree(
-          key: _listKey,
-          child: _buildList(board, user, wide, cards),
+      return EdgeSlideOver(
+        wide: wide,
+        handleTooltip: 'שיבוצים',
+        panelBuilder: (context, close) => EventAssignmentsQuickView(
+          event: board.event,
+          onClose: close,
+        ),
+        child: _scaffold(
+          board.event,
+          KeyedSubtree(
+            key: _listKey,
+            child: _buildList(board, user, wide, cards),
+          ),
         ),
       );
     });

@@ -195,6 +195,14 @@ abstract final class TaskStyle {
     BoxShadow(color: Color(0x222196F3), spreadRadius: 5),
   ];
   static const double editMaxWidth = 1280;
+
+  /// The assignments quick view's picture is at most this wide on screen
+  /// (it is drawn 1080 wide and shrunk); a phone is narrower anyway.
+  static const double assignmentsPictureMaxWidth = 720;
+
+  /// The quick view's ✕: phone / wide window.
+  static const double assignmentsCloseIcon = 24;
+  static const double assignmentsCloseIconWide = 36;
   static const double editCardRadius = 14;
   // The frame round a whole stage card.
   static const Color editStageBorder = Color(0xFF111827);
