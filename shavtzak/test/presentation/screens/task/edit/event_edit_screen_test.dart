@@ -352,6 +352,16 @@ void main() {
 
   testWidgets('back returns to the event screen', (tester) async {
     await pump(tester);
+    // arrow_back is mirrored under RTL, so it points right: the Hebrew back.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('edit-back')),
+        matching: find.byIcon(Icons.arrow_back),
+      ),
+      findsOneWidget,
+    );
+    expect(Directionality.of(tester.element(find.byKey(const Key('edit-back')))),
+        TextDirection.rtl);
     await tester.tap(find.byKey(const Key('edit-back')));
     await tester.pumpAndSettle();
     expect(find.text('מסך האירוע'), findsOneWidget);

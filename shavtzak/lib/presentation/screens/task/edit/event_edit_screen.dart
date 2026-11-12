@@ -409,7 +409,8 @@ class _EventEditScreenState extends State<EventEditScreen>
         leading: IconButton(
           key: const Key('edit-back'),
           tooltip: 'חזרה לאירוע',
-          icon: const Icon(Icons.arrow_forward),
+          // Mirrored under RTL: points right on screen, the Hebrew "back".
+          icon: const Icon(Icons.arrow_back),
           onPressed: _backToEvent,
         ),
         automaticallyImplyLeading: false,

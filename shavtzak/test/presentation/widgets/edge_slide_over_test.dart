@@ -38,7 +38,7 @@ void main() {
       expect(find.text('panel'), findsNothing);
     });
 
-    testWidgets('a swipe from the right edge past a third opens it fully',
+    testWidgets('a swipe from the right edge follows the finger, then opens',
         (tester) async {
       await pump(tester, width: 400);
       final gesture = await tester.startGesture(const Offset(395, 400));
@@ -52,9 +52,18 @@ void main() {
       expect(panelLeft(tester), 0);
     });
 
-    testWidgets('a swipe under a third slides it back out', (tester) async {
+    testWidgets('a swipe of 15% of the width is enough to open it fully',
+        (tester) async {
       await pump(tester, width: 400);
+      // 400 × 15% = 60 px of travel, past the drag's start slop.
       await tester.dragFrom(const Offset(395, 400), const Offset(-90, 0));
+      await tester.pumpAndSettle();
+      expect(panelLeft(tester), 0);
+    });
+
+    testWidgets('a swipe under 15% slides it back out', (tester) async {
+      await pump(tester, width: 400);
+      await tester.dragFrom(const Offset(395, 400), const Offset(-40, 0));
       await tester.pumpAndSettle();
       expect(find.text('panel'), findsNothing);
     });

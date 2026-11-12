@@ -28,7 +28,7 @@ class EdgeSlideOver extends StatefulWidget {
   final bool wide;
   final String? handleTooltip;
 
-  static const double openThreshold = 1 / 3;
+  static const double openThreshold = 0.15;
   static const double closeThreshold = 0.15;
   static const double edgeStripWidth = 24;
   static const Duration slideDuration = Duration(milliseconds: 220);
@@ -64,7 +64,7 @@ class _EdgeSlideOverState extends State<EdgeSlideOver>
   }
 
   void _endOpenDrag() {
-    if (_open.value > EdgeSlideOver.openThreshold) {
+    if (_open.value >= EdgeSlideOver.openThreshold) {
       _show();
     } else {
       _hide();
