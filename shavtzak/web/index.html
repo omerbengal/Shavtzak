@@ -314,6 +314,8 @@
   <!-- No waiting on fonts here: main.dart registers Rubik with the engine
        before the first frame, and the splash stays up until then. -->
   <!-- iPhone: the keyboard opens on the first tap of a text field. -->
+  <!-- The in-app refresh: download screen + clean reinstall of the newest build. -->
+  <script src="app_refresh.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 
   <script>
@@ -336,32 +338,6 @@
       setTimeout(register, 20000);
     })();
 
-    // Called by the app's "refresh" button (WebHelper.reloadPage): fetch the
-    // newest build into the cache first, or the reload would be served the
-    // cached old one.
-    window.shavtzakReloadToLatest = async function () {
-      try {
-        const reg = await navigator.serviceWorker?.getRegistration();
-        if (reg) {
-          await reg.update();
-          const worker = reg.installing || reg.waiting;
-          if (worker) {
-            await new Promise((resolve) => {
-              const timer = setTimeout(resolve, 30000);
-              worker.addEventListener('statechange', () => {
-                if (worker.state === 'activated' || worker.state === 'redundant') {
-                  clearTimeout(timer);
-                  resolve();
-                }
-              });
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('update before reload failed:', e);
-      }
-      location.reload();
-    };
   </script>
 </body>
 </html>

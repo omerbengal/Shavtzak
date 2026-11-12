@@ -2,8 +2,9 @@ import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
 
-/// Defined in web/index.html: installs a newer build the service worker
-/// found, then reloads. Null when the page has no such hook.
+/// Defined in web/app_refresh.js: wipes the app this device keeps, downloads
+/// the newest build behind a progress screen, then reloads. Null when the
+/// page has no such hook.
 @JS('shavtzakReloadToLatest')
 external JSFunction? get _reloadToLatest;
 

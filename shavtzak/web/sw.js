@@ -12,8 +12,8 @@
 //
 // The trade-off: the first open after a deploy still shows the previous build
 // (served instantly); the new one is ready from the next open. The in-app
-// "refresh" button waits for the new build first (index.html,
-// `shavtzakReloadToLatest`).
+// "refresh" button wipes this worker and its caches and downloads the new
+// build fresh, with a progress screen (web/app_refresh.js).
 //
 // KILL SWITCH: if this worker ever misbehaves, replace this file's contents
 // with a worker that calls `self.registration.unregister()` on activate and

@@ -28,6 +28,7 @@ const EXCLUDED = [
   /^icons\/Icon-maskable-/,
   /^icons\/Icon-512\.png$/,
   /^favicon\.png$/,
+  /^lottie\/LICENSE\.md$/,
   /\.symbols$/,
   /\.map$/,
   /\.info\.json$/,
@@ -92,17 +93,21 @@ const build = createHash('sha256')
   .digest('hex')
   .slice(0, 16);
 
+// Byte sizes, for the progress bar of the in-app refresh (index.html,
+// `shavtzakReloadToLatest`); sw.js itself reads only `files`.
+const sizes = Object.fromEntries(Object.keys(files)
+  .map((p) => [p, statSync(join(root, p)).size]));
+
 const swPath = join(root, 'sw.js');
 const placeholder = '/* __PRECACHE_MANIFEST__ */ null';
 const sw = readFileSync(swPath, 'utf8');
 if (!sw.includes(placeholder)) throw new Error(`placeholder missing in ${swPath}`);
 writeFileSync(
   swPath,
-  sw.replace(placeholder, JSON.stringify({build, engine, files})),
+  sw.replace(placeholder, JSON.stringify({build, engine, files, sizes})),
 );
 
-const bytes = Object.keys(files)
-  .reduce((sum, p) => sum + statSync(join(root, p)).size, 0);
+const bytes = Object.values(sizes).reduce((sum, n) => sum + n, 0);
 console.log(`sw.js pinned to build ${build}: ${Object.keys(files).length} files, ` +
   `${(bytes / 1e6).toFixed(1)} MB, engine ${engine.slice(0, 10)}, ` +
   `Firebase JS SDK ${firebaseVersion} preloaded`);
