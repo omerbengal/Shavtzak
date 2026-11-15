@@ -239,14 +239,23 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
 
   /// The funnel sits at the far left of the screen (the row's end in RTL), so
   /// Flutter has no room for a submenu on the left, where RTL puts it, and
-  /// opens it on the right; the default arrow still points left (Omer, round
-  /// 4). The arrow points where the submenu opens.
-  static const WidgetStateProperty<Widget?> _submenuArrow = WidgetStatePropertyAll(
-    Directionality(
-      textDirection: TextDirection.ltr,
-      child: Icon(Icons.arrow_right, key: Key('team-filter-submenu-arrow'), size: 24),
-    ),
-  );
+  /// opens it on the right. The arrow points there (round 4) and sits on the
+  /// right of the word, the side it opens to (round 5): it leads the label,
+  /// and the trailing slot stays empty so the menu keeps its width (a wider
+  /// menu leaves no room on a phone for the submenu beside it).
+  static Widget _withArrow(Widget label) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Directionality(
+            textDirection: TextDirection.ltr,
+            child: Icon(Icons.arrow_right, key: Key('team-filter-submenu-arrow'), size: 24),
+          ),
+          const SizedBox(width: 2),
+          Flexible(child: label),
+        ],
+      );
+  static const WidgetStateProperty<Widget?> _noTrailingArrow =
+      WidgetStatePropertyAll(SizedBox.shrink());
 
   /// The three filters folded into one funnel; its menu lists them as rows.
   Widget _funnel() {
@@ -259,7 +268,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
       menuChildren: [
         SubmenuButton(
           key: const Key('team-filter-menu-status'),
-          submenuIcon: _submenuArrow,
+          submenuIcon: _noTrailingArrow,
           menuChildren: [
             for (final status in TeamTaskStatus.values)
               CheckboxMenuButton(
@@ -270,12 +279,12 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
                 child: Text(status.hebrewLabel),
               ),
           ],
-          child: Text(_statusLabel),
+          child: _withArrow(Text(_statusLabel)),
         ),
         if (widget.showOwner)
           SubmenuButton(
             key: const Key('team-filter-menu-owner'),
-            submenuIcon: _submenuArrow,
+            submenuIcon: _noTrailingArrow,
             menuChildren: [
               MenuItemButton(
                 onPressed: () => _setOwner(null),
@@ -290,7 +299,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
                   child: MemberNameText(name: member.name, permanent: member.isPermanent),
                 ),
             ],
-            child: Text(_ownerName == null ? 'אחראי' : 'אחראי: $_ownerName'),
+            child: _withArrow(Text(_ownerName == null ? 'אחראי' : 'אחראי: $_ownerName')),
           ),
         MenuItemButton(
           key: const Key('team-filter-menu-link'),

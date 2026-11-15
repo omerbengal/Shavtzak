@@ -5,7 +5,7 @@ import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
-import '../../task/widgets/assignee_update_dialog.dart';
+import 'team_task_style.dart';
 
 /// The quick actions on one task, shared by the task screen, the rows of
 /// "המשימות שלי" and a parent's subtask list (Omer, round 4): change the
@@ -99,18 +99,57 @@ Future<String?> pickDuplicateOriginal(
   );
 }
 
-/// The status menu's options: the five statuses, each word centred (Omer,
-/// round 4).
+/// The status menu's options: the five statuses, each with its status circle
+/// at the start of the word (on its right, Omer round 5), the pair centred
+/// (round 4).
 List<PopupMenuEntry<TeamTaskStatus>> teamTaskStatusMenuItems() => [
       for (final status in TeamTaskStatus.values)
         PopupMenuItem(
           key: Key('team-task-status-option-${status.hebrewLabel}'),
           value: status,
-          child: Center(child: Text(status.hebrewLabel)),
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TeamTaskStatusIcon(status: status, size: TeamTaskStyle.subtaskIconSize),
+                const SizedBox(width: 8),
+                Text(status.hebrewLabel),
+              ],
+            ),
+          ),
         ),
     ];
 
-/// [child] opening the status menu of [task].
+/// A task with subtasks: its status follows them (Omer, round 4 item 8).
+bool isTeamTaskParent(TeamTask task) => !task.isSubtask && task.subtasks.isNotEmpty;
+
+/// Tapping a parent's status (Omer, round 5): a small note that it updates by
+/// itself.
+Future<void> showParentStatusInfo(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        key: const Key('team-task-parent-status-info'),
+        content: const Text(
+          'הסטטוס של משימה שיש תחתיה תתי-משימות מתעדכן אוטומטית לפי הסטטוסים של תתי-המשימות.',
+        ),
+        actions: [
+          FilledButton(
+            key: const Key('team-task-parent-status-ok'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('הבנתי'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// [child] opening the status menu of [task]; for a parent, the note that its
+/// status updates by itself instead.
 class TeamTaskStatusMenu extends StatelessWidget {
   const TeamTaskStatusMenu({super.key, required this.task, required this.child});
 
@@ -119,6 +158,13 @@ class TeamTaskStatusMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isTeamTaskParent(task)) {
+      return InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () => showParentStatusInfo(context),
+        child: child,
+      );
+    }
     return PopupMenuButton<TeamTaskStatus>(
       tooltip: 'שינוי סטטוס',
       padding: EdgeInsets.zero,
@@ -129,27 +175,4 @@ class TeamTaskStatusMenu extends StatelessWidget {
       child: child,
     );
   }
-}
-
-/// A small dialog that adds one update to [task]'s log, the דו יומי update
-/// dialog: it stays open with a spinner until the backend answers.
-Future<void> showAddTeamTaskUpdateDialog(BuildContext context, TeamTask task) {
-  final bloc = context.read<TeamTaskBloc>();
-  return showAssigneeUpdateDialog(
-    context,
-    title: task.title,
-    hintText: 'מה התחדש?',
-    helperText: null,
-    saveLabel: 'הוספה',
-    onSave: (text) {
-      if (text.isEmpty) {
-        return Future.value(const CrudActionResult.failure('חובה להזין עדכון'));
-      }
-      final completion = CrudActionCompleter();
-      bloc.add(task.isSubtask
-          ? AddTeamTaskUpdate(task.parentId!, text, subtaskId: task.id, completion: completion)
-          : AddTeamTaskUpdate(task.id, text, completion: completion));
-      return completion.future;
-    },
-  );
 }

@@ -23,8 +23,8 @@ void main() {
         categories: [buildCategory()],
       );
 
-  final mine = buildTeamTask(id: 'a', title: 'להזמין אולם', assigneeIds: ['m1'])
-      .copyWith(owners: [dana]);
+  final mine =
+      buildTeamTask(id: 'a', title: 'להזמין אולם', assigneeIds: ['m1']).copyWith(owners: [dana]);
 
   testWidgets('owner sees no FAB and no all-tasks tab', (tester) async {
     await pumpTeamTasks(tester, user: dana, board: board([mine]));
@@ -34,8 +34,8 @@ void main() {
   });
 
   testWidgets('manager sees both', (tester) async {
-    final theirs = buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2'])
-        .copyWith(owners: [yossi]);
+    final theirs =
+        buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2']).copyWith(owners: [yossi]);
     await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
     expect(find.byKey(const Key('team-task-new')), findsOneWidget);
     expect(find.text('כל המשימות'), findsOneWidget);
@@ -47,7 +47,8 @@ void main() {
     expect(find.byKey(const Key('team-task-row-a')), findsNothing);
   });
 
-  testWidgets('tabs as in דו יומי: "המשימות שלי" on the right, the chosen one readable', (tester) async {
+  testWidgets('tabs as in דו יומי: "המשימות שלי" on the right, the chosen one readable',
+      (tester) async {
     await pumpTeamTasks(tester, user: manager, board: board([mine]));
     final mineTab = tester.getCenter(find.byKey(const Key('team-tab-mine')));
     final allTab = tester.getCenter(find.byKey(const Key('team-tab-all')));
@@ -61,8 +62,10 @@ void main() {
   });
 
   testWidgets('late deadline is red', (tester) async {
-    final late = buildTeamTask(id: 'l', title: 'באיחור', deadline: '2026-11-10').copyWith(owners: [dana]);
-    final fine = buildTeamTask(id: 'f', title: 'בזמן', deadline: '2026-11-20').copyWith(owners: [dana]);
+    final late =
+        buildTeamTask(id: 'l', title: 'באיחור', deadline: '2026-11-10').copyWith(owners: [dana]);
+    final fine =
+        buildTeamTask(id: 'f', title: 'בזמן', deadline: '2026-11-20').copyWith(owners: [dana]);
     await pumpTeamTasks(tester, user: dana, board: board([late, fine]));
     Text deadline(String id) => tester.widget<Text>(find.byKey(Key('team-task-deadline-$id')));
     expect(deadline('l').style?.color, TaskStyle.late);
@@ -110,7 +113,8 @@ void main() {
     await tester.pumpAndSettle();
     final option = find.byKey(const Key('task-link-option-p1'));
     expect(find.descendant(of: option, matching: find.text('השיוך הנוכחי')), findsOneWidget);
-    final name = tester.widget<Text>(find.descendant(of: option, matching: find.text('נשות מגדים')));
+    final name =
+        tester.widget<Text>(find.descendant(of: option, matching: find.text('נשות מגדים')));
     expect(name.style?.fontSize, 16);
     expect(name.style?.color, isNull);
     expect(find.descendant(of: option, matching: find.byType(ListTile)), findsNothing);
@@ -238,7 +242,8 @@ void main() {
     expect(find.byKey(const Key('team-task-row-s2')), findsNothing);
   });
 
-  testWidgets('"כל המשימות" folds the subtasks under their parent, "2/4 ▾" opens them', (tester) async {
+  testWidgets('"כל המשימות" folds the subtasks under their parent, "2/4 ▾" opens them',
+      (tester) async {
     final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
       TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
       TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
@@ -255,8 +260,8 @@ void main() {
   });
 
   group('round 3', () {
-    final theirs = buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2'])
-        .copyWith(owners: [yossi]);
+    final theirs =
+        buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2']).copyWith(owners: [yossi]);
     final managersOwn = buildTeamTask(id: 'c', title: 'של המנהלת', assigneeIds: ['mgr'])
         .copyWith(owners: [manager]);
 
@@ -280,12 +285,15 @@ void main() {
       await tester.tap(find.text('יוסי').last);
       await tester.pumpAndSettle();
       Color? fill(String key) {
-        final box = tester.widget<Container>(find.descendant(
-          of: find.byKey(Key(key)),
-          matching: find.byType(Container),
-        ).first);
+        final box = tester.widget<Container>(find
+            .descendant(
+              of: find.byKey(Key(key)),
+              matching: find.byType(Container),
+            )
+            .first);
         return (box.decoration as BoxDecoration?)?.color;
       }
+
       expect(fill('team-filter-owner'), TaskStyle.currentLight);
       expect(fill('team-filter-status'), Colors.transparent);
     });
@@ -362,7 +370,8 @@ void main() {
 
     testWidgets('a row shows the status circle and the initials of the owners', (tester) async {
       final omer = buildMember(id: 'o1', name: 'עומר בנגל');
-      final task = buildTeamTask(id: 'x', title: 'משימה', assigneeIds: ['o1'], status: TeamTaskStatus.inProgress)
+      final task = buildTeamTask(
+              id: 'x', title: 'משימה', assigneeIds: ['o1'], status: TeamTaskStatus.inProgress)
           .copyWith(owners: [omer]);
       await pumpTeamTasks(tester, user: omer, board: board([task]));
       expect(find.byKey(const Key('team-status-icon-inProgress')), findsOneWidget);
@@ -374,8 +383,8 @@ void main() {
   });
 
   group('round 4', () {
-    final theirs = buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2'])
-        .copyWith(owners: [yossi]);
+    final theirs =
+        buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2']).copyWith(owners: [yossi]);
 
     testWidgets('"המשימות שלי": the status from its circle, without opening the task',
         (tester) async {
@@ -384,11 +393,13 @@ void main() {
       await tester.pumpAndSettle();
       // The words centred in the menu (item 9).
       expect(
-        find.descendant(
-          of: find.byKey(const Key('team-task-status-option-בטיפול')),
-          matching: find.byType(Center),
-        ),
-        findsWidgets,
+        tester
+            .widget<Row>(find.descendant(
+              of: find.byKey(const Key('team-task-status-option-בטיפול')),
+              matching: find.byType(Row),
+            ))
+            .mainAxisAlignment,
+        MainAxisAlignment.center,
       );
       await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')));
       await tester.pumpAndSettle();
@@ -396,20 +407,69 @@ void main() {
       expect(find.byKey(const Key('team-task-panel')), findsNothing);
     });
 
-    testWidgets('"המשימות שלי": a new update from the row, a spinner until it is saved',
+    testWidgets('"המשימות שלי": the quick update card shows every past update and adds one',
         (tester) async {
-      final harness = await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      final logged = mine.copyWith(updates: [
+        TaskUpdateEntry(
+            id: 'u2', text: 'חדש', at: DateTime(2026, 11, 3), byId: 'm1', byName: 'דנה'),
+        TaskUpdateEntry(
+            id: 'u1', text: 'ישן', at: DateTime(2026, 11, 2), byId: 'm1', byName: 'דנה'),
+      ]);
+      final harness = await pumpTeamTasks(tester, user: dana, board: board([logged]));
       await tester.tap(find.byKey(const Key('team-task-quick-update-a')));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('assignee-update-text')), 'דיברתי עם האולם');
+      final card = find.byKey(const Key('team-task-updates-dialog'));
+      expect(card, findsOneWidget);
+      // The whole log, newest first (round 5).
+      expect(tester.getTopLeft(find.byKey(const Key('team-task-log-u2'))).dy,
+          lessThan(tester.getTopLeft(find.byKey(const Key('team-task-log-u1'))).dy));
+      await tester.enterText(find.byKey(const Key('team-task-update-field')), 'דיברתי עם האולם');
       final gate = harness.repository.gate = Completer<void>();
-      await tester.tap(find.byKey(const Key('assignee-update-save')));
+      await tester.tap(find.byKey(const Key('team-task-update-send')));
       await tester.pump();
       expect(harness.repository.calls, ['log:a:דיברתי עם האולם']);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byKey(const Key('team-task-update-sending')), findsOneWidget);
       gate.complete();
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('assignee-update-text')), findsNothing);
+      // The card stays open, the new update shows once the stream has it.
+      await harness.deliver(
+        tester,
+        board([
+          logged.copyWith(updates: [
+            TaskUpdateEntry(
+                id: 'u3',
+                text: 'דיברתי עם האולם',
+                at: DateTime(2026, 11, 15),
+                byId: 'm1',
+                byName: 'דנה'),
+            ...logged.updates,
+          ]),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-log-u3')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-task-updates-close')));
+      await tester.pumpAndSettle();
+      expect(card, findsNothing);
+      expect(find.byKey(const Key('team-task-panel')), findsNothing);
+    });
+
+    testWidgets("a parent's status circle in \"כל המשימות\" explains it updates by itself",
+        (tester) async {
+      final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
+        TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
+      ]);
+      final harness = await pumpTeamTasks(tester, user: manager, board: board([parent]));
+      await tester.tap(find.byKey(const Key('team-tab-all')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-task-parent-status-tap-p')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-parent-status-info')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-panel')), findsNothing);
+      await tester.tap(find.byKey(const Key('team-task-parent-status-ok')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-parent-status-info')), findsNothing);
+      expect(harness.repository.calls, isEmpty);
     });
 
     testWidgets('"כל המשימות" rows have no quick buttons', (tester) async {
@@ -427,8 +487,7 @@ void main() {
       expect(((width - field.right) - link.left).abs(), lessThan(2));
     });
 
-    testWidgets("the funnel's submenu arrows point right, where the submenus open",
-        (tester) async {
+    testWidgets("the funnel's submenu arrows point right, where the submenus open", (tester) async {
       await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
       await tester.tap(find.byKey(const Key('team-filter-search')));
       await tester.pumpAndSettle();
@@ -439,7 +498,18 @@ void main() {
       await tester.pumpAndSettle();
       final submenu = tester.getRect(find.byKey(const Key('team-filter-menu-status-open')).first);
       expect(submenu.left, greaterThanOrEqualTo(status.right - 1));
-      expect(find.byKey(const Key('team-filter-submenu-arrow')), findsWidgets);
+      // Still pointing right, and now on the right of the word (round 5).
+      final arrow = find.descendant(
+        of: find.byKey(const Key('team-filter-menu-status')),
+        matching: find.byKey(const Key('team-filter-submenu-arrow')),
+      );
+      final icon = tester.widget<Icon>(arrow);
+      expect(icon.icon, Icons.arrow_right);
+      final word = find.descendant(
+        of: find.byKey(const Key('team-filter-menu-status')),
+        matching: find.byType(Text),
+      );
+      expect(tester.getCenter(arrow).dx, greaterThan(tester.getRect(word.first).right));
     });
 
     testWidgets('a subtask row in "כל המשימות" lights up under the mouse', (tester) async {
@@ -455,8 +525,8 @@ void main() {
       expect(
         find.ancestor(
           of: find.byKey(const Key('team-task-row-s1')),
-          matching: find.byWidgetPredicate(
-              (w) => w is Material && w.type == MaterialType.transparency),
+          matching:
+              find.byWidgetPredicate((w) => w is Material && w.type == MaterialType.transparency),
         ),
         findsWidgets,
       );

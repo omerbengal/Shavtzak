@@ -130,10 +130,13 @@ through the backend, as for every other collection. A non-manager's screen queri
 
 ## Behaviour
 
-- The parent's status follows its subtasks: every subtask closed (בוצעה / בוטל / כפילות) with at
-  least one בוצעה sets בוצעה; a subtask reopened under a בוצעה parent sets בטיפול; a subtask in
-  progress or done moves a פתוחה parent to בטיפול. A cancelled / duplicate parent is never touched.
-  The tick in the parent's list is a shortcut: בוצעה, or back to פתוחה.
+- The parent's status is derived from its subtasks and never set by hand (Omer, round 4 item 8;
+  the edge cases approved in msg 3295): subtasks that are לא רלוונטי/בוטל or כפילות do not count;
+  of the rest, all פתוחה = פתוחה, all בוצעה = בוצעה, anything else = בטיפול, **including פתוחה +
+  בוצעה with no בטיפול** ("started, not finished"); when **every** subtask is לא רלוונטי/בוטל or
+  כפילות, the parent is לא רלוונטי/בוטל ("nothing left to do"). The backend refuses a status write on
+  a parent. Tapping a parent's status anywhere shows a small dialog: its status updates
+  automatically, with a "הבנתי" button (round 5).
 - Status "כפילות" asks for the original task (a picker of the other tasks).
 - A task linked to an event that was deleted shows "אירוע שנמחק" under its group; nothing is lost.
 - Deleting a task: managers only, behind a confirm (the statuses cover the "don't delete" cases).
@@ -161,3 +164,12 @@ list updates first; the deadline picker allows today and later only and frames n
 picker lists only events that have not ended, nearest first; the owner picker lists the picked members
 first (a divider, then the rest, each part by name); every team member shown in the feature carries
 the app's permanent-member mark.
+
+## Round 5 (Omer, msg 3295)
+
+- The status menu shows each status's circle on the right of its name (RTL: at the start), centred.
+- The quick update button in "המשימות שלי" opens a card with the task's whole update log (newest
+  first) and the field for a new one; the card stays open after a send and shows it.
+- The funnel's submenu arrow points right and sits on the right of the word.
+- A parent's status: the "updates automatically" dialog (see Behaviour); the item-8 edge cases above
+  are approved.

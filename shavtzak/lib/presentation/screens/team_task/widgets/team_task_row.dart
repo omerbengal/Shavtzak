@@ -79,7 +79,19 @@ class TeamTaskRow extends StatelessWidget {
   /// The status circle, opening the status menu when [canChangeStatus].
   Widget _status(double size) {
     final icon = TeamTaskStatusIcon(status: task.status, size: size);
-    if (!canChangeStatus) return icon;
+    if (!canChangeStatus) {
+      // A parent's circle anywhere: the note that it updates by itself
+      // (Omer, round 5), with no extra room so the rows stay aligned.
+      if (!isTeamTaskParent(task)) return icon;
+      return Builder(
+        builder: (context) => InkWell(
+          key: Key('team-task-parent-status-tap-${task.id}'),
+          customBorder: const CircleBorder(),
+          onTap: () => showParentStatusInfo(context),
+          child: icon,
+        ),
+      );
+    }
     return TeamTaskStatusMenu(
       key: Key('team-task-status-tap-${task.id}'),
       task: task,

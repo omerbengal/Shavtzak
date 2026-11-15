@@ -17,11 +17,11 @@ import '../../widgets/test_environment_indicator.dart';
 import '../task/task_style.dart';
 import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
-import 'widgets/team_task_actions.dart';
 import 'widgets/team_task_filter_bar.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
 import 'widgets/team_task_style.dart';
+import 'widgets/team_task_update_log.dart';
 import 'widgets/topic_management_dialog.dart';
 
 /// The team tasks screen ("משימות"): the headquarters team's tasks, grouped
@@ -290,7 +290,7 @@ class _GroupedListState extends State<_GroupedList> {
         // "המשימות שלי": the status and a new update without opening the
         // task (Omer, round 4); every row there is the viewer's own.
         canChangeStatus: !widget.editing,
-        onAddUpdate: widget.editing ? null : () => showAddTeamTaskUpdateDialog(context, task),
+        onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
         onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
       ));
       if (open && shown.isNotEmpty) {

@@ -8,7 +8,6 @@ import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
-import '../../../widgets/rtl_arrow_keys.dart';
 import '../../task/edit/editable_value.dart';
 import '../../task/edit/value_editors.dart';
 import '../../task/task_style.dart';
@@ -19,6 +18,7 @@ import 'new_team_task_dialog.dart';
 import 'team_task_actions.dart';
 import 'team_task_row.dart';
 import 'team_task_style.dart';
+import 'team_task_update_log.dart';
 
 /// Opens one task: a sheet from the bottom on a phone, a centred panel (at
 /// most 960 px) on a wide window, as the דו יומי task sheet.
@@ -80,15 +80,7 @@ class TeamTaskSheet extends StatefulWidget {
 }
 
 class _TeamTaskSheetState extends State<TeamTaskSheet> {
-  final TextEditingController _update = TextEditingController();
-  bool _sending = false;
   bool _closed = false;
-
-  @override
-  void dispose() {
-    _update.dispose();
-    super.dispose();
-  }
 
   TeamTaskBloc get _bloc => context.read<TeamTaskBloc>();
 
@@ -143,26 +135,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       assigneeIds: const [],
       ownerIds: teamTaskOwnerIds(parent.copyWith(subtasks: subtasks)),
     ));
-  }
-
-  Future<void> _sendUpdate(TeamTask task) async {
-    final text = _update.text.trim();
-    if (text.isEmpty) return;
-    final completion = CrudActionCompleter();
-    setState(() => _sending = true);
-    _bloc.add(task.isSubtask
-        ? AddTeamTaskUpdate(task.parentId!, text, subtaskId: task.id, completion: completion)
-        : AddTeamTaskUpdate(task.id, text, completion: completion));
-    final result = await completion.future;
-    if (!mounted) return;
-    setState(() => _sending = false);
-    if (result.isSuccess) {
-      _update.clear();
-    } else {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(result.message ?? 'הפעולה נכשלה')),
-      );
-    }
   }
 
   Future<void> _delete(TeamTask task) {
@@ -281,7 +253,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                         : 'תתי-משימות (${task.doneSubtasks}/${task.subtasks.length})',
                     _subtasksValue(task, manage, viewerId),
                   ),
-                _section('יומן עדכונים', _log(task, manage || owner)),
+                _section('יומן עדכונים', TeamTaskUpdateLog(task: task, canWrite: manage || owner)),
                 if (manage) ...[
                   const SizedBox(height: 16),
                   Align(
@@ -436,7 +408,8 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (canChange)
+        // A parent's chip tells that its status updates by itself (round 5).
+        if (canChange || isTeamTaskParent(task))
           TeamTaskStatusMenu(key: const Key('team-task-status'), task: task, child: chip)
         else
           chip,
@@ -641,76 +614,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             label: const Text('תת-משימה'),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _log(TeamTask task, bool canWrite) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (canWrite)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: RtlArrowKeys(
-                  multiline: true,
-                  child: TextField(
-                    key: const Key('team-task-update-field'),
-                    controller: _update,
-                    minLines: 1,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      hintText: '+ עדכון',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ),
-              IconButton(
-                key: const Key('team-task-update-send'),
-                tooltip: 'הוספת עדכון',
-                onPressed: _sending ? null : () => _sendUpdate(task),
-                // Spins until the update is saved (Omer, round 4).
-                icon: _sending
-                    ? const SizedBox(
-                        key: Key('team-task-update-sending'),
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send),
-              ),
-            ],
-          ),
-        if (task.updates.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
-            child: Text('אין עדכונים עדיין', style: TextStyle(color: TaskStyle.faintText)),
-          ),
-        for (final entry in task.updates)
-          Container(
-            key: Key('team-task-log-${entry.id}'),
-            margin: const EdgeInsets.only(top: 6),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: TaskStyle.updateBox,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(entry.text),
-                const SizedBox(height: 2),
-                Text(
-                  '${entry.byName ?? unknownMemberLabel} · ${logStamp(entry.at)}',
-                  style: const TextStyle(fontSize: 12, color: TaskStyle.faintText),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }

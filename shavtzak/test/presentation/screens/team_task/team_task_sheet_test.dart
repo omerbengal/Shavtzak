@@ -6,6 +6,7 @@ import 'package:shavtzak/data/repositories/team_task_repository.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/team_task.dart';
 import 'package:shavtzak/presentation/widgets/date_picker_dialog.dart';
+import 'package:shavtzak/presentation/screens/team_task/widgets/team_task_style.dart';
 
 import '../../../support/task_fixtures.dart';
 import '../../../support/team_task_fixtures.dart';
@@ -31,8 +32,8 @@ void main() {
     ),
     TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
   ]).copyWith(owners: [dana, yossi]);
-  final other = buildTeamTask(id: 'o', title: 'משימה מקורית', assigneeIds: ['m1'])
-      .copyWith(owners: [dana]);
+  final other =
+      buildTeamTask(id: 'o', title: 'משימה מקורית', assigneeIds: ['m1']).copyWith(owners: [dana]);
 
   Future<void> openTask(WidgetTester tester, String id) async {
     await tester.tap(find.byKey(Key('team-task-row-$id')));
@@ -45,14 +46,18 @@ void main() {
     await tester.tap(find.byKey(const Key('team-task-status')));
     await tester.pumpAndSettle();
     for (final label in ['פתוחה', 'בטיפול', 'בוצעה', 'לא רלוונטי/בוטל', 'כפילות']) {
-      expect(find.byKey(Key('team-task-status-option-$label')), findsOneWidget);
+      final option = find.byKey(Key('team-task-status-option-$label'));
+      expect(option, findsOneWidget);
+      // Its status circle on the right of the word (round 5).
+      final icon = find.descendant(of: option, matching: find.byType(TeamTaskStatusIcon));
+      final word = find.descendant(of: option, matching: find.text(label));
+      expect(tester.getCenter(icon).dx, greaterThan(tester.getRect(word).right));
     }
   });
 
   testWidgets('the deadline opens the app date picker, as for a constraint', (tester) async {
     // The calendar's month header needs a tablet's width with the test font.
-    await pumpTeamTasks(tester,
-        user: manager, board: board([other]), size: const Size(1200, 1000));
+    await pumpTeamTasks(tester, user: manager, board: board([other]), size: const Size(1200, 1000));
     await openTask(tester, 'o');
     await tester.tap(find.byKey(const Key('team-task-edit-deadline')));
     await tester.pumpAndSettle();
@@ -65,8 +70,7 @@ void main() {
   });
 
   testWidgets('choosing כפילות asks for the original', (tester) async {
-    final harness =
-        await pumpTeamTasks(tester, user: manager, board: board([withSubtasks, other]));
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks, other]));
     await openTask(tester, 'o');
     await tester.tap(find.byKey(const Key('team-task-status')));
     await tester.pumpAndSettle();
@@ -78,12 +82,19 @@ void main() {
     expect(harness.repository.calls, contains('status:o:duplicate:t'));
   });
 
-  testWidgets("a parent's status is read-only and says it is automatic (round 4)",
+  testWidgets("a parent's status says it is automatic; a tap explains, no menu (rounds 4, 5)",
       (tester) async {
-    await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
     await openTask(tester, 't');
-    expect(find.byKey(const Key('team-task-status')), findsNothing);
     expect(find.byKey(const Key('team-task-status-auto')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('team-task-status')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('team-task-parent-status-info')), findsOneWidget);
+    expect(find.byKey(const Key('team-task-status-option-בוצעה')), findsNothing);
+    await tester.tap(find.text('הבנתי'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('team-task-parent-status-info')), findsNothing);
+    expect(harness.repository.calls, isEmpty);
   });
 
   testWidgets('an owner changes only their own subtask, from its status circle (round 4)',
@@ -97,7 +108,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(Checkbox), findsNothing);
     final rows = find.byKey(const Key('team-subtask-row-s1'));
-    final mine = find.descendant(of: rows, matching: find.byKey(const Key('team-task-status-tap-s1')));
+    final mine =
+        find.descendant(of: rows, matching: find.byKey(const Key('team-task-status-tap-s1')));
     expect(mine, findsOneWidget);
     expect(find.byKey(const Key('team-task-status-tap-s2')), findsNothing);
     await tester.tap(mine);
@@ -135,7 +147,8 @@ void main() {
       tester,
       board([
         logged.copyWith(updates: [
-          TaskUpdateEntry(id: 'u1', text: 'סגרנו מחיר', at: DateTime(2026, 11, 15), byId: 'm1', byName: 'דנה'),
+          TaskUpdateEntry(
+              id: 'u1', text: 'סגרנו מחיר', at: DateTime(2026, 11, 15), byId: 'm1', byName: 'דנה'),
           ...logged.updates,
         ]),
       ]),
