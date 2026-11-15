@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/theme/app_theme.dart';
@@ -368,6 +370,96 @@ void main() {
       // As wide as the initials, not the whole row.
       final avatar = find.ancestor(of: find.text('עב'), matching: find.byType(Container)).first;
       expect(tester.getSize(avatar).width, lessThan(48));
+    });
+  });
+
+  group('round 4', () {
+    final theirs = buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2'])
+        .copyWith(owners: [yossi]);
+
+    testWidgets('"המשימות שלי": the status from its circle, without opening the task',
+        (tester) async {
+      final harness = await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      await tester.tap(find.byKey(const Key('team-task-status-tap-a')));
+      await tester.pumpAndSettle();
+      // The words centred in the menu (item 9).
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('team-task-status-option-בטיפול')),
+          matching: find.byType(Center),
+        ),
+        findsWidgets,
+      );
+      await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')));
+      await tester.pumpAndSettle();
+      expect(harness.repository.calls, ['status:a:inProgress']);
+      expect(find.byKey(const Key('team-task-panel')), findsNothing);
+    });
+
+    testWidgets('"המשימות שלי": a new update from the row, a spinner until it is saved',
+        (tester) async {
+      final harness = await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      await tester.tap(find.byKey(const Key('team-task-quick-update-a')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('assignee-update-text')), 'דיברתי עם האולם');
+      final gate = harness.repository.gate = Completer<void>();
+      await tester.tap(find.byKey(const Key('assignee-update-save')));
+      await tester.pump();
+      expect(harness.repository.calls, ['log:a:דיברתי עם האולם']);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('assignee-update-text')), findsNothing);
+    });
+
+    testWidgets('"כל המשימות" rows have no quick buttons', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      expect(find.byKey(const Key('team-task-quick-update-a')), findsNothing);
+      expect(find.byKey(const Key('team-task-status-tap-a')), findsNothing);
+    });
+
+    testWidgets('the closed search row is centred', (tester) async {
+      await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      final width = tester.view.physicalSize.width;
+      final field = tester.getRect(find.byKey(const Key('team-filter-search')));
+      final link = tester.getRect(find.byKey(const Key('team-filter-link')));
+      // RTL: the field on the right, the link chip last on the left.
+      expect(((width - field.right) - link.left).abs(), lessThan(2));
+    });
+
+    testWidgets("the funnel's submenu arrows point right, where the submenus open",
+        (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      await tester.tap(find.byKey(const Key('team-filter-search')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-funnel')));
+      await tester.pumpAndSettle();
+      final status = tester.getRect(find.byKey(const Key('team-filter-menu-status')));
+      await tester.tap(find.byKey(const Key('team-filter-menu-status')));
+      await tester.pumpAndSettle();
+      final submenu = tester.getRect(find.byKey(const Key('team-filter-menu-status-open')).first);
+      expect(submenu.left, greaterThanOrEqualTo(status.right - 1));
+      expect(find.byKey(const Key('team-filter-submenu-arrow')), findsWidgets);
+    });
+
+    testWidgets('a subtask row in "כל המשימות" lights up under the mouse', (tester) async {
+      final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
+        TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
+      ]);
+      await pumpTeamTasks(tester, user: manager, board: board([parent]));
+      await tester.tap(find.byKey(const Key('team-task-progress-p')));
+      await tester.pumpAndSettle();
+      final row = tester.widget<InkWell>(find.byKey(const Key('team-task-row-s1')));
+      expect(row.hoverColor, TaskStyle.currentLight);
+      // The ink lands on a Material inside the card, above its colour.
+      expect(
+        find.ancestor(
+          of: find.byKey(const Key('team-task-row-s1')),
+          matching: find.byWidgetPredicate(
+              (w) => w is Material && w.type == MaterialType.transparency),
+        ),
+        findsWidgets,
+      );
     });
   });
 }

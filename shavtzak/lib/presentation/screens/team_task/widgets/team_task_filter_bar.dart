@@ -111,25 +111,34 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   Widget build(BuildContext context) {
     final folded = _folded;
     final field = _searchField();
+    if (!folded) {
+      // Closed: the field and the chips centred as one row (Omer, round 4),
+      // scrolling sideways only when they do not fit.
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Center(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(width: TeamTaskFilterBar.searchWidth, child: field),
+                const SizedBox(width: 6),
+                ..._chips(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Row(
         children: [
-          if (folded)
-            Expanded(child: field)
-          else
-            SizedBox(width: TeamTaskFilterBar.searchWidth, child: field),
+          Expanded(child: field),
           const SizedBox(width: 6),
-          if (folded)
-            // Tapping the funnel keeps the field's focus, so it stays folded.
-            TextFieldTapRegion(child: _funnel())
-          else
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: _chips()),
-              ),
-            ),
+          // Tapping the funnel keeps the field's focus, so it stays folded.
+          TextFieldTapRegion(child: _funnel()),
         ],
       ),
     );
@@ -228,6 +237,17 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     ];
   }
 
+  /// The funnel sits at the far left of the screen (the row's end in RTL), so
+  /// Flutter has no room for a submenu on the left, where RTL puts it, and
+  /// opens it on the right; the default arrow still points left (Omer, round
+  /// 4). The arrow points where the submenu opens.
+  static const WidgetStateProperty<Widget?> _submenuArrow = WidgetStatePropertyAll(
+    Directionality(
+      textDirection: TextDirection.ltr,
+      child: Icon(Icons.arrow_right, key: Key('team-filter-submenu-arrow'), size: 24),
+    ),
+  );
+
   /// The three filters folded into one funnel; its menu lists them as rows.
   Widget _funnel() {
     final filter = _filter;
@@ -239,6 +259,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
       menuChildren: [
         SubmenuButton(
           key: const Key('team-filter-menu-status'),
+          submenuIcon: _submenuArrow,
           menuChildren: [
             for (final status in TeamTaskStatus.values)
               CheckboxMenuButton(
@@ -254,6 +275,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
         if (widget.showOwner)
           SubmenuButton(
             key: const Key('team-filter-menu-owner'),
+            submenuIcon: _submenuArrow,
             menuChildren: [
               MenuItemButton(
                 onPressed: () => _setOwner(null),
