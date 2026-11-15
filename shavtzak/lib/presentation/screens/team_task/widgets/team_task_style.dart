@@ -31,6 +31,9 @@ abstract final class TeamTaskStyle {
   static const double subtaskIconSize = 16;
   static const double avatarSize = 24;
   static const double subtaskAvatarSize = 20;
+
+  /// A row under the mouse (desktop): a light blue, clearly seen on white.
+  static const Color rowHover = TaskStyle.currentLight;
 }
 
 /// `d.M`, the way the team writes a date ("15.11").

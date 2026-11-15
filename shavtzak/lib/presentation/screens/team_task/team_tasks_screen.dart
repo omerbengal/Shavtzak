@@ -17,6 +17,7 @@ import '../../widgets/test_environment_indicator.dart';
 import '../task/task_style.dart';
 import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
+import 'widgets/team_task_actions.dart';
 import 'widgets/team_task_filter_bar.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
@@ -59,9 +60,8 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     context.go('${EnvironmentService.instance.routePrefix}${AppRouter.homeFor(user)}');
   }
 
-  Widget _withBanner(Widget child) => widget.place == TeamTasksPlace.standalone
-      ? TestEnvironmentIndicator(child: child)
-      : child;
+  Widget _withBanner(Widget child) =>
+      widget.place == TeamTasksPlace.standalone ? TestEnvironmentIndicator(child: child) : child;
 
   Future<void> _newTask() async {
     Logger.action('tap:newTeamTask');
@@ -165,9 +165,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       children: [
         _tabs(),
         Expanded(
-          child: _showAll
-              ? list(state.allGroups, all: true)
-              : list(state.mineGroups, all: false),
+          child: _showAll ? list(state.allGroups, all: true) : list(state.mineGroups, all: false),
         ),
       ],
     );
@@ -289,6 +287,10 @@ class _GroupedListState extends State<_GroupedList> {
                   if (!_open.remove(task.id)) _open.add(task.id);
                 })
             : null,
+        // "המשימות שלי": the status and a new update without opening the
+        // task (Omer, round 4); every row there is the viewer's own.
+        canChangeStatus: !widget.editing,
+        onAddUpdate: widget.editing ? null : () => showAddTeamTaskUpdateDialog(context, task),
         onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
       ));
       if (open && shown.isNotEmpty) {
@@ -312,8 +314,7 @@ class _GroupedListState extends State<_GroupedList> {
                     now: widget.now,
                     viewerId: state.viewer.id,
                     nested: true,
-                    onTap: () =>
-                        showTeamTaskSheet(context, subtask.id, manage: widget.editing),
+                    onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.editing),
                   ),
               ],
             ),
@@ -339,33 +340,38 @@ class _GroupedListState extends State<_GroupedList> {
         ),
         borderRadius: BorderRadius.circular(TaskStyle.stageCardRadius),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            key: Key('team-task-group-${group.key}'),
-            color: TaskStyle.stageHeader,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${_groupKind(group.type)}${group.label}',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+      // The rows' ink (hover, splash) is painted on this Material; under the
+      // card's colour it would be hidden (Omer, round 4: no hover).
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              key: Key('team-task-group-${group.key}'),
+              color: TaskStyle.stageHeader,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_groupKind(group.type)}${group.label}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
-                ),
-                Text(
-                  count == 1 ? 'משימה אחת' : '$count משימות',
-                  style: const TextStyle(
-                    fontSize: TaskStyle.rowMetaSize,
-                    color: TaskStyle.neutralText,
+                  Text(
+                    count == 1 ? 'משימה אחת' : '$count משימות',
+                    style: const TextStyle(
+                      fontSize: TaskStyle.rowMetaSize,
+                      color: TaskStyle.neutralText,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          ...rows,
-        ],
+            ...rows,
+          ],
+        ),
       ),
     );
   }

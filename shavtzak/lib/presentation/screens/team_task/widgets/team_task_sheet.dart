@@ -16,6 +16,7 @@ import '../../task/widgets/confirm_delete_dialog.dart';
 import 'deadline_picker.dart';
 import 'task_link_picker.dart';
 import 'new_team_task_dialog.dart';
+import 'team_task_actions.dart';
 import 'team_task_row.dart';
 import 'team_task_style.dart';
 
@@ -164,75 +165,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     }
   }
 
-  Future<void> _setStatus(TeamTasksLoaded state, TeamTask task, TeamTaskStatus status) async {
-    String? original;
-    if (status == TeamTaskStatus.duplicate) {
-      original = await _pickOriginal(state, task);
-      if (original == null) return;
-    }
-    final completion = CrudActionCompleter();
-    _bloc.add(task.isSubtask
-        ? SetTeamTaskStatus(task.parentId!, status,
-            subtaskId: task.id, duplicateOfId: original, completion: completion)
-        : SetTeamTaskStatus(task.id, status, duplicateOfId: original, completion: completion));
-    _report(completion);
-  }
-
-  Future<String?> _pickOriginal(TeamTasksLoaded state, TeamTask task) {
-    // A subtask may duplicate one of its sister subtasks (listed first) or
-    // another task.
-    final parent = _parentOf(task);
-    final sisters = [
-      if (parent != null)
-        for (final subtask in parent.subtasks)
-          if (subtask.id != task.id && subtask.status != TeamTaskStatus.duplicate)
-            TeamTask.subtaskView(parent, subtask),
-    ];
-    final others = [
-      ...sisters,
-      ...state.all
-          .where((t) =>
-              t.id != task.id && t.id != task.parentId && t.status != TeamTaskStatus.duplicate)
-          .toList()
-        ..sort((a, b) => a.title.compareTo(b.title)),
-    ];
-    return showDialog<String>(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('כפילות של איזו משימה?'),
-          content: SizedBox(
-            width: 360,
-            height: 360,
-            child: others.isEmpty
-                ? const Center(child: Text('אין משימות אחרות'))
-                : ListView(
-                    children: [
-                      for (final other in others)
-                        ListTile(
-                          key: Key('duplicate-original-${other.id}'),
-                          dense: true,
-                          title: Text(other.title),
-                          subtitle: Text(other.isSubtask
-                              ? 'תת-משימה של ${other.parentTitle}'
-                              : teamTaskLinkLabel(other)),
-                          onTap: () => Navigator.of(context).pop(other.id),
-                        ),
-                    ],
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('ביטול'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _delete(TeamTask task) {
     if (task.isSubtask) {
       return showConfirmDeleteDialog(
@@ -335,7 +267,9 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
               children: [
                 // A subtask belongs where its parent does.
                 _section('שיוך', _linkValue(state, task, manage && !task.isSubtask)),
-                _section('סטטוס', _statusValue(state, task, manage || owner)),
+                // A parent's status follows its subtasks; nobody sets it (round 4).
+                _section(
+                    'סטטוס', _statusValue(state, task, (manage || owner) && task.subtasks.isEmpty)),
                 _section('דד ליין', _deadlineValue(state, task, manage, late)),
                 _section('תיאור', _descriptionValue(task, manage)),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
@@ -407,21 +341,21 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                     ),
                   ),
                 manage
-                ? EditableValue<String>(
-                    key: const Key('team-task-edit-title'),
-                    value: task.title,
-                    display: title,
-                    sheetTitle: 'שם המשימה',
-                    wide: widget.wide,
-                    validate: (draft) => draft.trim().isEmpty ? 'חובה להזין כותרת' : null,
-                    editor: (context, draft, onChanged, onSubmit) => TextValueEditor(
-                      initial: draft,
-                      onChanged: onChanged,
-                      onSubmit: onSubmit,
-                    ),
-                    onCommit: (value) => _edit(task.copyWith(title: value.trim())),
-                  )
-                : Padding(padding: const EdgeInsets.all(8), child: title),
+                    ? EditableValue<String>(
+                        key: const Key('team-task-edit-title'),
+                        value: task.title,
+                        display: title,
+                        sheetTitle: 'שם המשימה',
+                        wide: widget.wide,
+                        validate: (draft) => draft.trim().isEmpty ? 'חובה להזין כותרת' : null,
+                        editor: (context, draft, onChanged, onSubmit) => TextValueEditor(
+                          initial: draft,
+                          onChanged: onChanged,
+                          onSubmit: onSubmit,
+                        ),
+                        onCommit: (value) => _edit(task.copyWith(title: value.trim())),
+                      )
+                    : Padding(padding: const EdgeInsets.all(8), child: title),
               ],
             ),
           ),
@@ -457,7 +391,11 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     );
   }
 
-  Widget _tappable({required Key key, required bool enabled, required VoidCallback onTap, required Widget child}) {
+  Widget _tappable(
+      {required Key key,
+      required bool enabled,
+      required VoidCallback onTap,
+      required Widget child}) {
     if (!enabled) return child;
     return InkWell(
       key: key,
@@ -499,22 +437,18 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (canChange)
-          PopupMenuButton<TeamTaskStatus>(
-            key: const Key('team-task-status'),
-            tooltip: 'שינוי סטטוס',
-            onSelected: (status) => _setStatus(state, task, status),
-            itemBuilder: (context) => [
-              for (final status in TeamTaskStatus.values)
-                PopupMenuItem(
-                  key: Key('team-task-status-option-${status.hebrewLabel}'),
-                  value: status,
-                  child: Text(status.hebrewLabel),
-                ),
-            ],
-            child: chip,
-          )
+          TeamTaskStatusMenu(key: const Key('team-task-status'), task: task, child: chip)
         else
           chip,
+        if (task.subtasks.isNotEmpty)
+          const Padding(
+            key: Key('team-task-status-auto'),
+            padding: EdgeInsets.only(top: 2),
+            child: Text(
+              'נקבע אוטומטית לפי הסטטוסים של תתי-המשימות',
+              style: TextStyle(fontSize: 12, color: TaskStyle.faintText),
+            ),
+          ),
         if (task.status == TeamTaskStatus.duplicate)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -669,36 +603,23 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
   }
 
   /// The subtasks as rows like the list's (status, deadline, owners), each
-  /// opening its own task screen; a tick marks one done at once. A manager
-  /// adds one with "+ תת-משימה".
+  /// opening its own task screen; its status circle opens the status menu
+  /// for a manager or the subtask's owner (Omer, round 4: a status, not a
+  /// tick). A manager adds one with "+ תת-משימה".
   Widget _subtasksValue(TeamTask task, bool manage, String viewerId) {
     final now = DateTime.now();
     final rows = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final subtask in task.subtasks)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Checkbox(
-                key: Key('team-subtask-check-${subtask.id}'),
-                value: subtask.isDone,
-                onChanged: manage || subtask.assigneeIds.contains(viewerId)
-                    ? (value) =>
-                        _bloc.add(ToggleTeamSubtask(task.id, subtask.id, value ?? false))
-                    : null,
-              ),
-              Expanded(
-                child: TeamTaskRow(
-                  key: Key('team-subtask-row-${subtask.id}'),
-                  task: TeamTask.subtaskView(task, subtask),
-                  now: now,
-                  viewerId: viewerId,
-                  nested: true,
-                  onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.manage),
-                ),
-              ),
-            ],
+          TeamTaskRow(
+            key: Key('team-subtask-row-${subtask.id}'),
+            task: TeamTask.subtaskView(task, subtask),
+            now: now,
+            viewerId: viewerId,
+            nested: true,
+            canChangeStatus: manage || subtask.assigneeIds.contains(viewerId),
+            onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.manage),
           ),
       ],
     );
@@ -752,7 +673,15 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                 key: const Key('team-task-update-send'),
                 tooltip: 'הוספת עדכון',
                 onPressed: _sending ? null : () => _sendUpdate(task),
-                icon: const Icon(Icons.send),
+                // Spins until the update is saved (Omer, round 4).
+                icon: _sending
+                    ? const SizedBox(
+                        key: Key('team-task-update-sending'),
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
               ),
             ],
           ),

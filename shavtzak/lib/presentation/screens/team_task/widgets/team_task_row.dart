@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../task/task_style.dart';
+import 'team_task_actions.dart';
 import 'team_task_style.dart';
 
 /// One task in the list (design A, Omer round 3): the status circle, the
@@ -12,6 +13,10 @@ import 'team_task_style.dart';
 ///
 /// [subtaskCount] (a parent in "כל המשימות") shows "done/all ▾" at the end;
 /// tapping it calls [onToggleSubtasks].
+///
+/// [canChangeStatus] makes the status circle open the status menu, and
+/// [onAddUpdate] adds a button for a new update, both without opening the
+/// task (Omer, round 4: "המשימות שלי" and a parent's subtasks).
 class TeamTaskRow extends StatelessWidget {
   const TeamTaskRow({
     super.key,
@@ -22,7 +27,15 @@ class TeamTaskRow extends StatelessWidget {
     this.nested = false,
     this.expanded = false,
     this.onToggleSubtasks,
+    this.canChangeStatus = false,
+    this.onAddUpdate,
   });
+
+  final bool canChangeStatus;
+  final VoidCallback? onAddUpdate;
+
+  /// The room around a tappable status circle, so a finger can hit it.
+  static const double _tapPadding = 6;
 
   /// Under its parent's row (or in its parent's screen): one compact line,
   /// without the parent's title above it.
@@ -43,6 +56,9 @@ class TeamTaskRow extends StatelessWidget {
     return InkWell(
       key: Key('team-task-row-${task.id}'),
       onTap: onTap,
+      // Visible on a mouse hover (desktop) over every row, subtasks included
+      // (Omer, round 4).
+      hoverColor: TeamTaskStyle.rowHover,
       child: Opacity(
         opacity: faded ? 0.6 : 1,
         child: nested ? _nested() : _full(),
@@ -60,6 +76,21 @@ class TeamTaskRow extends StatelessWidget {
     );
   }
 
+  /// The status circle, opening the status menu when [canChangeStatus].
+  Widget _status(double size) {
+    final icon = TeamTaskStatusIcon(status: task.status, size: size);
+    if (!canChangeStatus) return icon;
+    return TeamTaskStatusMenu(
+      key: Key('team-task-status-tap-${task.id}'),
+      task: task,
+      child: Padding(padding: const EdgeInsets.all(_tapPadding), child: icon),
+    );
+  }
+
+  /// The width the status circle and the gap after it take: what the lines
+  /// under the title are indented by.
+  double _lead(double size) => canChangeStatus ? size + 2 * _tapPadding + 2 : size + 8;
+
   List<Widget> _owners(double size) => [
         for (final owner in teamTaskOwnerChips(task))
           MemberInitialsAvatar(
@@ -75,8 +106,8 @@ class TeamTaskRow extends StatelessWidget {
       padding: const EdgeInsetsDirectional.fromSTEB(8, 5, 12, 5),
       child: Row(
         children: [
-          TeamTaskStatusIcon(status: task.status, size: TeamTaskStyle.subtaskIconSize),
-          const SizedBox(width: 8),
+          _status(TeamTaskStyle.subtaskIconSize),
+          SizedBox(width: canChangeStatus ? 2 : 8),
           Expanded(
             child: Text(
               task.title,
@@ -94,6 +125,7 @@ class TeamTaskRow extends StatelessWidget {
     final late = isTeamTaskLate(task, now);
     final deadline = task.deadlineDate;
     final owners = _owners(TeamTaskStyle.avatarSize);
+    final lead = _lead(TeamTaskStyle.statusIconSize);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Column(
@@ -101,10 +133,7 @@ class TeamTaskRow extends StatelessWidget {
         children: [
           if (task.isSubtask)
             Padding(
-              padding: const EdgeInsetsDirectional.only(
-                start: TeamTaskStyle.statusIconSize + 8,
-                bottom: 2,
-              ),
+              padding: EdgeInsetsDirectional.only(start: lead, bottom: 2),
               child: Text(
                 task.parentTitle ?? '',
                 key: Key('team-task-parent-${task.id}'),
@@ -116,8 +145,8 @@ class TeamTaskRow extends StatelessWidget {
             ),
           Row(
             children: [
-              TeamTaskStatusIcon(status: task.status, size: TeamTaskStyle.statusIconSize),
-              const SizedBox(width: 8),
+              _status(TeamTaskStyle.statusIconSize),
+              SizedBox(width: canChangeStatus ? 2 : 8),
               Expanded(
                 child: Text(
                   task.title,
@@ -152,14 +181,19 @@ class TeamTaskRow extends StatelessWidget {
                     ),
                   ),
                 ),
+              if (onAddUpdate != null)
+                IconButton(
+                  key: Key('team-task-quick-update-${task.id}'),
+                  tooltip: 'הוספת עדכון',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.add_comment_outlined, size: 20, color: TaskStyle.mine),
+                  onPressed: onAddUpdate,
+                ),
             ],
           ),
           if (deadline != null || owners.isNotEmpty)
             Padding(
-              padding: const EdgeInsetsDirectional.only(
-                start: TeamTaskStyle.statusIconSize + 8,
-                top: 5,
-              ),
+              padding: EdgeInsetsDirectional.only(start: lead, top: 5),
               child: Wrap(
                 spacing: 6,
                 runSpacing: 4,

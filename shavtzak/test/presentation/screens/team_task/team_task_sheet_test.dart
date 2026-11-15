@@ -67,18 +67,27 @@ void main() {
   testWidgets('choosing כפילות asks for the original', (tester) async {
     final harness =
         await pumpTeamTasks(tester, user: manager, board: board([withSubtasks, other]));
-    await openTask(tester, 't');
+    await openTask(tester, 'o');
     await tester.tap(find.byKey(const Key('team-task-status')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('team-task-status-option-כפילות')));
     await tester.pumpAndSettle();
     expect(find.text('כפילות של איזו משימה?'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('duplicate-original-o')));
+    await tester.tap(find.byKey(const Key('duplicate-original-t')));
     await tester.pumpAndSettle();
-    expect(harness.repository.calls, contains('status:t:duplicate:o'));
+    expect(harness.repository.calls, contains('status:o:duplicate:t'));
   });
 
-  testWidgets('owner can tick only their own subtask', (tester) async {
+  testWidgets("a parent's status is read-only and says it is automatic (round 4)",
+      (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
+    await openTask(tester, 't');
+    expect(find.byKey(const Key('team-task-status')), findsNothing);
+    expect(find.byKey(const Key('team-task-status-auto')), findsOneWidget);
+  });
+
+  testWidgets('an owner changes only their own subtask, from its status circle (round 4)',
+      (tester) async {
     final harness = await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
     // Her subtask is her row; its contact is on its own screen, with the phone.
     await openTask(tester, 's1');
@@ -86,13 +95,29 @@ void main() {
     // The parent opens from the subtask's "תת-משימה של" line.
     await tester.tap(find.byKey(const Key('team-task-kind')));
     await tester.pumpAndSettle();
-    final mineBox = tester.widget<Checkbox>(find.byKey(const Key('team-subtask-check-s1')));
-    final theirsBox = tester.widget<Checkbox>(find.byKey(const Key('team-subtask-check-s2')));
-    expect(mineBox.onChanged, isNotNull);
-    expect(theirsBox.onChanged, isNull);
-    await tester.tap(find.byKey(const Key('team-subtask-check-s1')));
+    expect(find.byType(Checkbox), findsNothing);
+    final rows = find.byKey(const Key('team-subtask-row-s1'));
+    final mine = find.descendant(of: rows, matching: find.byKey(const Key('team-task-status-tap-s1')));
+    expect(mine, findsOneWidget);
+    expect(find.byKey(const Key('team-task-status-tap-s2')), findsNothing);
+    await tester.tap(mine);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('team-task-status-option-בוצעה')).last);
+    await tester.pumpAndSettle();
+    expect(harness.repository.calls, ['status:t/s1:done']);
+  });
+
+  testWidgets('the send button spins until the update is saved (round 4)', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: dana, board: board([other]));
+    await openTask(tester, 'o');
+    await tester.enterText(find.byKey(const Key('team-task-update-field')), 'עדכון');
+    final gate = harness.repository.gate = Completer<void>();
+    await tester.tap(find.byKey(const Key('team-task-update-send')));
     await tester.pump();
-    expect(harness.repository.calls, ['subtask:t:s1:true']);
+    expect(find.byKey(const Key('team-task-update-sending')), findsOneWidget);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('team-task-update-sending')), findsNothing);
   });
 
   testWidgets('adding an update shows it first', (tester) async {

@@ -9,10 +9,17 @@ import '../../../../core/utils/rtl_text_field_utils.dart';
 /// The dialog stays open, with a spinner on the save button, until that
 /// answers: it closes on success and shows the failure otherwise, so the text
 /// is not lost.
+///
+/// The team tasks screen reuses it to add a line to a task's log (Omer,
+/// round 4) with its own [title], [hintText], [helperText] and [saveLabel].
 Future<void> showAssigneeUpdateDialog(
   BuildContext context, {
   String? initialText,
   required Future<CrudActionResult> Function(String text) onSave,
+  String title = 'עדכון סטטוס',
+  String hintText = 'מה מצב המשימה?',
+  String? helperText = 'העדכון מחליף את הקודם. השארת השדה ריק מוחקת אותו.',
+  String saveLabel = 'שמירה',
 }) {
   return showDialog<void>(
     context: context,
@@ -20,6 +27,10 @@ Future<void> showAssigneeUpdateDialog(
     builder: (context) => _AssigneeUpdateDialog(
       initialText: initialText ?? '',
       onSave: onSave,
+      title: title,
+      hintText: hintText,
+      helperText: helperText,
+      saveLabel: saveLabel,
     ),
   );
 }
@@ -28,10 +39,18 @@ class _AssigneeUpdateDialog extends StatefulWidget {
   const _AssigneeUpdateDialog({
     required this.initialText,
     required this.onSave,
+    required this.title,
+    required this.hintText,
+    required this.helperText,
+    required this.saveLabel,
   });
 
   final String initialText;
   final Future<CrudActionResult> Function(String text) onSave;
+  final String title;
+  final String hintText;
+  final String? helperText;
+  final String saveLabel;
 
   @override
   State<_AssigneeUpdateDialog> createState() => _AssigneeUpdateDialogState();
@@ -86,7 +105,7 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
       child: PopScope(
         canPop: !_isSaving,
         child: AlertDialog(
-          title: const Text('עדכון סטטוס'),
+          title: Text(widget.title),
           content: SizedBox(
             width: 420,
             child: Column(
@@ -105,12 +124,11 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
                   maxLines: 6,
                   maxLength: 2000,
                   textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(
-                    hintText: 'מה מצב המשימה?',
-                    helperText:
-                        'העדכון מחליף את הקודם. השארת השדה ריק מוחקת אותו.',
+                  decoration: InputDecoration(
+                    hintText: widget.hintText,
+                    helperText: widget.helperText,
                     helperMaxLines: 2,
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 if (_saveError != null) ...[
@@ -118,8 +136,7 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
                   Text(
                     _saveError!,
                     key: const Key('assignee-update-error'),
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.error),
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
                   ),
                 ],
               ],
@@ -140,7 +157,7 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('שמירה'),
+                  : Text(widget.saveLabel),
             ),
           ],
         ),
