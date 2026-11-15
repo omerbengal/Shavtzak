@@ -65,6 +65,16 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         (event, emit) => _send(event.completion, () => _repository.deleteTask(event.id)));
     on<AddTeamTaskUpdate>((event, emit) => _send(event.completion,
         () => _repository.addUpdate(event.id, event.text, subtaskId: event.subtaskId)));
+    on<EditTeamTaskUpdate>((event, emit) => _send(
+        event.completion,
+        () => _repository.editUpdate(event.id, event.updateId, event.text,
+            subtaskId: event.subtaskId)));
+    on<DeleteTeamTaskUpdate>((event, emit) => _send(event.completion,
+        () => _repository.deleteUpdate(event.id, event.updateId, subtaskId: event.subtaskId)));
+    on<CreatePendingEvent>((event, emit) =>
+        _send(event.completion, () => _repository.insertPendingEvent(event.pendingEvent)));
+    on<LinkPendingEvent>((event, emit) =>
+        _send(event.completion, () => _repository.linkPendingEvent(event.id, event.eventId)));
     on<CreateTaskTopic>(
         (event, emit) => _send(event.completion, () => _repository.insertTopic(event.topic)));
     on<UpdateTaskTopic>(
@@ -160,6 +170,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       categories: board.categories,
       topics: board.topics,
       members: board.members,
+      pendingEvents: board.pendingEvents,
     ));
   }
 
@@ -299,6 +310,9 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
           : null,
       topic: () => link?.type == TaskLinkType.topic
           ? board.topics.where((t) => t.id == link!.id).firstOrNull ?? task.topic
+          : null,
+      pendingEvent: () => link?.type == TaskLinkType.pendingEvent
+          ? board.pendingEvents.where((p) => p.id == link!.id).firstOrNull ?? task.pendingEvent
           : null,
     );
   }

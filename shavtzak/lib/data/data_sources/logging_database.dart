@@ -1492,6 +1492,40 @@ class LoggingDatabase implements DatabaseInterface {
           () => _inner.addTeamTaskUpdate(id, text, subtaskId: subtaskId));
 
   @override
+  Future<void> editTeamTaskUpdate(String id, String updateId, String text,
+          {String? subtaskId}) =>
+      _teamTaskWrite('editTeamTaskUpdate', id,
+          () => _inner.editTeamTaskUpdate(id, updateId, text, subtaskId: subtaskId));
+
+  @override
+  Future<void> deleteTeamTaskUpdate(String id, String updateId, {String? subtaskId}) =>
+      _teamTaskWrite('deleteTeamTaskUpdate', id,
+          () => _inner.deleteTeamTaskUpdate(id, updateId, subtaskId: subtaskId));
+
+  @override
+  Stream<List<TaskTopic>> watchPendingEvents() => _wrapStream(
+        op: 'watchPendingEvents',
+        ctx: const {'collection': 'pendingEvents'},
+        inner: () => _inner.watchPendingEvents(),
+      );
+
+  @override
+  Future<void> insertPendingEvent(TaskTopic pendingEvent) => _topicWrite(
+      'insertPendingEvent', pendingEvent.id, () => _inner.insertPendingEvent(pendingEvent));
+
+  @override
+  Future<void> updatePendingEvent(TaskTopic pendingEvent) => _topicWrite(
+      'updatePendingEvent', pendingEvent.id, () => _inner.updatePendingEvent(pendingEvent));
+
+  @override
+  Future<void> deletePendingEvent(String id) =>
+      _topicWrite('deletePendingEvent', id, () => _inner.deletePendingEvent(id));
+
+  @override
+  Future<void> linkPendingEvent(String id, String eventId) =>
+      _topicWrite('linkPendingEvent', id, () => _inner.linkPendingEvent(id, eventId));
+
+  @override
   Stream<List<TaskTopic>> watchTaskTopics() => _wrapStream(
         op: 'watchTaskTopics',
         ctx: const {'collection': 'taskTopics'},

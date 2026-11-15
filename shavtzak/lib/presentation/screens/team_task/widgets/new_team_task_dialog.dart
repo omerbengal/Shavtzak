@@ -17,10 +17,11 @@ import 'task_link_picker.dart';
 import 'team_task_style.dart';
 
 /// "+ משימה חדשה": the whole task, before it exists, in the shape of the
-/// דו יומי task form: title, description, what it belongs to, deadline,
-/// owners (an in-place dropdown with a search), contacts and subtasks. A
-/// subtask is a task of its own: "+ תת-משימה" opens this same form for it
-/// ([showSubtaskFormDialog]). A task with subtasks has no owners of its own
+/// דו יומי task form, in Omer's order (round 10): what it belongs to, title,
+/// description, owners (an in-place dropdown with a search), deadline, then
+/// contacts and subtasks. [link] comes preset from a card's "+" (round 10).
+/// A subtask is a task of its own: "+ תת-משימה" opens this same form for it
+/// ([showSubtaskFormDialog]), with one text line and no description. A task with subtasks has no owners of its own
 /// (theirs are its owners), so the owners field steps aside and the title
 /// reads "משימת אב חדשה".
 ///
@@ -144,7 +145,6 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
     final initial = widget.initialSubtask;
     if (initial != null) {
       return _title.text.trim() != initial.title ||
-          _description.text.trim() != initial.description ||
           (_deadline == null ? null : dateKey(_deadline!)) != initial.deadline ||
           !_sameList(_owners, initial.assigneeIds) ||
           _contacts != initial.contacts;
@@ -208,7 +208,8 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
   Future<void> _save(TeamTasksLoaded state) async {
     final title = _title.text.trim();
     if (title.isEmpty) {
-      setState(() => _titleError = 'חובה להזין כותרת');
+      setState(() => _titleError =
+          widget.isSubtask ? 'חובה להזין את תת-המשימה' : 'חובה להזין כותרת');
       return;
     }
     if (_contacts.any((c) => c.name.trim().isEmpty)) {
@@ -218,9 +219,10 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
     if (widget.isSubtask) {
       final base = widget.initialSubtask ?? TeamSubtask(id: _id, title: title);
       final members = {for (final m in state.members) m.id: m};
+      // One line of text (round 10); a description saved before is kept as
+      // is until Omer decides what becomes of it.
       Navigator.of(context).pop(base.copyWith(
         title: title,
-        description: _description.text.trim(),
         assigneeIds: _owners,
         assignees: _owners.map((id) => members[id]).whereType<TeamMember>().toList(),
         contacts: _contacts,
@@ -310,15 +312,24 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Omer's order (round 10): link, title, description,
+                        // owners, deadline.
+                        if (!widget.isSubtask) ...[
+                          _linkField(state),
+                          const SizedBox(height: 16),
+                        ],
                         RtlArrowKeys(
+                          multiline: widget.isSubtask,
                           child: TextField(
                             key: const Key('new-team-task-title'),
                             controller: _title,
                             autofocus: true,
                             maxLength: 200,
+                            minLines: 1,
+                            maxLines: widget.isSubtask ? 3 : 1,
                             textInputAction: TextInputAction.next,
                             decoration: InputDecoration(
-                              labelText: 'כותרת',
+                              labelText: widget.isSubtask ? 'תת-משימה' : 'כותרת',
                               errorText: _titleError,
                               border: const OutlineInputBorder(),
                               counterText: '',
@@ -326,32 +337,30 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
                             onChanged: (_) => setState(() => _titleError = null),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        RtlArrowKeys(
-                          multiline: true,
-                          child: TextField(
-                            key: const Key('new-team-task-description'),
-                            controller: _description,
-                            minLines: 2,
-                            maxLines: 5,
-                            decoration: const InputDecoration(
-                              labelText: 'תיאור',
-                              border: OutlineInputBorder(),
-                              alignLabelWithHint: true,
-                            ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                        ),
                         if (!widget.isSubtask) ...[
                           const SizedBox(height: 16),
-                          _linkField(state),
+                          RtlArrowKeys(
+                            multiline: true,
+                            child: TextField(
+                              key: const Key('new-team-task-description'),
+                              controller: _description,
+                              minLines: 2,
+                              maxLines: 5,
+                              decoration: const InputDecoration(
+                                labelText: 'תיאור',
+                                border: OutlineInputBorder(),
+                                alignLabelWithHint: true,
+                              ),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
                         ],
-                        const SizedBox(height: 16),
-                        _deadlineField(state),
                         if (_subtasks.isEmpty) ...[
                           const SizedBox(height: 16),
                           _ownersField(state, active),
                         ],
+                        const SizedBox(height: 16),
+                        _deadlineField(state),
                         const SizedBox(height: 20),
                         _contactsSection(theme),
                         if (!widget.isSubtask) ...[

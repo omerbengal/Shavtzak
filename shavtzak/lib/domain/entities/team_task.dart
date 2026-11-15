@@ -32,7 +32,11 @@ enum TeamTaskStatus {
 enum TaskLinkType {
   event('event'),
   category('category'),
-  topic('topic');
+  topic('topic'),
+
+  /// "אירוע שעוד לא נוצר" (round 10): a named placeholder for an event that
+  /// is not in the app yet, linked later to the real one.
+  pendingEvent('pendingEvent');
 
   const TaskLinkType(this.key);
   final String key;
@@ -161,10 +165,14 @@ class TaskUpdateEntry extends Equatable {
     required this.at,
     required this.byId,
     this.byName,
+    this.editedAt,
   });
 
+  /// Set once its writer (or a manager) edited it (round 10): "(נערך)".
+  final DateTime? editedAt;
+
   @override
-  List<Object?> get props => [id, text, at, byId, byName];
+  List<Object?> get props => [id, text, at, byId, byName, editedAt];
 }
 
 /// A team task ("משימה") of the headquarters team: linked to an event, a
@@ -204,6 +212,9 @@ class TeamTask extends Equatable {
   final Category? category;
   final TaskTopic? topic;
 
+  /// The "אירוע שעוד לא נוצר" behind a [TaskLinkType.pendingEvent] link.
+  final TaskTopic? pendingEvent;
+
   /// The members behind [ownerIds] still on the team, in that order.
   final List<TeamMember> owners;
 
@@ -234,6 +245,7 @@ class TeamTask extends Equatable {
     this.event,
     this.category,
     this.topic,
+    this.pendingEvent,
     this.owners = const [],
     this.parentId,
     this.parentTitle,
@@ -261,6 +273,7 @@ class TeamTask extends Equatable {
         event: parent.event,
         category: parent.category,
         topic: parent.topic,
+        pendingEvent: parent.pendingEvent,
         owners: subtask.assignees,
         parentId: parent.id,
         parentTitle: parent.title,
@@ -313,6 +326,7 @@ class TeamTask extends Equatable {
     Event? Function()? event,
     Category? Function()? category,
     TaskTopic? Function()? topic,
+    TaskTopic? Function()? pendingEvent,
     List<TeamMember>? owners,
   }) =>
       TeamTask(
@@ -335,6 +349,7 @@ class TeamTask extends Equatable {
         event: event != null ? event() : this.event,
         category: category != null ? category() : this.category,
         topic: topic != null ? topic() : this.topic,
+        pendingEvent: pendingEvent != null ? pendingEvent() : this.pendingEvent,
         owners: owners ?? this.owners,
         parentId: parentId,
         parentTitle: parentTitle,
@@ -361,6 +376,7 @@ class TeamTask extends Equatable {
         event,
         category,
         topic,
+        pendingEvent,
         owners,
         parentId,
         parentTitle,

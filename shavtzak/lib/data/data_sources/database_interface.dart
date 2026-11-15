@@ -626,6 +626,26 @@ abstract class DatabaseInterface {
   /// With [subtaskId], into that subtask's own log.
   Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId});
 
+  /// A new text for update [updateId] of task [id] (with [subtaskId], of that
+  /// subtask's log): its writer, or a manager (round 10).
+  Future<void> editTeamTaskUpdate(String id, String updateId, String text, {String? subtaskId});
+
+  Future<void> deleteTeamTaskUpdate(String id, String updateId, {String? subtaskId});
+
+  /// "אירוע שעוד לא נוצר" placeholders (utilities/Lists, PendingEvents).
+  Stream<List<TaskTopic>> watchPendingEvents();
+
+  Future<void> insertPendingEvent(TaskTopic pendingEvent);
+
+  Future<void> updatePendingEvent(TaskTopic pendingEvent);
+
+  /// Deletes a placeholder for good; its tasks move to "ללא שיוך".
+  Future<void> deletePendingEvent(String id);
+
+  /// The real event [eventId] now exists: every task of placeholder [id]
+  /// moves to it and the placeholder is removed.
+  Future<void> linkPendingEvent(String id, String eventId);
+
   /// The topics list (utilities/Lists, TaskTopics), archived ones included.
   Stream<List<TaskTopic>> watchTaskTopics();
 

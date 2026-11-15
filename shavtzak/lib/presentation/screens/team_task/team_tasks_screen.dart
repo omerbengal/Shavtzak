@@ -8,16 +8,21 @@ import '../../../core/debug/logger.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/team_task_rules.dart';
 import '../../../core/utils/team_task_spotlight.dart';
+import '../../../data/repositories/assignment_repository.dart';
+import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/team_task.dart';
 import '../../bloc/team_task/team_task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/test_environment_indicator.dart';
+import '../event/widgets/event_assignments_dialog.dart';
 import '../task/task_style.dart';
 import 'widgets/new_team_task_dialog.dart';
+import 'widgets/task_link_picker.dart';
 import 'widgets/team_task_filter_bar.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
@@ -311,6 +316,9 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
               state: state,
               now: now,
               editing: all,
+              // The event's "שיבוצים" window, for whoever sees it in
+              // "מסך מנהלים" (round 10).
+              showAssignments: user.isAdmin || user.canAccessSummaryScreen,
               viewerId: state.viewer.id,
               collapsed: _collapsed,
               onToggleGroup: _toggleGroup,
@@ -420,6 +428,7 @@ class _GroupedList extends StatefulWidget {
     required this.viewerId,
     required this.collapsed,
     required this.onToggleGroup,
+    this.showAssignments = false,
     this.selectedId,
     this.flash = const {},
     this.flashRound = 0,
@@ -433,6 +442,8 @@ class _GroupedList extends StatefulWidget {
   /// "המשימות שלי": a long press on a card's header opens "בליץ" over
   /// that card's tasks only.
   final ValueChanged<TeamTaskGroup>? onSpotlightGroup;
+  /// The 👥 button on an event's card (round 10).
+  final bool showAssignments;
 
   /// The cards folded to their header (round 7), by group key.
   final Set<String> collapsed;
@@ -466,6 +477,118 @@ class _GroupedListState extends State<_GroupedList> {
     return widget.state.filter.searchText.isNotEmpty &&
         shown.isNotEmpty &&
         shown.length < task.subtasks.length;
+  }
+
+  /// The event's "שיבוצים ל…" window with its share button, as the 👥 of
+  /// every event in "מסך מנהלים" (Omer, round 10).
+  Future<void> _showAssignments(Event event) async {
+    Logger.action('open:teamTaskEventAssignments', {'eventId': event.id});
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final assignments =
+          await context.read<AssignmentRepository>().getAssignmentsByEvent(event.id);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => EventAssignmentsDialog.withAssignments(
+          event: event,
+          assignments: assignments,
+        ),
+      );
+    } catch (_) {
+      messenger?.showSnackBar(const SnackBar(content: Text('טעינת השיבוצים נכשלה')));
+    }
+  }
+
+  /// "+" on a card (round 10): a new task already linked to it.
+  Future<void> _newTaskIn(TaskLink link) async {
+    Logger.action('tap:newTeamTaskInCard', {'link': link.type.key});
+    final id = await showNewTeamTaskDialog(context, link: link);
+    if (id == null || !mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(content: Text('המשימה נוספה')),
+    );
+  }
+
+  /// A "אירוע שעוד לא נוצר" becomes the real event: pick it, confirm, and
+  /// every task of the placeholder moves there (round 10).
+  Future<void> _linkPending(TeamTaskGroup group, TaskLink link) async {
+    Logger.action('tap:linkPendingEvent');
+    final bloc = context.read<TeamTaskBloc>();
+    final choice = await showTaskLinkPicker(
+      context,
+      eventsOnly: true,
+      title: 'קישור "${group.label}" לאירוע בשבצק',
+    );
+    final target = choice?.link;
+    if (target == null || !mounted) return;
+    final state = widget.state;
+    final eventName =
+        state.events.where((e) => e.id == target.id).firstOrNull?.name ?? 'האירוע';
+    final count = state.all.where((task) => task.link == link).length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          key: const Key('link-pending-confirm'),
+          title: const Text('קישור לאירוע בשבצק'),
+          content: Text(count == 1
+              ? 'המשימה של "${group.label}" תעבור לאירוע "$eventName", ו"${group.label}" יוסר מהרשימה.'
+              : '$count המשימות של "${group.label}" יעברו לאירוע "$eventName", ו"${group.label}" יוסר מהרשימה.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              key: const Key('link-pending-confirm-button'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('קישור'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final completion = CrudActionCompleter();
+    bloc.add(LinkPendingEvent(link.id, target.id, completion: completion));
+    final result = await completion.future;
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+      content: Text(result.isSuccess
+          ? 'המשימות עברו לאירוע "$eventName"'
+          : (result.message ?? 'הקישור נכשל')),
+    ));
+  }
+
+  /// The small buttons on a card's header (round 10).
+  List<Widget> _headerButtons(TeamTaskGroup group) {
+    final link = group.tasks.firstOrNull?.link;
+    if (link == null) return const [];
+    final event = group.tasks.first.event;
+    Widget button(String key, String tooltip, IconData icon, VoidCallback onPressed) =>
+        IconButton(
+          key: Key('$key-${group.key}'),
+          tooltip: tooltip,
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          iconSize: 20,
+          color: TaskStyle.neutralText,
+          icon: Icon(icon),
+          onPressed: onPressed,
+        );
+    return [
+      if (link.type == TaskLinkType.event && event != null && widget.showAssignments)
+        button('team-task-group-assignments', 'שיבוצים', Icons.people_outline,
+            () => _showAssignments(event)),
+      if (widget.editing && link.type == TaskLinkType.pendingEvent)
+        button('team-task-group-link-pending', 'קישור לאירוע בשבצק', Icons.link,
+            () => _linkPending(group, link)),
+      if (widget.editing)
+        button('team-task-group-add', 'משימה חדשה כאן', Icons.add, () => _newTaskIn(link)),
+    ];
   }
 
   @override
@@ -601,6 +724,8 @@ class _GroupedListState extends State<_GroupedList> {
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
+                      ..._headerButtons(group),
+                      const SizedBox(width: 4),
                       Text(
                         count == 1 ? 'משימה אחת' : '$count משימות',
                         style: const TextStyle(
@@ -660,6 +785,7 @@ class _GroupedListState extends State<_GroupedList> {
         TaskLinkType.event => 'אירוע · ',
         TaskLinkType.category => 'קטגוריה · ',
         TaskLinkType.topic => 'נושא · ',
+        TaskLinkType.pendingEvent => '$pendingEventLabel · ',
         null => '',
       };
 }

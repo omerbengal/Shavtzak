@@ -2708,6 +2708,62 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> editTeamTaskUpdate(String id, String updateId, String text,
+      {String? subtaskId}) async {
+    await _invokeMutation('teamTask.editUpdate', payload: {
+      'id': id,
+      'updateId': updateId,
+      'text': text,
+      if (subtaskId != null) 'subtaskId': subtaskId,
+    });
+  }
+
+  @override
+  Future<void> deleteTeamTaskUpdate(String id, String updateId, {String? subtaskId}) async {
+    await _invokeMutation('teamTask.deleteUpdate', payload: {
+      'id': id,
+      'updateId': updateId,
+      if (subtaskId != null) 'subtaskId': subtaskId,
+    });
+  }
+
+  @override
+  Stream<List<TaskTopic>> watchPendingEvents() {
+    return _firestore
+        .collection('utilities')
+        .doc('Lists')
+        .snapshots()
+        .map<List<TaskTopic>>(
+            (snapshot) => TaskTopic.listFromJson(snapshot.data()?['PendingEvents']))
+        .handleError((error) {
+      throw DatabaseException('Failed to watch pending events: $error');
+    });
+  }
+
+  @override
+  Future<void> insertPendingEvent(TaskTopic pendingEvent) async {
+    await _invokeMutation('pendingEvent.insert',
+        payload: {'pendingEvent': pendingEvent.toJson()});
+  }
+
+  @override
+  Future<void> updatePendingEvent(TaskTopic pendingEvent) async {
+    await _invokeMutation('pendingEvent.update',
+        payload: {'pendingEvent': pendingEvent.toJson()});
+  }
+
+  @override
+  Future<void> deletePendingEvent(String id) async {
+    await _invokeMutation('pendingEvent.permanentlyDelete', payload: {'pendingEventId': id});
+  }
+
+  @override
+  Future<void> linkPendingEvent(String id, String eventId) async {
+    await _invokeMutation('pendingEvent.link',
+        payload: {'pendingEventId': id, 'eventId': eventId});
+  }
+
+  @override
   Stream<List<TaskTopic>> watchTaskTopics() {
     return _firestore
         .collection('utilities')

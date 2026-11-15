@@ -104,6 +104,57 @@ class AddTeamTaskUpdate extends TeamTaskEvent {
   List<Object?> get props => [id, text, subtaskId];
 }
 
+/// A new text for an update of the log (with [subtaskId], of that
+/// subtask's): its writer, or a manager in "כל המשימות" (round 10).
+class EditTeamTaskUpdate extends TeamTaskEvent {
+  final String id;
+  final String updateId;
+  final String text;
+  final String? subtaskId;
+  final CrudActionCompleter? completion;
+
+  const EditTeamTaskUpdate(this.id, this.updateId, this.text,
+      {this.subtaskId, this.completion});
+
+  @override
+  List<Object?> get props => [id, updateId, text, subtaskId];
+}
+
+class DeleteTeamTaskUpdate extends TeamTaskEvent {
+  final String id;
+  final String updateId;
+  final String? subtaskId;
+  final CrudActionCompleter? completion;
+
+  const DeleteTeamTaskUpdate(this.id, this.updateId, {this.subtaskId, this.completion});
+
+  @override
+  List<Object?> get props => [id, updateId, subtaskId];
+}
+
+/// A new "אירוע שעוד לא נוצר" (round 10).
+class CreatePendingEvent extends TeamTaskEvent {
+  final TaskTopic pendingEvent;
+  final CrudActionCompleter? completion;
+
+  const CreatePendingEvent(this.pendingEvent, {this.completion});
+
+  @override
+  List<Object?> get props => [pendingEvent];
+}
+
+/// Placeholder [id] becomes the real event [eventId]: all its tasks move.
+class LinkPendingEvent extends TeamTaskEvent {
+  final String id;
+  final String eventId;
+  final CrudActionCompleter? completion;
+
+  const LinkPendingEvent(this.id, this.eventId, {this.completion});
+
+  @override
+  List<Object?> get props => [id, eventId];
+}
+
 class CreateTaskTopic extends TeamTaskEvent {
   final TaskTopic topic;
   final CrudActionCompleter? completion;

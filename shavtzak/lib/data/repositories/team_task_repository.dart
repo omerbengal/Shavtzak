@@ -18,16 +18,20 @@ class TeamTaskBoard extends Equatable {
   final List<TaskTopic> topics;
   final List<TeamMember> members;
 
+  /// "אירוע שעוד לא נוצר" placeholders (round 10).
+  final List<TaskTopic> pendingEvents;
+
   const TeamTaskBoard({
     required this.tasks,
     this.events = const [],
     this.categories = const [],
     this.topics = const [],
     this.members = const [],
+    this.pendingEvents = const [],
   });
 
   @override
-  List<Object?> get props => [tasks, events, categories, topics, members];
+  List<Object?> get props => [tasks, events, categories, topics, members, pendingEvents];
 }
 
 /// Repository for the team tasks screen.
@@ -46,14 +50,16 @@ class TeamTaskRepository {
   /// [watchTasksFor], joined with live events, categories, topics and
   /// members, so renaming any of them re-emits the affected tasks.
   Stream<TeamTaskBoard> watchBoardFor(TeamMember viewer) {
-    return Rx.combineLatest5<List<TeamTask>, List<Event>, List<Category>, List<TaskTopic>,
-        List<TeamMember>, TeamTaskBoard>(
+    return Rx.combineLatest6<List<TeamTask>, List<Event>, List<Category>, List<TaskTopic>,
+        List<TeamMember>, List<TaskTopic>, TeamTaskBoard>(
       watchTasksFor(viewer),
       _database.watchEvents().startWith(const []),
       _database.watchCategories().startWith(const []),
       _database.watchTaskTopics().startWith(const []),
       _database.watchTeamMembers().startWith(const []),
-      (tasks, events, categories, topics, members) {
+      _database.watchPendingEvents().startWith(const []),
+      (tasks, events, categories, topics, members, pendingEvents) {
+        final pendingById = {for (final pending in pendingEvents) pending.id: pending};
         final eventsById = {for (final event in events) event.id: event};
         final categoriesById = {for (final category in categories) category.id: category};
         final topicsById = {for (final topic in topics) topic.id: topic};
@@ -65,6 +71,8 @@ class TeamTaskRepository {
             category: () =>
                 link?.type == TaskLinkType.category ? categoriesById[link!.id] : null,
             topic: () => link?.type == TaskLinkType.topic ? topicsById[link!.id] : null,
+            pendingEvent: () =>
+                link?.type == TaskLinkType.pendingEvent ? pendingById[link!.id] : null,
             // A member who was deleted leaves a dangling id behind; it is kept
             // in ownerIds and simply not joined.
             owners: task.ownerIds.map((id) => membersById[id]).whereType<TeamMember>().toList(),
@@ -86,6 +94,7 @@ class TeamTaskRepository {
           categories: categories,
           topics: topics,
           members: members,
+          pendingEvents: pendingEvents,
         );
       },
     );
@@ -113,6 +122,23 @@ class TeamTaskRepository {
   /// With [subtaskId], into that subtask's own log.
   Future<void> addUpdate(String id, String text, {String? subtaskId}) =>
       _database.addTeamTaskUpdate(id, text, subtaskId: subtaskId);
+
+  Future<void> editUpdate(String id, String updateId, String text, {String? subtaskId}) =>
+      _database.editTeamTaskUpdate(id, updateId, text, subtaskId: subtaskId);
+
+  Future<void> deleteUpdate(String id, String updateId, {String? subtaskId}) =>
+      _database.deleteTeamTaskUpdate(id, updateId, subtaskId: subtaskId);
+
+  Future<void> insertPendingEvent(TaskTopic pendingEvent) =>
+      _database.insertPendingEvent(pendingEvent);
+
+  Future<void> updatePendingEvent(TaskTopic pendingEvent) =>
+      _database.updatePendingEvent(pendingEvent);
+
+  Future<void> deletePendingEvent(String id) => _database.deletePendingEvent(id);
+
+  Future<void> linkPendingEvent(String id, String eventId) =>
+      _database.linkPendingEvent(id, eventId);
 
   Future<void> insertTopic(TaskTopic topic) => _database.insertTaskTopic(topic);
 

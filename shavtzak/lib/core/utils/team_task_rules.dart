@@ -149,6 +149,8 @@ String teamTaskLinkLabel(TeamTask task) {
       return task.category?.name ?? 'קטגוריה שנמחקה';
     case TaskLinkType.topic:
       return task.topic?.name ?? 'נושא שנמחק';
+    case TaskLinkType.pendingEvent:
+      return task.pendingEvent?.name ?? 'אירוע שעוד לא נוצר';
   }
 }
 

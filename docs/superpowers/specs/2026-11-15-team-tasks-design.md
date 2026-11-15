@@ -206,3 +206,29 @@ the app's permanent-member mark.
 - The funnel's "שיוך" row carries the same arrow as "סטטוס" and "אחראי/ת" (it opens the link picker);
   once a link is set the row reads "<name> ✕" and clears it, the arrow's room left empty. Every word in
   that menu starts at the same place, "באיחור" (a checkbox row) included.
+
+## Round 10 (Omer, msg 3789; answers 3803-3807)
+
+- A **subtask is one line of text** ("תת-משימה"): its form has no description and the title field is
+  labelled "תת-משימה". A description saved before (all 22 imported subtasks have one) is kept as is and
+  shown read-only on the subtask as "תיאור (מלפני השינוי)" until Omer decides what becomes of them
+  (still open, msg 3796); nothing in the data is changed.
+- The **update log** can be edited and deleted: every member their own updates; a manager (admin or
+  "ניהול משימות") everyone's, also the ones with no writer ("מהאקסל"), but only in "כל המשימות"; in
+  "המשימות שלי" a manager is a member like any other. A ⋯ menu per update (עריכה in place / מחיקה behind
+  a confirm); an edited update reads "(נערך)" (`editedAt`). Backend `teamTask.editUpdate` /
+  `teamTask.deleteUpdate` (with `subtaskId` for a subtask's log) check the same: the writer, or a manager.
+- **New task form order**: שיוך, כותרת, תיאור, אחראים, דד ליין, then contacts and subtasks. The link
+  picker itself is unchanged.
+- **"+" on a card's header** (event, category, topic, placeholder; "כל המשימות", managers): the new task
+  form with that link preset.
+- **"אירוע שעוד לא נוצר"**: a placeholder event, `utilities/Lists` → `PendingEvents` (`{id, name,
+  sortOrder, isArchived}`), link type `pendingEvent`. The picker's events segment opens with "+ אירוע שעוד
+  לא נוצר" (a manager names one; it is created and picked) and lists the existing ones first. Its card
+  ("אירוע שעוד לא נוצר · <name>") has a 🔗 "קישור לאירוע בשבצק" button (managers, "כל המשימות"): pick the
+  real event, confirm, and `pendingEvent.link` moves every task of it to that event and removes the
+  placeholder, in one batch. Backend also has `pendingEvent.insert|update|permanentlyDelete` (a deleted
+  one sends its tasks to "ללא שיוך").
+- **👥 on an event's card** (both tabs) opens the event's "שיבוצים ל…" window with its share button, the
+  same `EventAssignmentsDialog` as the 👥 of every event in "מסך מנהלים", for whoever sees that screen
+  (admin or `canAccessSummaryScreen`). Not on a category, topic or placeholder card.

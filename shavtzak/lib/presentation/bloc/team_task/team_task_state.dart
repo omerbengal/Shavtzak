@@ -41,6 +41,9 @@ class TeamTasksLoaded extends TeamTaskState {
   final List<TaskTopic> topics;
   final List<TeamMember> members;
 
+  /// "אירוע שעוד לא נוצר" placeholders (round 10).
+  final List<TaskTopic> pendingEvents;
+
   const TeamTasksLoaded({
     required this.viewer,
     required this.all,
@@ -53,6 +56,7 @@ class TeamTasksLoaded extends TeamTaskState {
     this.categories = const [],
     this.topics = const [],
     this.members = const [],
+    this.pendingEvents = const [],
   });
 
   /// A task, or a subtask as a task of its own ([TeamTask.subtaskView]).
@@ -91,5 +95,6 @@ class TeamTasksLoaded extends TeamTaskState {
         categories,
         topics,
         members,
+        pendingEvents,
       ];
 }

@@ -65,6 +65,22 @@ class FakeTeamTaskRepository extends Fake implements TeamTaskRepository {
       _record('log:$id${subtaskId == null ? '' : '/$subtaskId'}:$text');
 
   @override
+  Future<void> editUpdate(String id, String updateId, String text, {String? subtaskId}) =>
+      _record('editLog:$id${subtaskId == null ? '' : '/$subtaskId'}:$updateId:$text');
+
+  @override
+  Future<void> deleteUpdate(String id, String updateId, {String? subtaskId}) =>
+      _record('deleteLog:$id${subtaskId == null ? '' : '/$subtaskId'}:$updateId');
+
+  @override
+  Future<void> insertPendingEvent(TaskTopic pendingEvent) =>
+      _record('insertPending:${pendingEvent.name}');
+
+  @override
+  Future<void> linkPendingEvent(String id, String eventId) =>
+      _record('linkPending:$id:$eventId');
+
+  @override
   Future<void> insertTopic(TaskTopic topic) => _record('insertTopic:${topic.name}');
 
   @override

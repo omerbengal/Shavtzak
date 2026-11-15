@@ -143,6 +143,7 @@ class TeamTaskModel {
         at: at,
         byId: _string(entry['byId']) ?? '',
         byName: _string(entry['byName']),
+        editedAt: _date(entry['editedAt']),
       ));
     }
     return updates;

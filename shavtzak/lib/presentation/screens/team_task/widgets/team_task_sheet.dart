@@ -266,7 +266,16 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                 _section(
                     'סטטוס', _statusValue(state, task, (manage || owner) && task.subtasks.isEmpty)),
                 _section('דד ליין', _deadlineValue(state, task, manage, late)),
-                _section('תיאור', _descriptionValue(task, manage)),
+                // A subtask is one line of text (Omer, round 10): no
+                // description. One saved before keeps showing, read-only,
+                // until Omer decides what becomes of them.
+                if (!task.isSubtask)
+                  _section('תיאור', _descriptionValue(task, manage))
+                else if (task.description.isNotEmpty)
+                  _section(
+                    'תיאור (מלפני השינוי)',
+                    Text(task.description, key: const Key('team-task-legacy-description')),
+                  ),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
                 _section('אנשי קשר', _contactsValue(task, manage)),
                 if (!task.isSubtask)
@@ -276,7 +285,15 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                         : 'תתי-משימות (${task.doneSubtasks}/${task.subtasks.length})',
                     _subtasksValue(task, manage, viewerId),
                   ),
-                _section('יומן עדכונים', TeamTaskUpdateLog(task: task, canWrite: manage || owner)),
+                _section(
+                  'יומן עדכונים',
+                  TeamTaskUpdateLog(
+                    task: task,
+                    canWrite: manage || owner,
+                    // Everyone's updates only in "כל המשימות" (round 10).
+                    canEditAll: manage,
+                  ),
+                ),
                 if (manage) ...[
                   const SizedBox(height: 16),
                   Align(
@@ -340,7 +357,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                         key: const Key('team-task-edit-title'),
                         value: task.title,
                         display: title,
-                        sheetTitle: 'שם המשימה',
+                        sheetTitle: task.isSubtask ? 'תת-המשימה' : 'שם המשימה',
                         wide: widget.wide,
                         validate: (draft) => draft.trim().isEmpty ? 'חובה להזין כותרת' : null,
                         editor: (context, draft, onChanged, onSubmit) => TextValueEditor(
@@ -406,6 +423,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       TaskLinkType.event => 'אירוע: ',
       TaskLinkType.category => 'קטגוריה: ',
       TaskLinkType.topic => 'נושא: ',
+      TaskLinkType.pendingEvent => '$pendingEventLabel: ',
       null => '',
     };
     return _tappable(
