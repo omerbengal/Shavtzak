@@ -14,6 +14,7 @@ Future<void> showConfirmDeleteDialog(
   required String message,
   required String keyPrefix,
   required Future<CrudActionResult> Function() onDelete,
+  List<String> items = const [],
 }) {
   return showDialog<void>(
     context: context,
@@ -23,6 +24,7 @@ Future<void> showConfirmDeleteDialog(
       message: message,
       keyPrefix: keyPrefix,
       onDelete: onDelete,
+      items: items,
     ),
   );
 }
@@ -33,12 +35,17 @@ class _ConfirmDeleteDialog extends StatefulWidget {
     required this.message,
     required this.keyPrefix,
     required this.onDelete,
+    this.items = const [],
   });
 
   final String title;
   final String message;
   final String keyPrefix;
   final Future<CrudActionResult> Function() onDelete;
+
+  /// Lines listed under [message] (e.g. what the delete touches), scrolled
+  /// when long.
+  final List<String> items;
 
   @override
   State<_ConfirmDeleteDialog> createState() => _ConfirmDeleteDialogState();
@@ -81,6 +88,25 @@ class _ConfirmDeleteDialogState extends State<_ConfirmDeleteDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(widget.message),
+              if (widget.items.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 240),
+                  child: SingleChildScrollView(
+                    key: Key('$prefix-items'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final item in widget.items)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text('• $item'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 Text(

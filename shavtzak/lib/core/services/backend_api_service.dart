@@ -76,16 +76,31 @@ class BackendApiService {
     }
   }
 
-  Uri _buildUri(String path) {
-    final projectId = DefaultFirebaseOptions.currentPlatform.projectId;
+  /// The Cloud Function every request goes to. `api` in every real build; a
+  /// branch preview builds with `--dart-define=SHAVTZAK_API_FUNCTION=apiPreview`
+  /// so it talks to the branch's parallel function (`scripts/preview.sh`).
+  static const String functionName =
+      String.fromEnvironment('SHAVTZAK_API_FUNCTION', defaultValue: 'api');
+
+  @visibleForTesting
+  static Uri buildFunctionUri(
+    String projectId,
+    String path, {
+    String function = functionName,
+  }) {
     return Uri.https(
       'us-central1-$projectId.cloudfunctions.net',
-      'api',
+      function,
       {
         'route': path,
       },
     );
   }
+
+  Uri _buildUri(String path) => buildFunctionUri(
+        DefaultFirebaseOptions.currentPlatform.projectId,
+        path,
+      );
 
   Future<Map<String, dynamic>> post(
     String path, {

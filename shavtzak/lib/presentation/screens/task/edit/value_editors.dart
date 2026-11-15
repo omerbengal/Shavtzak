@@ -257,12 +257,32 @@ class AssigneesEditor extends StatefulWidget {
     required this.offered,
     required this.current,
     required this.onChanged,
+    this.emptyLabel = 'אין משובצים לאירוע זה',
+    this.notOfferedLabel = 'כבר לא משובץ/ת לאירוע',
+    this.maxWidth = 300,
+    this.pickedFirst = false,
+    this.showPermanentMark = false,
   });
+
+  /// The picked members on top, a divider, then the rest; each part by name.
+  final bool pickedFirst;
+
+  /// The app's mark after a permanent team member's name.
+  final bool showPermanentMark;
+
+  /// How wide the editor grows; a form's field is wider than a cell.
+  final double maxWidth;
 
   final List<String> initial;
 
   /// The event's assigned members, by name.
   final List<TeamMember> offered;
+
+  /// Shown when nobody can be picked.
+  final String emptyLabel;
+
+  /// Under a member on the task who is not in [offered].
+  final String notOfferedLabel;
 
   /// The task's assignees as they stand.
   final List<TeamMember> current;
@@ -274,27 +294,50 @@ class AssigneesEditor extends StatefulWidget {
 
 class _AssigneesEditorState extends State<AssigneesEditor> {
   late final List<String> _picked = [...widget.initial];
+  final TextEditingController _search = TextEditingController();
+  late final FocusNode _searchFocus = createRtlCursorFixedFocusNode(_search);
   String _query = '';
 
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
   void _toggle(String id, bool on) {
+    // A search has done its job once its result is ticked: empty it and put
+    // the cursor back (and a phone's keyboard up), ready for the next name,
+    // as the task form's dropdown does.
+    final wasSearching = _query.isNotEmpty;
+    if (wasSearching) _search.clear();
     setState(() {
       if (on) {
         if (!_picked.contains(id)) _picked.add(id);
       } else {
         _picked.remove(id);
       }
+      _query = '';
     });
+    if (wasSearching) _searchFocus.requestFocus();
     widget.onChanged([..._picked]);
   }
 
   @override
   Widget build(BuildContext context) {
     final offeredIds = {for (final member in widget.offered) member.id};
-    final members = [
+    var members = [
       ...widget.offered,
       for (final member in widget.current)
         if (!offeredIds.contains(member.id)) member,
     ];
+    if (widget.pickedFirst) {
+      int byName(TeamMember a, TeamMember b) => a.name.compareTo(b.name);
+      members = [
+        ...members.where((m) => _picked.contains(m.id)).toList()..sort(byName),
+        ...members.where((m) => !_picked.contains(m.id)).toList()..sort(byName),
+      ];
+    }
     final query = normalizeForSearch(_query.trim()).toLowerCase();
     final visible = query.isEmpty
         ? members
@@ -303,7 +346,7 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
                 normalizeForSearch(member.name).toLowerCase().contains(query))
             .toList();
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 300),
+      constraints: BoxConstraints(maxWidth: widget.maxWidth),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -311,6 +354,8 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
           RtlArrowKeys(
               child: TextField(
             key: const Key('edit-assignee-search'),
+            controller: _search,
+            focusNode: _searchFocus,
             autofocus: true,
             decoration: const InputDecoration(
               isDense: true,
@@ -321,9 +366,9 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
             onChanged: (value) => setState(() => _query = value),
           )),
           if (members.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('אין משובצים לאירוע זה'),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(widget.emptyLabel),
             ),
           ConstrainedBox(
             constraints: const BoxConstraints(
@@ -332,18 +377,36 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
             child: ListView(
               shrinkWrap: true,
               children: [
-                for (final member in visible)
+                for (final (i, member) in visible.indexed) ...[
+                  if (widget.pickedFirst &&
+                      i > 0 &&
+                      _picked.contains(visible[i - 1].id) &&
+                      !_picked.contains(member.id))
+                    const Divider(key: Key('edit-assignee-divider'), height: 8),
                   CheckboxListTile(
                     key: Key('edit-assignee-${member.id}'),
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(member.name),
+                    title: widget.showPermanentMark && member.isPermanent
+                        ? Text.rich(TextSpan(children: [
+                            TextSpan(text: member.name),
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: Padding(
+                                padding: const EdgeInsetsDirectional.only(start: 4),
+                                child: Icon(Icons.verified_user,
+                                    size: 12, color: Colors.blue.shade700),
+                              ),
+                            ),
+                          ]))
+                        : Text(member.name),
                     subtitle: offeredIds.contains(member.id)
                         ? null
-                        : const Text('כבר לא משובץ/ת לאירוע'),
+                        : Text(widget.notOfferedLabel),
                     value: _picked.contains(member.id),
                     onChanged: (on) => _toggle(member.id, on ?? false),
                   ),
+                ],
               ],
             ),
           ),

@@ -48,6 +48,9 @@ import type {
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
 import {applyEventItemCatalogueMutation, normalizeEventItemChoices} from './event_items';
+import {applyTaskTopicMutation, isLinkedToTopic} from './task_topics';
+import {TeamTaskStore, runTeamTaskOperation} from './team_task_ops';
+import {TeamTaskDoc, teamTaskAuditDetails} from './team_tasks';
 import {
   TaskActor,
   TaskDoc,
@@ -136,6 +139,7 @@ type Collections = {
   presets: string;
   tasks: string;
   stages: string;
+  teamTasks: string;
   calendarSync: string;
   eventCalendarSync: string;
   eventCalendarJobs: string;
@@ -244,6 +248,7 @@ function getCollections(environment: EnvironmentMode): Collections {
     presets: `${prefix}checklist_presets`,
     tasks: `${prefix}tasks`,
     stages: `${prefix}stages`,
+    teamTasks: `${prefix}teamTasks`,
     calendarSync: `${prefix}calendar_sync`,
     eventCalendarSync: `${prefix}event_calendar_sync`,
     eventCalendarJobs: `${prefix}event_calendar_jobs`,
@@ -6632,9 +6637,126 @@ async function executeMutation(
       return {ok: true};
     }
 
+    // Team tasks ("משימות"): their own collection; rules in team_tasks.ts.
+    case 'teamTask.insert':
+    case 'teamTask.update':
+    case 'teamTask.delete':
+    case 'teamTask.setStatus':
+    case 'teamTask.setSubtaskDone':
+    case 'teamTask.addUpdate': {
+      const taskActor = taskActorFrom(actor);
+      const now = Timestamp.now();
+      // Categories and topics live in utilities/Lists, outside the transaction
+      // (as for every other reader of the lists).
+      const listsData = await getUtilitiesListsDoc();
+      const result = await db.runTransaction((transaction) =>
+        runTeamTaskOperation(
+          teamTaskStoreFor(transaction, collections, listsData),
+          operation,
+          payload,
+          taskActor,
+          now,
+        ),
+      );
+      const shown = result.after ?? result.before;
+      await writeAuditLog(
+        db, collections, actor, operation, 'teamTask', result.entityId,
+        shown == null ? result.details : teamTaskAuditDetails(shown, result.details),
+        {before: result.before, after: result.after},
+      );
+      return {ok: true};
+    }
+
+    case 'taskTopic.insert':
+    case 'taskTopic.update':
+    case 'taskTopic.delete':
+    case 'taskTopic.permanentlyDelete':
+    case 'taskTopic.restore': {
+      const listsRef = db.collection('utilities').doc('Lists');
+      const listsData = await getUtilitiesListsDoc();
+      const topics = getTaskTopicsArray(listsData);
+      const change = applyTaskTopicMutation(
+        topics, operation, payload, new Date().toISOString(), taskActorFrom(actor),
+      );
+      // A topic deleted for good comes off its tasks (they move to "ללא
+      // שיוך"), in the same batch as the list.
+      const unlinked: string[] = [];
+      const batch = db.batch();
+      batch.set(listsRef, {TaskTopics: change.items}, {merge: true});
+      if (operation === 'taskTopic.permanentlyDelete') {
+        const linked = await db.collection(collections.teamTasks)
+          .where('link.id', '==', change.entityId)
+          .get();
+        for (const doc of linked.docs) {
+          if (!isLinkedToTopic(doc.data(), change.entityId)) continue;
+          unlinked.push(doc.id);
+          batch.update(doc.ref, {link: null, updatedAt: Timestamp.now()});
+        }
+      }
+      await batch.commit();
+      await writeAuditLog(db, collections, actor, operation, 'taskTopic', change.entityId, {
+        count: change.items.length,
+        name: change.after?.['name'] ?? change.before?.['name'],
+        ...(unlinked.length > 0 ? {unlinkedTaskIds: unlinked} : {}),
+      }, {
+        before: change.before,
+        after: change.after,
+      });
+      return {ok: true};
+    }
+
     default:
       throw new HttpError(400, `Unsupported operation: ${operation}`);
   }
+}
+
+function getTaskTopicsArray(listsData: Record<string, unknown>): Array<Record<string, unknown>> {
+  return Array.isArray(listsData['TaskTopics'])
+    ? (listsData['TaskTopics'] as Array<Record<string, unknown>>)
+    : [];
+}
+
+/** A [TeamTaskStore] on one Firestore transaction. */
+function teamTaskStoreFor(
+  transaction: FirebaseFirestore.Transaction,
+  collections: Collections,
+  listsData: Record<string, unknown>,
+): TeamTaskStore {
+  const tasks = db.collection(collections.teamTasks);
+  return {
+    async getTask(id) {
+      const snapshot = await transaction.get(tasks.doc(id));
+      return snapshot.exists ? (snapshot.data() ?? {}) : null;
+    },
+    async eventExists(id) {
+      const snapshot = await transaction.get(db.collection(collections.events).doc(id));
+      return snapshot.exists && snapshot.data()?.[EVENT_DELETION_PENDING_FIELD] !== true;
+    },
+    async categoryExists(id) {
+      return getCategoriesArray(listsData).some((category) => category['id'] === id);
+    },
+    async topicExists(id) {
+      return getTaskTopicsArray(listsData).some((topic) => topic['id'] === id);
+    },
+    async inactiveMemberIds(ids) {
+      if (ids.length === 0) return [];
+      const snapshots = await transaction.getAll(
+        ...ids.map((id) => db.collection(collections.teamMembers).doc(id)),
+      );
+      return snapshots
+        .filter((snapshot) => {
+          const data = snapshot.data();
+          return !snapshot.exists || data?.['isActive'] !== true || data?.['isArchived'] === true;
+        })
+        .map((snapshot) => snapshot.id);
+    },
+    async writeTask(doc: TeamTaskDoc) {
+      transaction.set(tasks.doc(doc.id), doc);
+    },
+    async deleteTask(id) {
+      transaction.delete(tasks.doc(id));
+    },
+  };
 }
 
 class HttpError extends Error {
@@ -7573,4 +7695,5 @@ export {
   requireValidCustomHours as __testRequireValidCustomHours,
   readHoursResolutions as __testReadHoursResolutions,
   hoursResolutionError as __testHoursResolutionError,
+  getCollections as __testGetCollections,
 };

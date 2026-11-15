@@ -22,6 +22,8 @@ import '../../presentation/screens/task/event_tasks_screen.dart';
 import '../../presentation/screens/task/edit/event_edit_screen.dart';
 import '../../presentation/screens/task/tasks_place.dart';
 import '../../presentation/screens/task/tasks_screen.dart';
+import '../../presentation/screens/team_task/team_tasks_place.dart';
+import '../../presentation/screens/team_task/team_tasks_screen.dart';
 import '../../presentation/screens/db/db_preview_screen.dart';
 import '../../presentation/screens/privacy_policy/privacy_policy_screen.dart';
 import '../../presentation/screens/terms_of_service/terms_of_service_screen.dart';
@@ -458,6 +460,10 @@ class AppRouter {
             if (strippedRoute.startsWith(TasksPlace.standalone.path)) {
               return '$envPrefix/user$strippedRoute';
             }
+            // The same for the team tasks screen.
+            final teamTasksTarget =
+                teamTasksRedirect(strippedRoute, currentState.user);
+            if (teamTasksTarget != null) return '$envPrefix$teamTasksTarget';
             if (strippedRoute.startsWith('/summary')) {
               if (!currentState.user.canAccessSummaryScreen) {
                 return '$envPrefix/user/assignments';
@@ -547,6 +553,9 @@ class AppRouter {
         // The admins' own דו יומי screen, opened from the admin home.
         _tasksRoute('/du-yomi', TasksPlace.standalone, 'prod'),
 
+        // The admins' team tasks screen ("משימות"), opened from the admin home.
+        _teamTasksRoute('/team-tasks', TeamTasksPlace.standalone, 'prod'),
+
         // Admin routes shell - uses existing SwipeablePageView
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -626,6 +635,11 @@ class AppRouter {
             StatefulShellBranch(routes: [
               _tasksRoute('/user/du-yomi', TasksPlace.tab, 'prod'),
             ]),
+            // Shown in the bar only to a member who owns a task or manages
+            // tasks (UserNavigationShell).
+            StatefulShellBranch(routes: [
+              _teamTasksRoute('/user/team-tasks', TeamTasksPlace.tab, 'prod'),
+            ]),
           ],
         ),
 
@@ -663,6 +677,7 @@ class AppRouter {
                 child:
                     ChecklistLinkScreen(key: ValueKey('checklist_link_test')))),
         _tasksRoute('/test/du-yomi', TasksPlace.standalone, 'test'),
+        _teamTasksRoute('/test/team-tasks', TeamTasksPlace.standalone, 'test'),
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -741,11 +756,27 @@ class AppRouter {
             StatefulShellBranch(routes: [
               _tasksRoute('/test/user/du-yomi', TasksPlace.tab, 'test'),
             ]),
+            StatefulShellBranch(routes: [
+              _teamTasksRoute('/test/user/team-tasks', TeamTasksPlace.tab, 'test'),
+            ]),
           ],
         ),
       ],
 
       errorBuilder: (context, state) => const WhoamiScreen(),
+    );
+  }
+
+  /// The team tasks screen at [path].
+  static GoRoute _teamTasksRoute(String path, TeamTasksPlace place, String env) {
+    return GoRoute(
+      path: path,
+      pageBuilder: (context, state) => NoTransitionPage(
+        child: TeamTasksScreen(
+          key: ValueKey('team_tasks_${place.name}_$env'),
+          place: place,
+        ),
+      ),
     );
   }
 

@@ -28,8 +28,17 @@ if [ -z "$channel" ] || [ "$channel" = "head" ] || [ "$channel" = "live" ]; then
   exit 1
 fi
 
+# PREVIEW_API=1 points the build at the branch's parallel function
+# `apiPreview` (deployed separately, with Omer's approval), so backend changes
+# can be tried before `api` is redeployed.
+dart_defines=()
+if [ "${PREVIEW_API:-0}" = "1" ]; then
+  dart_defines+=(--dart-define=SHAVTZAK_API_FUNCTION=apiPreview)
+  echo "==> Backend: apiPreview"
+fi
+
 echo "==> Building web (base href /) ..."
-(cd shavtzak && flutter build web --release --base-href /)
+(cd shavtzak && flutter build web --release --base-href / "${dart_defines[@]}")
 
 echo "==> Deploying to preview channel '$channel' (expires in 7 days) ..."
 out="$(firebase hosting:channel:deploy "$channel" --expires 7d --json)"

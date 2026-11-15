@@ -10,6 +10,8 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/event_item.dart';
+import '../../domain/entities/task_topic.dart';
+import '../../domain/entities/team_task.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
@@ -1429,6 +1431,100 @@ class LoggingDatabase implements DatabaseInterface {
         countOf: (_) => null,
         action: () => _inner.restoreEventItem(id),
       );
+
+  // ===== Team tasks =====
+
+  @override
+  Stream<List<TeamTask>> watchAllTeamTasks() => _wrapStream(
+        op: 'watchAllTeamTasks',
+        ctx: const {'collection': 'teamTasks'},
+        inner: () => _inner.watchAllTeamTasks(),
+      );
+
+  @override
+  Stream<List<TeamTask>> watchOwnedTeamTasks(String memberId) => _wrapStream(
+        op: 'watchOwnedTeamTasks',
+        ctx: {'collection': 'teamTasks', 'ownerId': memberId},
+        inner: () => _inner.watchOwnedTeamTasks(memberId),
+      );
+
+  Future<void> _teamTaskWrite(String op, String id, Future<void> Function() action) =>
+      _runFuture(
+        op: op,
+        ctx: {'collection': 'teamTasks', 'id': id},
+        countOf: (_) => null,
+        action: action,
+      );
+
+  @override
+  Future<void> insertTeamTask(TeamTask task) =>
+      _teamTaskWrite('insertTeamTask', task.id, () => _inner.insertTeamTask(task));
+
+  @override
+  Future<void> updateTeamTask(TeamTask task) =>
+      _teamTaskWrite('updateTeamTask', task.id, () => _inner.updateTeamTask(task));
+
+  @override
+  Future<void> deleteTeamTask(String id) =>
+      _teamTaskWrite('deleteTeamTask', id, () => _inner.deleteTeamTask(id));
+
+  @override
+  Future<void> setTeamTaskStatus(
+    String id,
+    TeamTaskStatus status, {
+    String? duplicateOfId,
+    String? subtaskId,
+  }) =>
+      _teamTaskWrite(
+          'setTeamTaskStatus',
+          id,
+          () => _inner.setTeamTaskStatus(id, status,
+              duplicateOfId: duplicateOfId, subtaskId: subtaskId));
+
+  @override
+  Future<void> setTeamSubtaskDone(String id, String subtaskId, bool isDone) =>
+      _teamTaskWrite('setTeamSubtaskDone', id,
+          () => _inner.setTeamSubtaskDone(id, subtaskId, isDone));
+
+  @override
+  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId}) =>
+      _teamTaskWrite('addTeamTaskUpdate', id,
+          () => _inner.addTeamTaskUpdate(id, text, subtaskId: subtaskId));
+
+  @override
+  Stream<List<TaskTopic>> watchTaskTopics() => _wrapStream(
+        op: 'watchTaskTopics',
+        ctx: const {'collection': 'taskTopics'},
+        inner: () => _inner.watchTaskTopics(),
+      );
+
+  Future<void> _topicWrite(String op, String id, Future<void> Function() action) =>
+      _runFuture(
+        op: op,
+        ctx: {'collection': 'taskTopics', 'id': id},
+        countOf: (_) => null,
+        action: action,
+      );
+
+  @override
+  Future<void> insertTaskTopic(TaskTopic topic) =>
+      _topicWrite('insertTaskTopic', topic.id, () => _inner.insertTaskTopic(topic));
+
+  @override
+  Future<void> updateTaskTopic(TaskTopic topic) =>
+      _topicWrite('updateTaskTopic', topic.id, () => _inner.updateTaskTopic(topic));
+
+  @override
+  Future<void> archiveTaskTopic(String id) =>
+      _topicWrite('archiveTaskTopic', id, () => _inner.archiveTaskTopic(id));
+
+  @override
+  Future<void> restoreTaskTopic(String id) =>
+      _topicWrite('restoreTaskTopic', id, () => _inner.restoreTaskTopic(id));
+
+  @override
+  Future<void> permanentlyDeleteTaskTopic(String id) => _topicWrite(
+      'permanentlyDeleteTaskTopic', id, () => _inner.permanentlyDeleteTaskTopic(id));
 
   // ===== Tasks =====
 

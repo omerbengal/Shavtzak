@@ -41,6 +41,9 @@ import '../../domain/entities/imported_stage.dart';
 import '../../domain/entities/stage_sync_plan.dart';
 import '../models/stage_import_model.dart';
 import '../models/stage_sync_model.dart';
+import '../models/team_task_model.dart';
+import '../../domain/entities/task_topic.dart';
+import '../../domain/entities/team_task.dart';
 
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
@@ -77,6 +80,10 @@ class FirestoreDatabase implements DatabaseInterface {
 
   String get _stagesCollection {
     return '${EnvironmentService.instance.collectionPrefix}stages';
+  }
+
+  String get _teamTasksCollection {
+    return '${EnvironmentService.instance.collectionPrefix}teamTasks';
   }
 
   String get _calendarSyncCollection {
@@ -2635,6 +2642,107 @@ class FirestoreDatabase implements DatabaseInterface {
     } catch (e) {
       throw DatabaseException('Failed $operation: $e');
     }
+  }
+
+  // ========== Team tasks ("משימות") ==========
+
+  List<TeamTask> _teamTasksFrom(QuerySnapshot<Map<String, dynamic>> snapshot) =>
+      snapshot.docs.map((doc) => TeamTaskModel.fromMap(doc.id, doc.data())).toList();
+
+  @override
+  Stream<List<TeamTask>> watchAllTeamTasks() =>
+      _firestore.collection(_teamTasksCollection).snapshots().map(_teamTasksFrom);
+
+  @override
+  Stream<List<TeamTask>> watchOwnedTeamTasks(String memberId) => _firestore
+      .collection(_teamTasksCollection)
+      .where('ownerIds', arrayContains: memberId)
+      .snapshots()
+      .map(_teamTasksFrom);
+
+  @override
+  Future<void> insertTeamTask(TeamTask task) async {
+    await _invokeMutation('teamTask.insert',
+        payload: {'task': TeamTaskModel.toMutationPayload(task)});
+  }
+
+  @override
+  Future<void> updateTeamTask(TeamTask task) async {
+    await _invokeMutation('teamTask.update',
+        payload: {'task': TeamTaskModel.toMutationPayload(task)});
+  }
+
+  @override
+  Future<void> deleteTeamTask(String id) async {
+    await _invokeMutation('teamTask.delete', payload: {'id': id});
+  }
+
+  @override
+  Future<void> setTeamTaskStatus(
+    String id,
+    TeamTaskStatus status, {
+    String? duplicateOfId,
+    String? subtaskId,
+  }) async {
+    await _invokeMutation('teamTask.setStatus', payload: {
+      'id': id,
+      'status': status.key,
+      'duplicateOfId': duplicateOfId,
+      if (subtaskId != null) 'subtaskId': subtaskId,
+    });
+  }
+
+  @override
+  Future<void> setTeamSubtaskDone(String id, String subtaskId, bool isDone) async {
+    await _invokeMutation('teamTask.setSubtaskDone',
+        payload: {'id': id, 'subtaskId': subtaskId, 'isDone': isDone});
+  }
+
+  @override
+  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId}) async {
+    await _invokeMutation('teamTask.addUpdate', payload: {
+      'id': id,
+      'text': text,
+      if (subtaskId != null) 'subtaskId': subtaskId,
+    });
+  }
+
+  @override
+  Stream<List<TaskTopic>> watchTaskTopics() {
+    return _firestore
+        .collection('utilities')
+        .doc('Lists')
+        .snapshots()
+        .map<List<TaskTopic>>(
+            (snapshot) => TaskTopic.listFromJson(snapshot.data()?['TaskTopics']))
+        .handleError((error) {
+      throw DatabaseException('Failed to watch task topics: $error');
+    });
+  }
+
+  @override
+  Future<void> insertTaskTopic(TaskTopic topic) async {
+    await _invokeMutation('taskTopic.insert', payload: {'topic': topic.toJson()});
+  }
+
+  @override
+  Future<void> updateTaskTopic(TaskTopic topic) async {
+    await _invokeMutation('taskTopic.update', payload: {'topic': topic.toJson()});
+  }
+
+  @override
+  Future<void> archiveTaskTopic(String id) async {
+    await _invokeMutation('taskTopic.delete', payload: {'topicId': id});
+  }
+
+  @override
+  Future<void> restoreTaskTopic(String id) async {
+    await _invokeMutation('taskTopic.restore', payload: {'topicId': id});
+  }
+
+  @override
+  Future<void> permanentlyDeleteTaskTopic(String id) async {
+    await _invokeMutation('taskTopic.permanentlyDelete', payload: {'topicId': id});
   }
 
   // ========== Tasks ==========

@@ -24,6 +24,7 @@ import 'data/repositories/user_selection_repository.dart';
 import 'data/repositories/checklist_repository.dart';
 import 'data/repositories/preset_repository.dart';
 import 'data/repositories/task_repository.dart';
+import 'data/repositories/team_task_repository.dart';
 import 'data/repositories/role_repository.dart';
 import 'data/repositories/category_repository.dart';
 import 'data/repositories/event_item_repository.dart';
@@ -52,6 +53,7 @@ import 'presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_event.dart';
 import 'presentation/bloc/checklist/checklist_bloc.dart';
 import 'presentation/bloc/task/task_bloc.dart';
+import 'presentation/bloc/team_task/team_task_bloc.dart';
 import 'presentation/bloc/preset/preset_bloc.dart';
 import 'presentation/bloc/role/role_bloc.dart';
 import 'presentation/bloc/role/role_event.dart';
@@ -238,6 +240,7 @@ Future<void> _initialize(Future<void> fontsReady) async {
         checklist: ChecklistRepository(database),
         preset: PresetRepository(database),
         task: TaskRepository(database),
+        teamTask: TeamTaskRepository(database),
         role: RoleRepository(database),
         category: CategoryRepository(database),
         eventItem: EventItemRepository(database),
@@ -294,6 +297,7 @@ Future<void> _initialize(Future<void> fontsReady) async {
         checklistRepository: repositories.checklist,
         presetRepository: repositories.preset,
         taskRepository: repositories.task,
+        teamTaskRepository: repositories.teamTask,
         roleRepository: repositories.role,
         categoryRepository: repositories.category,
         eventItemRepository: repositories.eventItem,
@@ -358,6 +362,7 @@ class MyApp extends StatelessWidget {
   final ChecklistRepository checklistRepository;
   final PresetRepository presetRepository;
   final TaskRepository taskRepository;
+  final TeamTaskRepository teamTaskRepository;
   final RoleRepository roleRepository;
   final CategoryRepository categoryRepository;
   final EventItemRepository eventItemRepository;
@@ -375,6 +380,7 @@ class MyApp extends StatelessWidget {
     required this.checklistRepository,
     required this.presetRepository,
     required this.taskRepository,
+    required this.teamTaskRepository,
     required this.roleRepository,
     required this.categoryRepository,
     required this.eventItemRepository,
@@ -399,6 +405,7 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: checklistRepository),
         RepositoryProvider.value(value: presetRepository),
         RepositoryProvider.value(value: taskRepository),
+        RepositoryProvider.value(value: teamTaskRepository),
         RepositoryProvider.value(value: roleRepository),
         RepositoryProvider.value(value: categoryRepository),
         RepositoryProvider.value(value: eventItemRepository),
@@ -489,6 +496,13 @@ class MyApp extends StatelessWidget {
                         unawaited(_firestoreReconnect.reconnect(reason)),
                   );
                 },
+              ),
+              // Team tasks ("משימות"). Subscribes when the screen or the
+              // member shell first needs it (TeamTasksSubscribe).
+              BlocProvider(
+                create: (context) => TeamTaskBloc(
+                  repository: context.read<TeamTaskRepository>(),
+                ),
               ),
               BlocProvider(
                 create: (context) {

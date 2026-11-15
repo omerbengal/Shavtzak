@@ -2,6 +2,8 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/event_item.dart';
+import '../../domain/entities/task_topic.dart';
+import '../../domain/entities/team_task.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/custom_hours_resolution.dart';
 import '../../domain/entities/event.dart';
@@ -594,4 +596,47 @@ abstract class DatabaseInterface {
   /// every write of [plan] in one go, all or nothing. Updated tasks keep
   /// their progress.
   Future<void> syncStages(String eventId, StageSyncPlan plan);
+
+  // ========== Team tasks ("משימות") ==========
+
+  /// Every team task, unpopulated. Only a manager may run this query (the
+  /// Firestore rule refuses it for anyone else).
+  Stream<List<TeamTask>> watchAllTeamTasks();
+
+  /// The team tasks whose `ownerIds` hold [memberId]: the only query the rule
+  /// allows a member who is not a manager.
+  Stream<List<TeamTask>> watchOwnedTeamTasks(String memberId);
+
+  Future<void> insertTeamTask(TeamTask task);
+
+  Future<void> updateTeamTask(TeamTask task);
+
+  Future<void> deleteTeamTask(String id);
+
+  /// With [subtaskId], the status of that subtask of task [id].
+  Future<void> setTeamTaskStatus(
+    String id,
+    TeamTaskStatus status, {
+    String? duplicateOfId,
+    String? subtaskId,
+  });
+
+  Future<void> setTeamSubtaskDone(String id, String subtaskId, bool isDone);
+
+  /// With [subtaskId], into that subtask's own log.
+  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId});
+
+  /// The topics list (utilities/Lists, TaskTopics), archived ones included.
+  Stream<List<TaskTopic>> watchTaskTopics();
+
+  Future<void> insertTaskTopic(TaskTopic topic);
+
+  Future<void> updateTaskTopic(TaskTopic topic);
+
+  Future<void> archiveTaskTopic(String id);
+
+  Future<void> restoreTaskTopic(String id);
+
+  /// Deletes a topic for good; the backend takes it off the tasks that use it.
+  Future<void> permanentlyDeleteTaskTopic(String id);
 }
