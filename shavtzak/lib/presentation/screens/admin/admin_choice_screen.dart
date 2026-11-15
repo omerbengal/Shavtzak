@@ -23,6 +23,7 @@ import '../../../domain/entities/team_member.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
 import '../../widgets/assignment_export_dialog.dart';
 import '../../widgets/shamap_export_dialog.dart';
+import '../team_task/team_tasks_place.dart';
 import '../../widgets/settings_dialog.dart';
 import '../../widgets/constraints_examining_dialog.dart';
 
@@ -350,6 +351,20 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                   },
                                 ),
                                 SizedBox(height: cardSpacing),
+                                _buildChoiceCard(
+                                  key: const Key('admin-card-team-tasks'),
+                                  width: cardWidth,
+                                  icon: Icons.task_alt,
+                                  iconColor: Colors.teal,
+                                  title: 'משימות',
+                                  subtitle: 'משימות הצוות לפי אירוע, קטגוריה ונושא',
+                                  isCompact: isCompact,
+                                  onTap: () {
+                                    Logger.action('tap:teamTasks');
+                                    context.go(TeamTasksPlace.standalone.route);
+                                  },
+                                ),
+                                SizedBox(height: cardSpacing),
                               ],
 
                               // Summary/Manager Screen Card
@@ -497,6 +512,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
 
   /// Build a choice card - no fixed height, content-sized
   Widget _buildChoiceCard({
+    Key? key,
     required double width,
     required IconData icon,
     required Color iconColor,
@@ -507,6 +523,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     int badgeCount = 0,
   }) {
     final card = SizedBox(
+      key: key,
       width: width,
       child: Card(
         elevation: 4,

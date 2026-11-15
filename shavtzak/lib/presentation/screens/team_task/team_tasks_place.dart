@@ -1,4 +1,5 @@
 import '../../../core/services/environment_service.dart';
+import '../../../domain/entities/team_member.dart';
 
 /// Where the team tasks screen ("משימות") is shown.
 enum TeamTasksPlace {
@@ -15,4 +16,16 @@ enum TeamTasksPlace {
 
   /// The route in the current environment.
   String get route => '${EnvironmentService.instance.routePrefix}$path';
+}
+
+/// Where [user] goes instead of [strippedRoute] (the route without the
+/// environment prefix), or null to stay: the standalone screen is the admins'
+/// (from the admin home); everyone else has the tab.
+String? teamTasksRedirect(String strippedRoute, TeamMember user) {
+  if (user.isAdmin) return null;
+  final standalone = TeamTasksPlace.standalone.path;
+  if (strippedRoute == standalone || strippedRoute.startsWith('$standalone/')) {
+    return TeamTasksPlace.tab.path;
+  }
+  return null;
 }

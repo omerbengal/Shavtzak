@@ -26,6 +26,54 @@ Future<void> showTopicManagementDialog(BuildContext context) {
   );
 }
 
+/// Asks for a topic's new name. Owns its controller, so the field outlives
+/// the dialog's closing animation.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final TextEditingController _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('שינוי שם הנושא'),
+        content: RtlArrowKeys(
+          child: TextField(
+            key: const Key('topic-rename-field'),
+            controller: _controller,
+            autofocus: true,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+            onSubmitted: (value) => Navigator.of(context).pop(value),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('ביטול')),
+          FilledButton(
+            key: const Key('topic-rename-save'),
+            onPressed: () => Navigator.of(context).pop(_controller.text),
+            child: const Text('שמירה'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class TopicManagementDialog extends StatefulWidget {
   const TopicManagementDialog({super.key});
 
@@ -67,34 +115,10 @@ class _TopicManagementDialogState extends State<TopicManagementDialog> {
   }
 
   Future<void> _rename(TaskTopic topic) async {
-    final controller = TextEditingController(text: topic.name);
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('שינוי שם הנושא'),
-          content: RtlArrowKeys(
-            child: TextField(
-              key: const Key('topic-rename-field'),
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              onSubmitted: (value) => Navigator.of(context).pop(value),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('ביטול')),
-            FilledButton(
-              key: const Key('topic-rename-save'),
-              onPressed: () => Navigator.of(context).pop(controller.text),
-              child: const Text('שמירה'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => _RenameDialog(initial: topic.name),
     );
-    controller.dispose();
     final trimmed = name?.trim() ?? '';
     if (trimmed.isEmpty || trimmed == topic.name) return;
     await _run((c) => UpdateTaskTopic(topic.copyWith(name: trimmed), completion: c));
