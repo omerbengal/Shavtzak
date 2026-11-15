@@ -14,7 +14,7 @@ import 'task_utils.dart';
 /// file back. Pure functions; the copy is saved through the same backend call
 /// as the Excel import (`stage.import`).
 
-/// An earlier event that can be copied: an active דו יומי event, other than
+/// An earlier event that can be copied: a task event ([isTaskEvent]), other than
 /// [targetEventId], with at least one stage. Latest first.
 List<EventTaskBoard> cycleSources({
   required List<Event> events,
@@ -25,7 +25,7 @@ List<EventTaskBoard> cycleSources({
   final sources = <EventTaskBoard>[];
   for (final event in events) {
     if (event.id == targetEventId) continue;
-    if (event.isDeactivated || event.categoryId != duYomiCategoryId) continue;
+    if (!isTaskEvent(event)) continue;
     final board = eventTaskBoard(event, stages: stages, tasks: tasks);
     if (board.stages.isNotEmpty) sources.add(board);
   }

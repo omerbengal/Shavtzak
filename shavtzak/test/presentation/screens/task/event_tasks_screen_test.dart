@@ -1673,6 +1673,29 @@ void main() {
       expect(find.byKey(const Key('stage-add')), findsNothing);
     });
 
+    testWidgets('a link straight to a preparation day says it is not found',
+        (tester) async {
+      final prep = buildEvent(id: 'prep', name: 'היערכות דו יומי צפון');
+      await pumpEventTasks(
+        tester,
+        place: TasksPlace.tab,
+        user: dana,
+        size: tallPhoneSize,
+        eventId: 'prep',
+        board: TaskBoard(
+          tasks: const [],
+          events: [event, prep],
+          stages: [arrival],
+          members: [dana, yoav],
+        ),
+        assignees: {
+          'e1': [dana, yoav],
+        },
+      );
+      expect(find.text('האירוע לא נמצא'), findsOneWidget);
+      expect(find.byKey(const Key('stage-add')), findsNothing);
+    });
+
     testWidgets('a long event name shrinks to one line instead of "…"',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);

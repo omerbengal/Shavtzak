@@ -603,6 +603,31 @@ void main() {
     });
   });
 
+  group('isDuYomiPrepEvent', () {
+    test('a name starting with היערכות is a preparation day', () {
+      expect(isDuYomiPrepEvent(buildEvent(name: 'היערכות דו יומי 3')), isTrue);
+      expect(isDuYomiPrepEvent(buildEvent(name: 'היערכות')), isTrue);
+      expect(isDuYomiPrepEvent(buildEvent(name: '  היערכות - צפון')), isTrue);
+    });
+
+    test('היערכות elsewhere in the name is not a preparation day', () {
+      expect(isDuYomiPrepEvent(buildEvent(name: 'דו יומי צפון')), isFalse);
+      expect(isDuYomiPrepEvent(buildEvent(name: 'דו יומי היערכות')), isFalse);
+      expect(isDuYomiPrepEvent(buildEvent(name: '')), isFalse);
+    });
+
+    test('isTaskEvent leaves out preparation days, other categories and '
+        'events on hold', () {
+      expect(isTaskEvent(buildEvent(name: 'דו יומי צפון')), isTrue);
+      expect(isTaskEvent(buildEvent(name: 'היערכות דו יומי')), isFalse);
+      expect(
+          isTaskEvent(buildEvent(name: 'דו יומי', isDeactivated: true)),
+          isFalse);
+      expect(isTaskEvent(buildEvent(name: 'דו יומי', categoryId: 'x')),
+          isFalse);
+    });
+  });
+
   group('taskEvents', () {
     final upcoming = buildEvent(id: 'up', startDate: DateTime(2026, 10, 20));
     final later = buildEvent(id: 'later', startDate: DateTime(2026, 11, 3));
@@ -620,6 +645,22 @@ void main() {
       startDate: DateTime(2026, 10, 26),
       categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
     );
+    final prep = buildEvent(
+      id: 'prep',
+      name: 'היערכות דו יומי צפון',
+      startDate: DateTime(2026, 10, 19),
+    );
+
+    test('a preparation day is never listed, upcoming or past', () {
+      final pastPrep = buildEvent(
+        id: 'pastPrep',
+        name: ' היערכות',
+        startDate: DateTime(2026, 9, 2),
+      );
+      final split = taskEvents([upcoming, prep, past, pastPrep], now: now);
+      expect(split.upcoming.map((event) => event.id), ['up']);
+      expect(split.past.map((event) => event.id), ['past']);
+    });
 
     test(
         'splits active דו יומי events into upcoming, nearest first, and past, '

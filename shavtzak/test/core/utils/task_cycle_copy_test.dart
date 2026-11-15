@@ -145,14 +145,17 @@ void main() {
         id: 'other', startDate: DateTime(2026, 10, 25), categoryId: 'x');
     final off = buildEvent(
         id: 'off', startDate: DateTime(2026, 10, 26), isDeactivated: true);
+    final prep = buildEvent(
+        id: 'prep', name: 'היערכות', startDate: DateTime(2026, 10, 27));
     final sources = cycleSources(
-      events: [older, oldEvent, newEvent, empty, other, off],
+      events: [older, oldEvent, newEvent, empty, other, off, prep],
       stages: [
         day1,
         buildStage(id: 'so', eventId: 'older', date: DateTime(2026, 9, 1)),
         buildStage(id: 'sn', eventId: 'new', date: DateTime(2026, 11, 12)),
         buildStage(id: 'sx', eventId: 'other', date: DateTime(2026, 10, 25)),
         buildStage(id: 'sf', eventId: 'off', date: DateTime(2026, 10, 26)),
+        buildStage(id: 'sp', eventId: 'prep', date: DateTime(2026, 10, 27)),
       ],
       tasks: const [],
       targetEventId: 'new',
