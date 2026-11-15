@@ -213,7 +213,11 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   }
 }
 
-class _GroupedList extends StatelessWidget {
+/// The list as design A (Omer, round 3): a card per link, as the דו יומי
+/// "המשימות שלי" stage cards (tinted header, white rows). In "כל המשימות" a
+/// parent's subtasks fold under it ("2/4 ▾"), closed until opened; while a
+/// search matches a subtask, its parent opens by itself.
+class _GroupedList extends StatefulWidget {
   const _GroupedList({
     required this.groups,
     required this.state,
@@ -230,7 +234,25 @@ class _GroupedList extends StatelessWidget {
   final bool editing;
 
   @override
+  State<_GroupedList> createState() => _GroupedListState();
+}
+
+class _GroupedListState extends State<_GroupedList> {
+  /// The parents whose subtasks were opened by hand.
+  final Set<String> _open = {};
+
+  bool _isOpen(TeamTask task, List<TeamSubtask> shown) {
+    if (_open.contains(task.id)) return true;
+    // Searching: open where a subtask is what matched.
+    return widget.state.filter.searchText.isNotEmpty &&
+        shown.isNotEmpty &&
+        shown.length < task.subtasks.length;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final groups = widget.groups;
+    final state = widget.state;
     if (groups.isEmpty) {
       return const Center(
         child: Text('אין משימות להצגה', style: TextStyle(color: TaskStyle.faintText)),
@@ -240,52 +262,110 @@ class _GroupedList extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
         child: ListView(
-          padding: const EdgeInsets.only(bottom: 96),
+          padding: const EdgeInsets.only(top: 4, bottom: 96),
           children: [
-            for (final group in groups) ...[
-              Container(
-                key: Key('team-task-group-${group.key}'),
-                width: double.infinity,
-                color: TaskStyle.stageHeader,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Text(
-                  '${_groupKind(group.type)}${group.label}',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              for (final task in group.tasks) ...[
-                TeamTaskRow(
-                  task: task,
-                  now: now,
-                  viewerId: state.viewer.id,
-                  onTap: () => showTeamTaskSheet(context, task.id, manage: editing),
-                ),
-                // "כל המשימות": a parent's subtasks nested under it, by the
-                // same filters.
-                if (editing)
-                  for (final subtask in visibleSubtasks(task, state.filter))
-                    Padding(
-                      padding: const EdgeInsetsDirectional.only(start: 28),
-                      child: DecoratedBox(
-                        decoration: const BoxDecoration(
-                          border: BorderDirectional(
-                            start: BorderSide(color: TaskStyle.chip, width: 3),
-                          ),
-                        ),
-                        child: TeamTaskRow(
-                          task: TeamTask.subtaskView(task, subtask),
-                          now: now,
-                          viewerId: state.viewer.id,
-                          nested: true,
-                          onTap: () => showTeamTaskSheet(context, subtask.id, manage: editing),
-                        ),
-                      ),
-                    ),
-                const Divider(height: 1, indent: 12, endIndent: 12),
-              ],
-            ],
+            for (final group in groups) _card(context, group, state),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context, TeamTaskGroup group, TeamTasksLoaded state) {
+    final rows = <Widget>[];
+    for (final task in group.tasks) {
+      if (rows.isNotEmpty) {
+        rows.add(const Divider(height: 1, thickness: 1, color: TaskStyle.stageCardDivider));
+      }
+      final shown = widget.editing ? visibleSubtasks(task, state.filter) : const <TeamSubtask>[];
+      final open = widget.editing && task.subtasks.isNotEmpty && _isOpen(task, shown);
+      rows.add(TeamTaskRow(
+        task: task,
+        now: widget.now,
+        viewerId: state.viewer.id,
+        expanded: open,
+        onToggleSubtasks: widget.editing && task.subtasks.isNotEmpty
+            ? () => setState(() {
+                  if (!_open.remove(task.id)) _open.add(task.id);
+                })
+            : null,
+        onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
+      ));
+      if (open && shown.isNotEmpty) {
+        rows.add(Padding(
+          key: Key('team-task-subtasks-${task.id}'),
+          padding: const EdgeInsetsDirectional.only(
+            start: 12 + TeamTaskStyle.statusIconSize + 8,
+            bottom: 8,
+          ),
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              border: BorderDirectional(
+                start: BorderSide(color: TaskStyle.rest, width: 2),
+              ),
+            ),
+            child: Column(
+              children: [
+                for (final subtask in shown)
+                  TeamTaskRow(
+                    task: TeamTask.subtaskView(task, subtask),
+                    now: widget.now,
+                    viewerId: state.viewer.id,
+                    nested: true,
+                    onTap: () =>
+                        showTeamTaskSheet(context, subtask.id, manage: widget.editing),
+                  ),
+              ],
+            ),
+          ),
+        ));
+      }
+    }
+    final count = group.tasks.length;
+    return Container(
+      key: Key('team-task-card-${group.key}'),
+      margin: const EdgeInsets.fromLTRB(
+        TaskStyle.stageCardInset,
+        TaskStyle.stageCardGap,
+        TaskStyle.stageCardInset,
+        0,
+      ),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: TaskStyle.stageCard,
+        border: Border.all(
+          color: TaskStyle.stageCardBorder,
+          width: TaskStyle.stageCardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(TaskStyle.stageCardRadius),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: Key('team-task-group-${group.key}'),
+            color: TaskStyle.stageHeader,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${_groupKind(group.type)}${group.label}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Text(
+                  count == 1 ? 'משימה אחת' : '$count משימות',
+                  style: const TextStyle(
+                    fontSize: TaskStyle.rowMetaSize,
+                    color: TaskStyle.neutralText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...rows,
+        ],
       ),
     );
   }
@@ -297,4 +377,3 @@ class _GroupedList extends StatelessWidget {
         null => '',
       };
 }
-

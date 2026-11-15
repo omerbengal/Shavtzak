@@ -236,13 +236,16 @@ void main() {
     expect(find.byKey(const Key('team-task-row-s2')), findsNothing);
   });
 
-  testWidgets('"כל המשימות" nests the subtasks under their parent', (tester) async {
+  testWidgets('"כל המשימות" folds the subtasks under their parent, "2/4 ▾" opens them', (tester) async {
     final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
       TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
       TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
     ]);
     await pumpTeamTasks(tester, user: manager, board: board([parent]));
     await tester.tap(find.byKey(const Key('team-tab-all')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('team-task-row-s1')), findsNothing);
+    await tester.tap(find.byKey(const Key('team-task-progress-p')));
     await tester.pumpAndSettle();
     final parentTop = tester.getTopLeft(find.byKey(const Key('team-task-row-p'))).dy;
     expect(tester.getTopLeft(find.byKey(const Key('team-task-row-s1'))).dy, greaterThan(parentTop));
@@ -341,6 +344,27 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('team-filter-funnel')), findsNothing);
       expect(find.byKey(const Key('team-filter-status')), findsOneWidget);
+    });
+
+    testWidgets('a search that matches a subtask opens its parent', (tester) async {
+      final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
+        TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
+        TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
+      ]);
+      await pumpTeamTasks(tester, user: manager, board: board([parent]));
+      await tester.enterText(find.byKey(const Key('team-filter-search')), 'חוזה');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-s2')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-row-s1')), findsNothing);
+    });
+
+    testWidgets('a row shows the status circle and the initials of the owners', (tester) async {
+      final omer = buildMember(id: 'o1', name: 'עומר בנגל');
+      final task = buildTeamTask(id: 'x', title: 'משימה', assigneeIds: ['o1'], status: TeamTaskStatus.inProgress)
+          .copyWith(owners: [omer]);
+      await pumpTeamTasks(tester, user: omer, board: board([task]));
+      expect(find.byKey(const Key('team-status-icon-inProgress')), findsOneWidget);
+      expect(find.text('עב'), findsOneWidget);
     });
   });
 }

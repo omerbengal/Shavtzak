@@ -5,9 +5,13 @@ import '../../../../domain/entities/team_task.dart';
 import '../../task/task_style.dart';
 import 'team_task_style.dart';
 
-/// One task in the list: status, title, deadline (red when late), owners and
-/// the subtasks done. A subtask shown on its own ("המשימות שלי") has its
-/// parent's title above it; a [nested] one sits indented under its parent.
+/// One task in the list (design A, Omer round 3): the status circle, the
+/// title, and under it the deadline (red when late) and the owners'
+/// initials. A subtask shown on its own ("המשימות שלי") has its parent's
+/// title above it; a [nested] one is a compact line under its parent.
+///
+/// [subtaskCount] (a parent in "כל המשימות") shows "done/all ▾" at the end;
+/// tapping it calls [onToggleSubtasks].
 class TeamTaskRow extends StatelessWidget {
   const TeamTaskRow({
     super.key,
@@ -16,9 +20,11 @@ class TeamTaskRow extends StatelessWidget {
     required this.viewerId,
     required this.onTap,
     this.nested = false,
+    this.expanded = false,
+    this.onToggleSubtasks,
   });
 
-  /// Under its parent's row (or in its parent's screen): indented, and
+  /// Under its parent's row (or in its parent's screen): one compact line,
   /// without the parent's title above it.
   final bool nested;
 
@@ -27,56 +33,134 @@ class TeamTaskRow extends StatelessWidget {
   final String viewerId;
   final VoidCallback onTap;
 
+  /// Whether the subtasks under this row are open (the arrow's direction).
+  final bool expanded;
+  final VoidCallback? onToggleSubtasks;
+
   @override
   Widget build(BuildContext context) {
-    final late = isTeamTaskLate(task, now);
-    final deadline = task.deadlineDate;
     final faded = !task.status.isActive;
-    final owners = teamTaskOwnerChips(task);
     return InkWell(
       key: Key('team-task-row-${task.id}'),
       onTap: onTap,
       child: Opacity(
         opacity: faded ? 0.6 : 1,
-        child: Padding(
-          padding: nested
-              ? const EdgeInsetsDirectional.fromSTEB(4, 8, 12, 8)
-              : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: nested ? _nested() : _full(),
+      ),
+    );
+  }
+
+  TextStyle _titleStyle(double size, FontWeight weight) {
+    final done = task.status == TeamTaskStatus.done;
+    return TextStyle(
+      fontSize: size,
+      fontWeight: done ? FontWeight.w500 : weight,
+      color: done ? TaskStyle.faintText : null,
+      decoration: done ? TextDecoration.lineThrough : null,
+    );
+  }
+
+  List<Widget> _owners(double size) => [
+        for (final owner in teamTaskOwnerChips(task))
+          MemberInitialsAvatar(
+            memberId: owner.id,
+            name: owner.name,
+            highlight: owner.id == viewerId,
+            size: size,
+          ),
+      ];
+
+  Widget _nested() {
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(8, 5, 12, 5),
+      child: Row(
+        children: [
+          TeamTaskStatusIcon(status: task.status, size: TeamTaskStyle.subtaskIconSize),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              task.title,
+              style: _titleStyle(TaskStyle.subtaskSize, FontWeight.w400),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Wrap(spacing: 4, children: _owners(TeamTaskStyle.subtaskAvatarSize)),
+        ],
+      ),
+    );
+  }
+
+  Widget _full() {
+    final late = isTeamTaskLate(task, now);
+    final deadline = task.deadlineDate;
+    final owners = _owners(TeamTaskStyle.avatarSize);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (task.isSubtask)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: TeamTaskStyle.statusIconSize + 8,
+                bottom: 2,
+              ),
+              child: Text(
+                task.parentTitle ?? '',
+                key: Key('team-task-parent-${task.id}'),
+                style: const TextStyle(
+                  fontSize: TaskStyle.rowMetaSize,
+                  color: TaskStyle.neutralText,
+                ),
+              ),
+            ),
+          Row(
             children: [
-              if (task.isSubtask && !nested)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    task.parentTitle ?? '',
-                    key: Key('team-task-parent-${task.id}'),
-                    style: const TextStyle(
-                      fontSize: TaskStyle.rowMetaSize,
-                      color: TaskStyle.neutralText,
+              TeamTaskStatusIcon(status: task.status, size: TeamTaskStyle.statusIconSize),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  task.title,
+                  style: _titleStyle(TaskStyle.rowTitleSize, FontWeight.w600),
+                ),
+              ),
+              if (task.subtasks.isNotEmpty)
+                InkWell(
+                  key: Key('team-task-progress-${task.id}'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: onToggleSubtasks,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${task.doneSubtasks}/${task.subtasks.length}',
+                          style: const TextStyle(
+                            fontSize: TaskStyle.rowMetaSize,
+                            color: TaskStyle.mine,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (onToggleSubtasks != null)
+                          Icon(
+                            expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                            size: 20,
+                            color: TaskStyle.mine,
+                          ),
+                      ],
                     ),
                   ),
                 ),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      task.title,
-                      style: TextStyle(
-                        fontSize: nested ? TaskStyle.subtaskSize : TaskStyle.rowTitleSize,
-                        fontWeight: nested ? FontWeight.w500 : FontWeight.w600,
-                        decoration: task.status == TeamTaskStatus.done
-                            ? TextDecoration.lineThrough
-                            : null,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  TeamTaskStatusChip(status: task.status, dense: true),
-                ],
+            ],
+          ),
+          if (deadline != null || owners.isNotEmpty)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: TeamTaskStyle.statusIconSize + 8,
+                top: 5,
               ),
-              const SizedBox(height: 6),
-              Wrap(
+              child: Wrap(
                 spacing: 6,
                 runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -91,26 +175,11 @@ class TeamTaskRow extends StatelessWidget {
                         fontWeight: late ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
-                  if (task.subtasks.isNotEmpty)
-                    Text(
-                      '${task.doneSubtasks}/${task.subtasks.length}',
-                      key: Key('team-task-progress-${task.id}'),
-                      style: const TextStyle(
-                        fontSize: TaskStyle.rowMetaSize,
-                        color: TaskStyle.neutralText,
-                      ),
-                    ),
-                  for (final owner in owners)
-                    MemberNameChip(
-                      name: owner.name,
-                      permanent: owner.permanent,
-                      highlight: owner.id == viewerId,
-                    ),
+                  ...owners,
                 ],
               ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }
