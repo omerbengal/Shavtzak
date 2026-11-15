@@ -205,4 +205,38 @@ void main() {
       ('חבר צוות לא ידוע', false),
     ]);
   });
+
+  group('round 3: search and the status chip', () {
+    const sub1 = TeamSubtask(id: 's1', title: 'גנרטור ותאורה', assigneeIds: ['m1']);
+    const sub2 = TeamSubtask(id: 's2', title: 'שילוט', assigneeIds: ['m2']);
+    final parent = buildTeamTask(id: 'p', title: 'הכנת שטח', subtasks: const [sub1, sub2]);
+    final other = buildTeamTask(id: 'o', title: 'הזמנת אוטובוסים');
+
+    test('the search matches a title, or a subtask title', () {
+      final byTitle = applyTeamTaskFilter(
+          [parent, other], TeamTaskFilter.initial.copyWith(query: ' אוטובוס '), const {});
+      expect(byTitle.map((t) => t.id), ['o']);
+      final bySubtask = applyTeamTaskFilter(
+          [parent, other], TeamTaskFilter.initial.copyWith(query: 'שילוט'), const {});
+      expect(bySubtask.map((t) => t.id), ['p']);
+    });
+
+    test('nested subtasks: only the matching ones, unless the parent matches', () {
+      final filter = TeamTaskFilter.initial.copyWith(query: 'שילוט');
+      expect(visibleSubtasks(parent, filter).map((s) => s.id), ['s2']);
+      final byParent = TeamTaskFilter.initial.copyWith(query: 'הכנת');
+      expect(visibleSubtasks(parent, byParent).map((s) => s.id), ['s1', 's2']);
+      expect(visibleSubtasks(parent, TeamTaskFilter.initial).length, 2);
+    });
+
+    test('an owner filter does not mark the statuses as changed', () {
+      final filter = TeamTaskFilter.initial.copyWith(ownerId: () => 'm1');
+      expect(filter.isInitial, isFalse);
+      expect(filter.statusesChanged, isFalse);
+      expect(
+        TeamTaskFilter.initial.copyWith(statuses: {TeamTaskStatus.open}).statusesChanged,
+        isTrue,
+      );
+    });
+  });
 }

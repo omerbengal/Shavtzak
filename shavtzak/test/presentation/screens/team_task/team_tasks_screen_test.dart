@@ -248,4 +248,99 @@ void main() {
     expect(tester.getTopLeft(find.byKey(const Key('team-task-row-s1'))).dy, greaterThan(parentTop));
     expect(find.byKey(const Key('team-task-row-s2')), findsOneWidget);
   });
+
+  group('round 3', () {
+    final theirs = buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2'])
+        .copyWith(owners: [yossi]);
+    final managersOwn = buildTeamTask(id: 'c', title: 'של המנהלת', assigneeIds: ['mgr'])
+        .copyWith(owners: [manager]);
+
+    Future<void> openMine(WidgetTester tester) async {
+      await tester.tap(find.text('המשימות שלי'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('"המשימות שלי" has no owner filter; "כל המשימות" has it', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, managersOwn]));
+      expect(find.byKey(const Key('team-filter-owner')), findsOneWidget);
+      await openMine(tester);
+      expect(find.byKey(const Key('team-filter-owner')), findsNothing);
+      expect(find.byKey(const Key('team-filter-status')), findsOneWidget);
+    });
+
+    testWidgets('an owner filter colours only the owner chip, not the status chip', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      await tester.tap(find.byKey(const Key('team-filter-owner')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('יוסי').last);
+      await tester.pumpAndSettle();
+      Color? fill(String key) {
+        final box = tester.widget<Container>(find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(Container),
+        ).first);
+        return (box.decoration as BoxDecoration?)?.color;
+      }
+      expect(fill('team-filter-owner'), TaskStyle.currentLight);
+      expect(fill('team-filter-status'), Colors.transparent);
+    });
+
+    testWidgets('a manager in "המשימות שלי" gets the view of a member', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([managersOwn]));
+      await openMine(tester);
+      expect(find.byKey(const Key('team-task-new')), findsNothing);
+      expect(find.byKey(const Key('team-tasks-menu')), findsNothing);
+      await tester.tap(find.byKey(const Key('team-task-row-c')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-panel')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-edit-title')), findsNothing);
+      expect(find.byKey(const Key('team-task-delete')), findsNothing);
+    });
+
+    testWidgets('a manager in "כל המשימות" gets the editing view', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([managersOwn]));
+      await tester.tap(find.byKey(const Key('team-task-row-c')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-edit-title')), findsOneWidget);
+    });
+
+    testWidgets('the search folds the chips into a funnel and filters', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      expect(find.byKey(const Key('team-filter-funnel')), findsNothing);
+      await tester.tap(find.byKey(const Key('team-filter-search')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-filter-funnel')), findsOneWidget);
+      expect(find.byKey(const Key('team-filter-status')), findsNothing);
+      await tester.enterText(find.byKey(const Key('team-filter-search')), 'יוסי');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+      expect(find.byKey(const Key('team-task-row-b')), findsOneWidget);
+
+      // The funnel's menu holds the three filters as rows.
+      await tester.tap(find.byKey(const Key('team-filter-funnel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-filter-menu-status')), findsOneWidget);
+      expect(find.byKey(const Key('team-filter-menu-owner')), findsOneWidget);
+      expect(find.byKey(const Key('team-filter-menu-link')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-filter-menu-status')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-menu-status-open')).first);
+      await tester.pumpAndSettle();
+      // "פתוחה" unticked: both open tasks go.
+      expect(find.byKey(const Key('team-task-row-b')), findsNothing);
+      final funnel = tester.widget<Icon>(find.descendant(
+        of: find.byKey(const Key('team-filter-funnel')),
+        matching: find.byType(Icon),
+      ));
+      expect(funnel.icon, Icons.filter_alt);
+
+      // Clearing the search brings the chips back.
+      await tester.tapAt(const Offset(200, 900));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-search-clear')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-filter-funnel')), findsNothing);
+      expect(find.byKey(const Key('team-filter-status')), findsOneWidget);
+    });
+  });
 }

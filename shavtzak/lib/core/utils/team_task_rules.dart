@@ -205,13 +205,17 @@ List<TeamTaskGroup> groupTeamTasks(List<TeamTask> tasks, DateTime now) {
   return groups;
 }
 
-/// What the list shows: a set of statuses, optionally one owner and one link.
+/// What the list shows: a set of statuses, optionally one owner, one link and
+/// a search text.
 class TeamTaskFilter extends Equatable {
   final Set<TeamTaskStatus> statuses;
   final String? ownerId;
   final TaskLink? link;
 
-  const TeamTaskFilter({required this.statuses, this.ownerId, this.link});
+  /// Words looked up in a task's title, description and subtasks' titles.
+  final String query;
+
+  const TeamTaskFilter({required this.statuses, this.ownerId, this.link, this.query = ''});
 
   /// Every status except "לא רלוונטי/בוטל" and "כפילות".
   static const TeamTaskFilter initial = TeamTaskFilter(statuses: {
@@ -222,19 +226,33 @@ class TeamTaskFilter extends Equatable {
 
   bool get isInitial => this == initial;
 
+  /// Whether the statuses differ from the initial ones (the status chip's
+  /// colour; the owner and link have their own chips).
+  bool get statusesChanged =>
+      statuses.length != initial.statuses.length || !statuses.containsAll(initial.statuses);
+
+  /// Whether any of the three filters (status, owner, link) is set.
+  bool get anyFilterSet => statusesChanged || ownerId != null || link != null;
+
+  /// [query] trimmed and lower-cased; empty = no search.
+  String get searchText => query.trim().toLowerCase();
+
   TeamTaskFilter copyWith({
     Set<TeamTaskStatus>? statuses,
     String? Function()? ownerId,
     TaskLink? Function()? link,
+    String? query,
   }) =>
       TeamTaskFilter(
         statuses: statuses ?? this.statuses,
         ownerId: ownerId != null ? ownerId() : this.ownerId,
         link: link != null ? link() : this.link,
+        query: query ?? this.query,
       );
 
   @override
-  List<Object?> get props => [statuses.toList()..sort((a, b) => a.index - b.index), ownerId, link];
+  List<Object?> get props =>
+      [statuses.toList()..sort((a, b) => a.index - b.index), ownerId, link, query];
 }
 
 /// [tasks] that pass [filter]. A category link also matches the tasks linked
@@ -255,12 +273,34 @@ List<TeamTask> applyTeamTaskFilter(
         (eventCategoryById[link.id] ?? task.event?.categoryId) == wanted.id;
   }
 
+  final search = filter.searchText;
   return [
     for (final task in tasks)
       if (filter.statuses.contains(task.status) &&
           (filter.ownerId == null || task.ownerIds.contains(filter.ownerId)) &&
-          linkMatches(task))
+          linkMatches(task) &&
+          (search.isEmpty ||
+              _textMatches(task.title, task.description, search) ||
+              task.subtasks.any((s) => _textMatches(s.title, s.description, search))))
         task,
+  ];
+}
+
+bool _textMatches(String title, String description, String search) =>
+    title.toLowerCase().contains(search) || description.toLowerCase().contains(search);
+
+/// The subtasks of [task] shown nested under it in "כל המשימות": those that
+/// pass the status and owner filters and, while searching, match the search
+/// themselves unless the task itself matches.
+List<TeamSubtask> visibleSubtasks(TeamTask task, TeamTaskFilter filter) {
+  final search = filter.searchText;
+  final parentMatches = search.isEmpty || _textMatches(task.title, task.description, search);
+  return [
+    for (final subtask in task.subtasks)
+      if (filter.statuses.contains(subtask.status) &&
+          (filter.ownerId == null || subtask.assigneeIds.contains(filter.ownerId)) &&
+          (parentMatches || _textMatches(subtask.title, subtask.description, search)))
+        subtask,
   ];
 }
 

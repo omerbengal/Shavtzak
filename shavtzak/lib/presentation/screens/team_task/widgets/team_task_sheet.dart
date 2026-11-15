@@ -21,14 +21,18 @@ import 'team_task_style.dart';
 
 /// Opens one task: a sheet from the bottom on a phone, a centred panel (at
 /// most 960 px) on a wide window, as the דו יומי task sheet.
-Future<void> showTeamTaskSheet(BuildContext context, String taskId) {
+///
+/// [manage] false opens it as a member sees it even for a manager: a manager
+/// edits tasks only from "כל המשימות"; in "המשימות שלי" they are a member like
+/// any other (Omer, round 3).
+Future<void> showTeamTaskSheet(BuildContext context, String taskId, {bool manage = true}) {
   final wide = MediaQuery.sizeOf(context).width >= TaskStyle.wideBreakpoint;
   final bloc = context.read<TeamTaskBloc>();
   Widget body(BuildContext _) => BlocProvider.value(
         value: bloc,
         child: Directionality(
           textDirection: TextDirection.rtl,
-          child: TeamTaskSheet(taskId: taskId, wide: wide),
+          child: TeamTaskSheet(taskId: taskId, wide: wide, manage: manage),
         ),
       );
   if (wide) {
@@ -62,10 +66,13 @@ Future<void> showTeamTaskSheet(BuildContext context, String taskId) {
 /// (saved at once); an owner changes the status, ticks their own subtasks and
 /// writes in the log; the rest is read-only.
 class TeamTaskSheet extends StatefulWidget {
-  const TeamTaskSheet({super.key, required this.taskId, required this.wide});
+  const TeamTaskSheet({super.key, required this.taskId, required this.wide, this.manage = true});
 
   final String taskId;
   final bool wide;
+
+  /// Whether a manager gets the editing view here ([showTeamTaskSheet]).
+  final bool manage;
 
   @override
   State<TeamTaskSheet> createState() => _TeamTaskSheetState();
@@ -307,7 +314,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
   }
 
   Widget _content(TeamTasksLoaded state, TeamTask task) {
-    final manage = state.canManage;
+    final manage = state.canManage && widget.manage;
     final viewerId = state.viewer.id;
     final owner = isTeamTaskOwner(task, viewerId);
     final activeMembers = state.members.where((m) => m.isActive && !m.isArchived).toList()
@@ -387,7 +394,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                     child: InkWell(
                       key: const Key('team-task-kind'),
                       onTap: task.isSubtask
-                          ? () => showTeamTaskSheet(context, task.parentId!)
+                          ? () => showTeamTaskSheet(context, task.parentId!, manage: widget.manage)
                           : null,
                       child: Text(
                         kind,
@@ -688,7 +695,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                   now: now,
                   viewerId: viewerId,
                   nested: true,
-                  onTap: () => showTeamTaskSheet(context, subtask.id),
+                  onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.manage),
                 ),
               ),
             ],

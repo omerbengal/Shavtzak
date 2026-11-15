@@ -17,7 +17,7 @@ import '../../widgets/test_environment_indicator.dart';
 import '../task/task_style.dart';
 import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
-import 'widgets/task_link_picker.dart';
+import 'widgets/team_task_filter_bar.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
 import 'widgets/team_task_style.dart';
@@ -90,6 +90,9 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
           return BlocBuilder<TeamTaskBloc, TeamTaskState>(
             builder: (context, state) {
               final canManage = canManageTeamTasks(user);
+              // A manager edits only in "כל המשימות"; in "המשימות שלי" they are
+              // a member like any other (Omer, round 3).
+              final editing = canManage && _showAll;
               final scaffold = Scaffold(
                 appBar: AppBar(
                   title: const Text('משימות'),
@@ -103,7 +106,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                         )
                       : const MemberSettingsButton(),
                   actions: [
-                    if (canManage)
+                    if (editing)
                       PopupMenuButton<String>(
                         key: const Key('team-tasks-menu'),
                         tooltip: 'עוד',
@@ -122,7 +125,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                     if (widget.place == TeamTasksPlace.tab) MemberBarActions(user: user),
                   ],
                 ),
-                floatingActionButton: canManage
+                floatingActionButton: editing
                     ? FloatingActionButton.extended(
                         key: const Key('team-task-new'),
                         onPressed: state is TeamTasksLoaded ? _newTask : null,
@@ -148,18 +151,24 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     final now = DateTime.now();
-    Widget list(List<TeamTaskGroup> groups) => Column(
+    Widget list(List<TeamTaskGroup> groups, {required bool all}) => Column(
           children: [
-            _FilterBar(state: state),
+            TeamTaskFilterBar(state: state, showOwner: all),
             const Divider(height: 1),
-            Expanded(child: _GroupedList(groups: groups, state: state, now: now)),
+            Expanded(
+              child: _GroupedList(groups: groups, state: state, now: now, editing: all),
+            ),
           ],
         );
-    if (!canManage) return list(state.mineGroups);
+    if (!canManage) return list(state.mineGroups, all: false);
     return Column(
       children: [
         _tabs(),
-        Expanded(child: list(_showAll ? state.allGroups : state.mineGroups)),
+        Expanded(
+          child: _showAll
+              ? list(state.allGroups, all: true)
+              : list(state.mineGroups, all: false),
+        ),
       ],
     );
   }
@@ -205,11 +214,20 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
 }
 
 class _GroupedList extends StatelessWidget {
-  const _GroupedList({required this.groups, required this.state, required this.now});
+  const _GroupedList({
+    required this.groups,
+    required this.state,
+    required this.now,
+    required this.editing,
+  });
 
   final List<TeamTaskGroup> groups;
   final TeamTasksLoaded state;
   final DateTime now;
+
+  /// "כל המשימות": subtasks nested under their parent, and a manager's
+  /// tap opens the editing view.
+  final bool editing;
 
   @override
   Widget build(BuildContext context) {
@@ -240,14 +258,12 @@ class _GroupedList extends StatelessWidget {
                   task: task,
                   now: now,
                   viewerId: state.viewer.id,
-                  onTap: () => showTeamTaskSheet(context, task.id),
+                  onTap: () => showTeamTaskSheet(context, task.id, manage: editing),
                 ),
                 // "כל המשימות": a parent's subtasks nested under it, by the
-                // same status and owner filter.
-                for (final subtask in task.subtasks)
-                  if (state.filter.statuses.contains(subtask.status) &&
-                      (state.filter.ownerId == null ||
-                          subtask.assigneeIds.contains(state.filter.ownerId)))
+                // same filters.
+                if (editing)
+                  for (final subtask in visibleSubtasks(task, state.filter))
                     Padding(
                       padding: const EdgeInsetsDirectional.only(start: 28),
                       child: DecoratedBox(
@@ -261,7 +277,7 @@ class _GroupedList extends StatelessWidget {
                           now: now,
                           viewerId: state.viewer.id,
                           nested: true,
-                          onTap: () => showTeamTaskSheet(context, subtask.id),
+                          onTap: () => showTeamTaskSheet(context, subtask.id, manage: editing),
                         ),
                       ),
                     ),
@@ -282,130 +298,3 @@ class _GroupedList extends StatelessWidget {
       };
 }
 
-/// One row of filters: status, owner, link.
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.state});
-
-  final TeamTasksLoaded state;
-
-  void _set(BuildContext context, TeamTaskFilter filter) =>
-      context.read<TeamTaskBloc>().add(TeamTaskFilterChanged(filter));
-
-  @override
-  Widget build(BuildContext context) {
-    final filter = state.filter;
-    final ownerName = filter.ownerId == null
-        ? null
-        : state.members.where((m) => m.id == filter.ownerId).firstOrNull?.name;
-    final linkName = taskLinkName(state, filter.link);
-    final statusLabel = filter.statuses.length == TeamTaskStatus.values.length
-        ? 'כל הסטטוסים'
-        : filter.statuses.length == TeamTaskFilter.initial.statuses.length &&
-                filter.statuses.containsAll(TeamTaskFilter.initial.statuses)
-            ? 'סטטוס'
-            : 'סטטוס (${filter.statuses.length})';
-    final owners = {
-      for (final task in state.all) ...task.ownerIds,
-    };
-    final ownerOptions = state.members.where((m) => owners.contains(m.id)).toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          PopupMenuButton<TeamTaskStatus>(
-            key: const Key('team-filter-status'),
-            tooltip: 'סינון לפי סטטוס',
-            onSelected: (status) {
-              final next = {...filter.statuses};
-              if (!next.remove(status)) next.add(status);
-              if (next.isEmpty) return;
-              _set(context, filter.copyWith(statuses: next));
-            },
-            itemBuilder: (context) => [
-              for (final status in TeamTaskStatus.values)
-                CheckedPopupMenuItem(
-                  value: status,
-                  checked: filter.statuses.contains(status),
-                  child: Text(status.hebrewLabel),
-                ),
-            ],
-            child: _FilterChipLook(label: statusLabel, active: !filter.isInitial),
-          ),
-          if (state.canManage) ...[
-            const SizedBox(width: 6),
-            PopupMenuButton<String>(
-              key: const Key('team-filter-owner'),
-              tooltip: 'סינון לפי אחראי',
-              onSelected: (id) =>
-                  _set(context, filter.copyWith(ownerId: () => id.isEmpty ? null : id)),
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: '', child: Text('כל האחראים')),
-                for (final member in ownerOptions)
-                  PopupMenuItem(
-                    value: member.id,
-                    child: MemberNameText(name: member.name, permanent: member.isPermanent),
-                  ),
-              ],
-              child: _FilterChipLook(
-                label: ownerName ?? 'אחראי',
-                active: filter.ownerId != null,
-              ),
-            ),
-          ],
-          const SizedBox(width: 6),
-          InkWell(
-            key: const Key('team-filter-link'),
-            borderRadius: BorderRadius.circular(16),
-            onTap: () async {
-              if (filter.link != null) {
-                _set(context, filter.copyWith(link: () => null));
-                return;
-              }
-              final choice = await showTaskLinkPicker(context, allowNone: false);
-              if (choice?.link == null || !context.mounted) return;
-              _set(context, filter.copyWith(link: () => choice!.link));
-            },
-            child: _FilterChipLook(
-              label: linkName == null ? 'שיוך' : '$linkName ✕',
-              active: filter.link != null,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterChipLook extends StatelessWidget {
-  const _FilterChipLook({required this.label, required this.active});
-
-  final String label;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? TaskStyle.currentLight : Colors.transparent,
-        border: Border.all(color: active ? TaskStyle.mine : TaskStyle.rest),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: TaskStyle.filterFontSize,
-              color: active ? TaskStyle.mine : TaskStyle.neutralText,
-            ),
-          ),
-          const Icon(Icons.arrow_drop_down, size: 18, color: TaskStyle.neutralText),
-        ],
-      ),
-    );
-  }
-}
