@@ -195,3 +195,8 @@ the app's permanent-member mark.
   several owners, staying open while they are ticked, like the statuses; the names are centred in
   the menu. A task matches when any of its owners is picked.
 - On a phone the search field and the chips are tighter so the four chips fit beside the field.
+
+## Round 8 (Omer, msg 3549)
+
+- The status filter opens on "פתוחה" and "בטיפול" only ("בוצעה" is ticked by hand).
+- "באיחור" is the last chip, at the far left of the row, and the last row of the funnel's menu.

@@ -155,13 +155,12 @@ void main() {
   });
 
   group('TeamTaskFilter', () {
-    test('initial hides cancelled and duplicate', () {
+    test('initial shows only open and in progress (round 8)', () {
       final tasks = [
         for (final status in TeamTaskStatus.values) buildTeamTask(id: status.key, status: status),
       ];
       final shown = applyTeamTaskFilter(tasks, TeamTaskFilter.initial, const {});
-      expect(shown.map((t) => t.status),
-          [TeamTaskStatus.open, TeamTaskStatus.inProgress, TeamTaskStatus.done]);
+      expect(shown.map((t) => t.status), [TeamTaskStatus.open, TeamTaskStatus.inProgress]);
     });
 
     test('owner filter', () {

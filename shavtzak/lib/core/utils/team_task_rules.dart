@@ -240,11 +240,10 @@ class TeamTaskFilter extends Equatable {
     this.query = '',
   });
 
-  /// Every status except "לא רלוונטי/בוטל" and "כפילות".
+  /// What is still to be done: "פתוחה" and "בטיפול" (Omer, round 8).
   static const TeamTaskFilter initial = TeamTaskFilter(statuses: {
     TeamTaskStatus.open,
     TeamTaskStatus.inProgress,
-    TeamTaskStatus.done,
   });
 
   bool get isInitial => this == initial;

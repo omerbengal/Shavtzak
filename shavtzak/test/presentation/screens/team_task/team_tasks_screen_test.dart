@@ -485,9 +485,9 @@ void main() {
       await pumpTeamTasks(tester, user: dana, board: board([mine]), size: const Size(600, 1000));
       final width = tester.view.physicalSize.width;
       final field = tester.getRect(find.byKey(const Key('team-filter-search')));
-      final link = tester.getRect(find.byKey(const Key('team-filter-link')));
-      // RTL: the field on the right, the link chip last on the left.
-      expect(((width - field.right) - link.left).abs(), lessThan(2));
+      final last = tester.getRect(find.byKey(const Key('team-filter-late')));
+      // RTL: the field on the right, "באיחור" last on the left (round 8).
+      expect(((width - field.right) - last.left).abs(), lessThan(2));
     });
 
     testWidgets("the funnel's submenu arrows point right, where the submenus open", (tester) async {
@@ -709,6 +709,42 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(BottomSheet), findsOneWidget);
       expect(find.byKey(const Key('team-task-side-panel')), findsNothing);
+    });
+  });
+
+  group('round 8', () {
+    testWidgets('a done task is hidden until "בוצעה" is ticked', (tester) async {
+      final done = buildTeamTask(id: 'd', title: 'גמורה', status: TeamTaskStatus.done)
+          .copyWith(owners: [dana]);
+      await pumpTeamTasks(tester, user: dana, board: board([mine, done]));
+      expect(find.byKey(const Key('team-task-row-d')), findsNothing);
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-filter-status')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-status-done')).first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-d')), findsOneWidget);
+    });
+
+    testWidgets('"באיחור" is the leftmost chip and the last row of the funnel', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine]), size: const Size(700, 1000));
+      final late = tester.getRect(find.byKey(const Key('team-filter-late')));
+      for (final key in ['team-filter-status', 'team-filter-owner', 'team-filter-link']) {
+        expect(late.right, lessThanOrEqualTo(tester.getRect(find.byKey(Key(key))).left));
+      }
+      await tester.tap(find.byKey(const Key('team-filter-search')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-funnel')));
+      await tester.pumpAndSettle();
+      final lateRow = tester.getRect(find.byKey(const Key('team-filter-menu-late')).first);
+      for (final key in [
+        'team-filter-menu-status',
+        'team-filter-menu-owner',
+        'team-filter-menu-link'
+      ]) {
+        expect(
+            lateRow.top, greaterThanOrEqualTo(tester.getRect(find.byKey(Key(key)).first).bottom));
+      }
     });
   });
 }

@@ -12,7 +12,7 @@ import 'task_link_picker.dart';
 import 'team_task_style.dart';
 
 /// The row above the list: a narrow search field, then the filters
-/// (status, late, owner, link) as chips. While the search is in use (focused or
+/// (status, owner, link, late) as chips. While the search is in use (focused or
 /// holding text) the chips fold into one funnel button whose menu holds the
 /// same three filters as rows (Omer, round 3).
 ///
@@ -293,15 +293,6 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           ),
         ),
       ),
-      gap,
-      // "באיחור" (round 7): a plain on/off chip.
-      InkWell(
-        key: const Key('team-filter-late'),
-        borderRadius: BorderRadius.circular(16),
-        onTap: _toggleLate,
-        child: _FilterChipLook(
-            compact: _compact, label: 'באיחור', active: filter.lateOnly, dropdown: false),
-      ),
       if (widget.showOwner) ...[
         gap,
         // Several owners ticked in one go, as the statuses (round 7).
@@ -328,6 +319,16 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
         borderRadius: BorderRadius.circular(16),
         onTap: _tapLink,
         child: _FilterChipLook(compact: _compact, label: _linkLabel, active: filter.link != null),
+      ),
+      gap,
+      // "באיחור" (round 7): a plain on/off chip, the last one, at the far
+      // left (Omer, round 8).
+      InkWell(
+        key: const Key('team-filter-late'),
+        borderRadius: BorderRadius.circular(16),
+        onTap: _toggleLate,
+        child: _FilterChipLook(
+            compact: _compact, label: 'באיחור', active: filter.lateOnly, dropdown: false),
       ),
     ];
   }
@@ -376,13 +377,6 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           ],
           child: _withArrow(Text(_statusLabel)),
         ),
-        CheckboxMenuButton(
-          key: const Key('team-filter-menu-late'),
-          value: filter.lateOnly,
-          closeOnActivate: false,
-          onChanged: (_) => _toggleLate(),
-          child: const Text('באיחור'),
-        ),
         if (widget.showOwner)
           SubmenuButton(
             key: const Key('team-filter-menu-owner'),
@@ -394,6 +388,14 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           key: const Key('team-filter-menu-link'),
           onPressed: _tapLink,
           child: Text(_linkLabel),
+        ),
+        // Last in the menu, as its chip is last in the row (round 8).
+        CheckboxMenuButton(
+          key: const Key('team-filter-menu-late'),
+          value: filter.lateOnly,
+          closeOnActivate: false,
+          onChanged: (_) => _toggleLate(),
+          child: const Text('באיחור'),
         ),
       ],
       builder: (context, controller, _) => IconButton(
