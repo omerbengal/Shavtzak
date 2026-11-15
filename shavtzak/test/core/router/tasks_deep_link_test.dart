@@ -28,6 +28,61 @@ void main() {
       }
     });
 
+    test('recognises a דו יומי event link, in both places and environments',
+        () {
+      for (final path in [
+        '/du-yomi/4be102b6-e5c8-408a-a4b2-a77b73975ed2',
+        '/user/du-yomi/4be102b6-e5c8-408a-a4b2-a77b73975ed2',
+        '/test/du-yomi/e1',
+        '/test/user/du-yomi/e1',
+        '/du-yomi/e1/edit',
+        '/test/user/du-yomi/e1/edit',
+      ]) {
+        expect(AppRouter.pendingTasksLinkFor('#$path'), path, reason: path);
+      }
+    });
+
+    test('keeps a דו יומי event link without its query or trailing slash', () {
+      expect(AppRouter.pendingTasksLinkFor('#/du-yomi/e1/?x=1'), '/du-yomi/e1');
+    });
+
+    test('ignores the דו יומי list and anything deeper than an event', () {
+      for (final hash in [
+        '#/du-yomi',
+        '#/user/du-yomi',
+        '#/du-yomi/e1/other',
+        '#/du-yomi/e1/edit/x',
+        '#/admin/du-yomi/e1',
+      ]) {
+        expect(AppRouter.pendingTasksLinkFor(hash), isNull, reason: hash);
+      }
+    });
+
+    test('reads the link "מי את/ה?" carries, so a reload keeps it', () {
+      expect(
+        AppRouter.pendingTasksLinkFor('#/whoami?next=%2Fdu-yomi%2Fe1'),
+        '/du-yomi/e1',
+      );
+      expect(
+        AppRouter.pendingTasksLinkFor(
+            '#/test/whoami?next=%2Ftest%2Fuser%2Fdu-yomi%2Fe1'),
+        '/test/user/du-yomi/e1',
+      );
+      expect(AppRouter.pendingTasksLinkFor('#/whoami?next=%2Ftasks'), '/tasks');
+    });
+
+    test('ignores a carried link that is not one worth keeping', () {
+      for (final hash in [
+        '#/whoami',
+        '#/whoami?next=%2Fadmin',
+        '#/whoami?next=https%3A%2F%2Fevil.example',
+        '#/whoami?next=%E0%A4%A',
+        '#/admin?next=%2Fdu-yomi%2Fe1',
+      ]) {
+        expect(AppRouter.pendingTasksLinkFor(hash), isNull, reason: hash);
+      }
+    });
+
     test('accepts a hash without the leading #', () {
       expect(AppRouter.pendingTasksLinkFor('/tasks'), '/tasks');
     });
@@ -51,6 +106,26 @@ void main() {
           reason: 'hash: $hash',
         );
       }
+    });
+  });
+
+  group('AppRouter.whoamiRoute', () {
+    tearDown(() => AppRouter.debugSetPendingDeepLink(null));
+
+    test('is plain "מי את/ה?" when no link is pending', () {
+      expect(AppRouter.whoamiRoute(''), '/whoami');
+      expect(AppRouter.whoamiRoute('/test'), '/test/whoami');
+    });
+
+    test('carries the pending link, and reading it back gives the link', () {
+      AppRouter.debugSetPendingDeepLink('/du-yomi/e1');
+      final route = AppRouter.whoamiRoute('');
+      expect(route, '/whoami?next=%2Fdu-yomi%2Fe1');
+      expect(AppRouter.pendingTasksLinkFor('#$route'), '/du-yomi/e1');
+
+      AppRouter.debugSetPendingDeepLink('/test/du-yomi/e1');
+      final testRoute = AppRouter.whoamiRoute('/test');
+      expect(AppRouter.pendingTasksLinkFor('#$testRoute'), '/test/du-yomi/e1');
     });
   });
 
@@ -86,6 +161,17 @@ void main() {
 
       AppRouter.rememberTasksLink('/test/tasks');
       expect(AppRouter.postAuthDestination('/test/admin'), '/test/tasks');
+    });
+
+    test('a signed-out visit to a דו יומי event is remembered', () {
+      AppRouter.rememberTasksLink('/du-yomi/e1');
+      expect(AppRouter.postAuthDestination('/user/assignments'), '/du-yomi/e1');
+
+      AppRouter.rememberTasksLink('/test/user/du-yomi/e1');
+      expect(
+        AppRouter.postAuthDestination('/test/admin'),
+        '/test/user/du-yomi/e1',
+      );
     });
 
     test('a signed-out visit to any other route is not remembered', () {

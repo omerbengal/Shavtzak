@@ -41,32 +41,69 @@ class AppRouter {
   /// This is set by main.dart at the very start
   static String? capturedInitialHash;
 
-  /// The checklist link the app was opened on, kept until the member is
-  /// signed in.
+  /// The link the app was opened on, kept until the member is signed in:
+  /// the checklist (`/tasks`) or a דו יומי event's tasks screen
+  /// (`/du-yomi/<eventId>`, also the members' `/user/du-yomi/<eventId>`).
   ///
-  /// The checklist at `/tasks` is reachable only by link. Without this, a
-  /// member who follows the link while signed out is sent to "מי את/ה?" and
-  /// from there to their home, and the link is lost.
+  /// The checklist is reachable only by link, and an event's link is sent to
+  /// the team. Without this, a member who follows the link while signed out
+  /// is sent to "מי את/ה?" and from there to their home, and the link is
+  /// lost.
   static String? _pendingDeepLink;
 
-  /// The route to restore after sign-in when [initialHash] is the checklist
-  /// link (`#/tasks` or `#/test/tasks`), otherwise null.
+  /// The route to restore after sign-in when [initialHash] is a link worth
+  /// keeping ([_tasksLink]: the checklist or a דו יומי event, in either
+  /// environment), otherwise null.
+  ///
+  /// "מי את/ה?" carries the link along as `?next=` ([whoamiRoute]), so a
+  /// reload of the sign-in screen still has it: a phone browser that reloads
+  /// the tab, or Telegram's "open in browser", starts again from the address
+  /// shown, which by then is the sign-in screen.
   static String? pendingTasksLinkFor(String? initialHash) {
     if (initialHash == null) return null;
     var path =
         initialHash.startsWith('#') ? initialHash.substring(1) : initialHash;
+    var query = '';
     final queryStart = path.indexOf('?');
-    if (queryStart >= 0) path = path.substring(0, queryStart);
+    if (queryStart >= 0) {
+      query = path.substring(queryStart + 1);
+      path = path.substring(0, queryStart);
+    }
     if (path.length > 1 && path.endsWith('/')) {
       path = path.substring(0, path.length - 1);
+    }
+    if (_whoamiPath.hasMatch(path)) {
+      final String? next;
+      try {
+        next = Uri.splitQueryString(query)['next'];
+      } on FormatException {
+        return null;
+      } on ArgumentError {
+        // A broken %-escape ("Truncated URI").
+        return null;
+      }
+      return next != null && _tasksLink.hasMatch(next) ? next : null;
     }
     return _tasksLink.hasMatch(path) ? path : null;
   }
 
-  // The checklist, in either environment.
-  static final RegExp _tasksLink = RegExp(r'^(/test)?/tasks$');
+  static final RegExp _whoamiPath = RegExp(r'^(/test)?/whoami$');
 
-  /// Remember [route] when it is the tasks link. Called whenever a visitor who
+  /// "מי את/ה?" in [envPrefix]'s environment, carrying the pending link (if
+  /// any) as `?next=` so it survives a reload of the sign-in screen.
+  static String whoamiRoute(String envPrefix) {
+    final pending = _pendingDeepLink;
+    if (pending == null) return '$envPrefix/whoami';
+    return '$envPrefix/whoami?next=${Uri.encodeComponent(pending)}';
+  }
+
+  // The checklist, or one דו יומי event (its tasks screen or its editing
+  // screen) on the admins' screen or the members' tab, in either environment.
+  static final RegExp _tasksLink = RegExp(
+    r'^(/test)?(/tasks|(/user)?/du-yomi/[^/]+(/edit)?)$',
+  );
+
+  /// Remember [route] when it is a link worth keeping ([_tasksLink]). Called whenever a visitor who
   /// is not signed in is turned away from a route, which also covers a tab
   /// where the app is already loaded: there the link arrives as a hash change
   /// and never passes through [capturedInitialHash].
@@ -75,7 +112,7 @@ class AppRouter {
     if (link != null) _pendingDeepLink = link;
   }
 
-  /// Where a freshly authenticated member should land: the pending tasks link
+  /// Where a freshly authenticated member should land: the pending link
   /// if there is one, otherwise [home]. The link is used once.
   static String postAuthDestination(String home) {
     final pending = _pendingDeepLink;
@@ -84,7 +121,7 @@ class AppRouter {
     return pending;
   }
 
-  /// Drop the pending link once the member is on the checklist, so a later
+  /// Drop the pending link once the member is on it, so a later
   /// sign-out and sign-in goes home as usual.
   static void clearPendingDeepLinkIfArrived(String route) {
     if (route == _pendingDeepLink) _pendingDeepLink = null;
@@ -300,7 +337,7 @@ class AppRouter {
                 'signed out, redirecting to whoami',
                 name: 'AppRouter',
               );
-              _instance?.go('$envPrefix/whoami');
+              _instance?.go(whoamiRoute(envPrefix));
             }
           }
         });
@@ -376,11 +413,11 @@ class AppRouter {
             }
           }
 
-          return '$envPrefix/whoami';
+          return whoamiRoute(envPrefix);
         }
 
         if (_userSelectionBloc == null || _userSelectionRepository == null) {
-          return '$envPrefix/whoami';
+          return whoamiRoute(envPrefix);
         }
 
         final currentState = _userSelectionBloc!.state;
@@ -397,7 +434,7 @@ class AppRouter {
         if (currentState is UserSignedOut) {
           if (!strippedRoute.startsWith('/whoami')) {
             rememberTasksLink(currentRoute);
-            return '$envPrefix/whoami';
+            return whoamiRoute(envPrefix);
           }
         } else if (currentState is UserAuthenticated) {
           clearPendingDeepLinkIfArrived(currentRoute);
@@ -443,7 +480,7 @@ class AppRouter {
               name: 'AppRouter',
             );
             rememberTasksLink(currentRoute);
-            return '$envPrefix/whoami';
+            return whoamiRoute(envPrefix);
           }
         }
 

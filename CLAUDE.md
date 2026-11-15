@@ -204,7 +204,9 @@ Root (GoRouter)
 ├── /tasks (ChecklistLinkScreen) - the checklist: admin version for admins,
 │   the member's own items otherwise. Link-only: no tab, menu or card
 │   navigates here; a signed-out visitor is returned to the link after
-│   signing in (AppRouter.postAuthDestination).
+│   signing in (AppRouter.postAuthDestination). The same holds for a link to
+│   one דו יומי event (`#/du-yomi/<eventId>`, the link sent to the team: a
+│   member lands on it in the "דו יומי" tab, `/user/du-yomi/<eventId>`).
 │
 └── /test/* - Mirror routes for test environment
     └── (same structure as above with /test prefix)
