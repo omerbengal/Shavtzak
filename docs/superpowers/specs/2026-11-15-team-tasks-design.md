@@ -200,3 +200,9 @@ the app's permanent-member mark.
 
 - The status filter opens on "פתוחה" and "בטיפול" only ("בוצעה" is ticked by hand).
 - "באיחור" is the last chip, at the far left of the row, and the last row of the funnel's menu.
+
+## Round 9 (Omer, msg 3569)
+
+- The funnel's "שיוך" row carries the same arrow as "סטטוס" and "אחראי/ת" (it opens the link picker);
+  once a link is set the row reads "<name> ✕" and clears it, the arrow's room left empty. Every word in
+  that menu starts at the same place, "באיחור" (a checkbox row) included.

@@ -747,4 +747,27 @@ void main() {
       }
     });
   });
+
+  group('round 9', () {
+    testWidgets('the "שיוך" row of the funnel has the arrow, its word lined up with the others',
+        (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine]), size: const Size(700, 1000));
+      await tester.tap(find.byKey(const Key('team-filter-search')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-funnel')));
+      await tester.pumpAndSettle();
+      final link = find.byKey(const Key('team-filter-menu-link'));
+      expect(
+        find.descendant(of: link, matching: find.byKey(const Key('team-filter-submenu-arrow'))),
+        findsOneWidget,
+      );
+      double wordRight(String key, String word) => tester
+          .getRect(find.descendant(of: find.byKey(Key(key)).first, matching: find.text(word)))
+          .right;
+      final status = wordRight('team-filter-menu-status', 'סטטוס');
+      expect(wordRight('team-filter-menu-link', 'שיוך'), closeTo(status, 1));
+      expect(wordRight('team-filter-menu-owner', 'אחראי/ת'), closeTo(status, 1));
+      expect(wordRight('team-filter-menu-late', 'באיחור'), closeTo(status, 1));
+    });
+  });
 }

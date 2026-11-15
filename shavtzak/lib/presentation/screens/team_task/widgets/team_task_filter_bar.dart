@@ -339,14 +339,21 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   /// right of the word, the side it opens to (round 5): it leads the label,
   /// and the trailing slot stays empty so the menu keeps its width (a wider
   /// menu leaves no room on a phone for the submenu beside it).
-  static Widget _withArrow(Widget label) => Row(
+  ///
+  /// [arrow] false keeps the arrow's room empty, so the words of every row
+  /// start at the same place (round 9).
+  static Widget _withArrow(Widget label, {bool arrow = true}) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Directionality(
-            textDirection: TextDirection.ltr,
-            child: Icon(Icons.arrow_right, key: Key('team-filter-submenu-arrow'), size: 24),
-          ),
-          const SizedBox(width: 2),
+          arrow
+              ? const Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Icon(Icons.arrow_right, key: Key('team-filter-submenu-arrow'), size: 24),
+                )
+              : const SizedBox(width: 24),
+          // Arrow + gap = the checkbox + its gap of the "באיחור" row, so every
+          // word starts at the same place (round 9).
+          const SizedBox(width: 6),
           Flexible(child: label),
         ],
       );
@@ -384,10 +391,13 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
             menuChildren: _ownerRows(keyPrefix: 'team-filter-menu-owner'),
             child: _withArrow(Text(_ownerLabel)),
           ),
+        // "שיוך" opens the link picker, so it carries the same arrow as the
+        // rows above (Omer, round 9); once a link is set the row clears it
+        // ("<name> ✕") and the arrow's room stays empty.
         MenuItemButton(
           key: const Key('team-filter-menu-link'),
           onPressed: _tapLink,
-          child: Text(_linkLabel),
+          child: _withArrow(Text(_linkLabel), arrow: filter.link == null),
         ),
         // Last in the menu, as its chip is last in the row (round 8).
         CheckboxMenuButton(
