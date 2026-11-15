@@ -173,3 +173,25 @@ the app's permanent-member mark.
 - The funnel's submenu arrow points right and sits on the right of the word.
 - A parent's status: the "updates automatically" dialog (see Behaviour); the item-8 edge cases above
   are approved.
+
+## Round 7 (Omer, msg 3497)
+
+- A "באיחור" chip (on/off, no menu) beside the status chip, and a "באיחור" row in the funnel's menu:
+  only the tasks whose deadline is before today's Israel date while open or in progress. A parent
+  counts when it or one of its subtasks still to be done is late; under it, "כל המשימות" then shows
+  only the late subtasks (all of them when the parent itself is late). Both tabs.
+- A tap on a link card's grey header folds the card to that header and opens it again; a small
+  chevron on the header shows which. Folded cards are kept while the screen is open (both tabs);
+  a search shows every matching card open.
+- One button in the app bar folds every card ("סגירת כל השיוכים") and, once all are folded, opens
+  them all ("פתיחת כל השיוכים").
+- Wider than a phone (720 px and up): a task does not open a sheet or a dialog. The list (filter row
+  and cards) slides to the right edge, narrowed to 42% of the width (340-640 px), and the task opens
+  in a panel on the left, both animated (320 ms, ease in-out). Another task replaces the panel's
+  content; ✕ slides it out and the list back. The row in the panel is highlighted. Both tabs, every
+  member; switching tabs closes the panel; the "משימה חדשה" button moves to the right meanwhile.
+  A phone keeps the sheet.
+- The owner chip reads "אחראי/ת" (one name when one is picked, "אחראי/ת (n)" for several) and takes
+  several owners, staying open while they are ticked, like the statuses; the names are centred in
+  the menu. A task matches when any of its owners is picked.
+- On a phone the search field and the chips are tighter so the four chips fit beside the field.

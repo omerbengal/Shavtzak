@@ -279,7 +279,9 @@ void main() {
     });
 
     testWidgets('an owner filter colours only the owner chip, not the status chip', (tester) async {
-      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      // Wide enough for every chip with the test font (its letters are squares).
+      await pumpTeamTasks(tester,
+          user: manager, board: board([mine, theirs]), size: const Size(700, 1000));
       await tester.tap(find.byKey(const Key('team-filter-owner')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('יוסי').last);
@@ -479,7 +481,8 @@ void main() {
     });
 
     testWidgets('the closed search row is centred', (tester) async {
-      await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      // Wide enough for every chip with the test font (its letters are squares).
+      await pumpTeamTasks(tester, user: dana, board: board([mine]), size: const Size(600, 1000));
       final width = tester.view.physicalSize.width;
       final field = tester.getRect(find.byKey(const Key('team-filter-search')));
       final link = tester.getRect(find.byKey(const Key('team-filter-link')));
@@ -488,7 +491,9 @@ void main() {
     });
 
     testWidgets("the funnel's submenu arrows point right, where the submenus open", (tester) async {
-      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      // A phone, a little wider than 400 for the test font's square letters.
+      await pumpTeamTasks(tester,
+          user: manager, board: board([mine, theirs]), size: const Size(480, 1000));
       await tester.tap(find.byKey(const Key('team-filter-search')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('team-filter-funnel')));
@@ -574,6 +579,136 @@ void main() {
     testWidgets('TEMP: a member who is not a manager has no view-as button', (tester) async {
       await pumpTeamTasks(tester, user: dana, board: board([mine]));
       expect(find.byKey(const Key('team-tasks-view-as')), findsNothing);
+    });
+  });
+
+  group('round 7', () {
+    final theirs =
+        buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2']).copyWith(owners: [yossi]);
+    final lateOne =
+        buildTeamTask(id: 'l', title: 'מאחרת', deadline: '2026-11-10', assigneeIds: ['m1'])
+            .copyWith(owners: [dana]);
+    const wide = Size(1280, 900);
+
+    testWidgets('"באיחור" shows only the late tasks', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, lateOne]), size: wide);
+      await tester.tap(find.byKey(const Key('team-filter-late')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-l')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+      await tester.tap(find.byKey(const Key('team-filter-late')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+    });
+
+    testWidgets('"אחראי/ת" takes several owners and stays open', (tester) async {
+      await pumpTeamTasks(tester,
+          user: manager, board: board([mine, theirs]), size: const Size(700, 1000));
+      expect(find.text('אחראי/ת'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-filter-owner')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-owner-m1')).first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-b')), findsNothing);
+      // Still open: the next name is right there.
+      await tester.tap(find.byKey(const Key('team-filter-owner-m2')).first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-row-b')), findsOneWidget);
+      expect(find.text('אחראי/ת (2)'), findsOneWidget);
+      // The names are centred in the menu.
+      final menu = tester.getRect(find.byKey(const Key('team-filter-owner-m1')).first);
+      final name = tester.getRect(find.descendant(
+        of: find.byKey(const Key('team-filter-owner-m1')).first,
+        matching: find.text('דנה'),
+      ));
+      final box = tester.getRect(find.byKey(const Key('team-filter-owner-m2')).first);
+      final other = tester.getRect(find.descendant(
+        of: find.byKey(const Key('team-filter-owner-m2')).first,
+        matching: find.text('יוסי'),
+      ));
+      expect((name.center.dx - other.center.dx).abs(), lessThan(1));
+      expect(menu.width, box.width);
+    });
+
+    testWidgets('a tap on a card header folds it; the app bar button folds and opens all',
+        (tester) async {
+      await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-task-group-none')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+      expect(find.byKey(const Key('team-task-group-none')), findsOneWidget);
+      // Everything folded: the button now opens all.
+      expect(find.byTooltip('פתיחת כל השיוכים'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-tasks-fold-all')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-tasks-fold-all')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+    });
+
+    testWidgets('a search opens a folded card', (tester) async {
+      await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      await tester.tap(find.byKey(const Key('team-tasks-fold-all')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('team-filter-search')), 'אולם');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+    });
+
+    for (final user in [manager, dana]) {
+      testWidgets('wide: ${user.name} opens a task in a side panel, the list moves right',
+          (tester) async {
+        await pumpTeamTasks(tester, user: user, board: board([mine]), size: wide);
+        final before = tester.getRect(find.byKey(const Key('team-task-row-a')));
+        await tester.tap(find.byKey(const Key('team-task-row-a')));
+        await tester.pumpAndSettle();
+        expect(find.byType(Dialog), findsNothing);
+        expect(find.byType(BottomSheet), findsNothing);
+        final panel = tester.getRect(find.byKey(const Key('team-task-side-panel')));
+        final row = tester.getRect(find.byKey(const Key('team-task-row-a')));
+        expect(panel.left, lessThan(20));
+        expect(row.left, greaterThanOrEqualTo(panel.right));
+        expect(row.right, closeTo(wide.width, 20));
+        expect(row.center.dx, greaterThan(before.center.dx));
+        await tester.tap(find.byKey(const Key('team-task-close')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('team-task-side-panel')), findsNothing);
+        expect(tester.getRect(find.byKey(const Key('team-task-row-a'))), before);
+      });
+    }
+
+    testWidgets('wide: another task swaps the panel; the tab switch closes it', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]), size: wide);
+      await tester.tap(find.byKey(const Key('team-task-row-a')));
+      await tester.pumpAndSettle();
+      expect(
+          find.descendant(
+            of: find.byKey(const Key('team-task-side-panel')),
+            matching: find.text('להזמין אולם'),
+          ),
+          findsWidgets);
+      await tester.tap(find.byKey(const Key('team-task-row-b')));
+      await tester.pumpAndSettle();
+      expect(
+          find.descendant(
+            of: find.byKey(const Key('team-task-side-panel')),
+            matching: find.text('של יוסי'),
+          ),
+          findsWidgets);
+      await tester.tap(find.text('המשימות שלי'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-side-panel')), findsNothing);
+    });
+
+    testWidgets('a phone still opens the task as a sheet', (tester) async {
+      await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      await tester.tap(find.byKey(const Key('team-task-row-a')));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(const Key('team-task-side-panel')), findsNothing);
     });
   });
 }

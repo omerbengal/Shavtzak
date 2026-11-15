@@ -35,8 +35,7 @@ void main() {
         TeamTaskStatus.cancelled,
         TeamTaskStatus.duplicate,
       ]) {
-        expect(isTeamTaskLate(buildTeamTask(deadline: '2026-11-01', status: status), now),
-            isFalse);
+        expect(isTeamTaskLate(buildTeamTask(deadline: '2026-11-01', status: status), now), isFalse);
       }
       expect(isTeamTaskLate(buildTeamTask(), now), isFalse);
     });
@@ -124,7 +123,8 @@ void main() {
 
     test('inside a group: deadline ascending, none last, done at the bottom, then title', () {
       TeamTask t(String id, String title, {String? deadline, TeamTaskStatus? status}) =>
-          buildTeamTask(id: id, title: title, deadline: deadline, status: status ?? TeamTaskStatus.open);
+          buildTeamTask(
+              id: id, title: title, deadline: deadline, status: status ?? TeamTaskStatus.open);
       final groups = groupTeamTasks([
         t('1', 'ב'),
         t('2', 'א'),
@@ -157,8 +157,7 @@ void main() {
   group('TeamTaskFilter', () {
     test('initial hides cancelled and duplicate', () {
       final tasks = [
-        for (final status in TeamTaskStatus.values)
-          buildTeamTask(id: status.key, status: status),
+        for (final status in TeamTaskStatus.values) buildTeamTask(id: status.key, status: status),
       ];
       final shown = applyTeamTaskFilter(tasks, TeamTaskFilter.initial, const {});
       expect(shown.map((t) => t.status),
@@ -170,8 +169,8 @@ void main() {
         buildTeamTask(id: 'a', assigneeIds: ['m1']),
         buildTeamTask(id: 'b', assigneeIds: ['m2']),
       ];
-      final shown = applyTeamTaskFilter(
-          tasks, TeamTaskFilter.initial.copyWith(ownerId: () => 'm2'), const {});
+      final shown =
+          applyTeamTaskFilter(tasks, TeamTaskFilter.initial.copyWith(ownerIds: {'m2'}), const {});
       expect(shown.map((t) => t.id), ['b']);
     });
 
@@ -182,8 +181,8 @@ void main() {
         buildTeamTask(id: 'other').copyWith(link: () => TaskLink(TaskLinkType.event, 'e2')),
         buildTeamTask(id: 'none'),
       ];
-      final filter = TeamTaskFilter.initial
-          .copyWith(link: () => TaskLink(TaskLinkType.category, 'c1'));
+      final filter =
+          TeamTaskFilter.initial.copyWith(link: () => TaskLink(TaskLinkType.category, 'c1'));
       final shown = applyTeamTaskFilter(tasks, filter, const {'e1': 'c1', 'e2': 'c2'});
       expect(shown.map((t) => t.id), ['cat', 'ev']);
     });
@@ -226,8 +225,10 @@ void main() {
 
   group('linkableEvents', () {
     test('drops events that ended before today and puts the nearest first', () {
-      final ended = buildEvent(id: 'old', startDate: DateTime(2026, 11, 10), endDate: DateTime(2026, 11, 14));
-      final endsToday = buildEvent(id: 'today', startDate: DateTime(2026, 11, 13), endDate: DateTime(2026, 11, 15));
+      final ended =
+          buildEvent(id: 'old', startDate: DateTime(2026, 11, 10), endDate: DateTime(2026, 11, 14));
+      final endsToday = buildEvent(
+          id: 'today', startDate: DateTime(2026, 11, 13), endDate: DateTime(2026, 11, 15));
       final later = buildEvent(id: 'later', startDate: DateTime(2026, 12, 20));
       final soon = buildEvent(id: 'soon', startDate: DateTime(2026, 11, 20));
       expect(
@@ -272,13 +273,63 @@ void main() {
     });
 
     test('an owner filter does not mark the statuses as changed', () {
-      final filter = TeamTaskFilter.initial.copyWith(ownerId: () => 'm1');
+      final filter = TeamTaskFilter.initial.copyWith(ownerIds: {'m1'});
       expect(filter.isInitial, isFalse);
       expect(filter.statusesChanged, isFalse);
       expect(
         TeamTaskFilter.initial.copyWith(statuses: {TeamTaskStatus.open}).statusesChanged,
         isTrue,
       );
+    });
+  });
+
+  group('round 7 filters', () {
+    test('"באיחור" keeps the late tasks, a parent through a late subtask', () {
+      final tasks = [
+        buildTeamTask(id: 'late', deadline: '2026-11-14'),
+        buildTeamTask(id: 'today', deadline: '2026-11-15'),
+        buildTeamTask(id: 'doneLate', deadline: '2026-11-01', status: TeamTaskStatus.done),
+        buildTeamTask(id: 'none'),
+        buildTeamTask(id: 'parent', subtasks: const [
+          TeamSubtask(id: 's1', title: 'בזמן', deadline: '2026-11-20', assigneeIds: ['m1']),
+          TeamSubtask(id: 's2', title: 'מאחר', deadline: '2026-11-10', assigneeIds: ['m1']),
+        ]),
+      ];
+      final filter = TeamTaskFilter.initial.copyWith(lateOnly: true);
+      expect(filter.anyFilterSet, isTrue);
+      expect(filter.statusesChanged, isFalse);
+      final shown = applyTeamTaskFilter(tasks, filter, const {}, now: now);
+      expect(shown.map((t) => t.id), ['late', 'parent']);
+      // Under the parent, only the late subtask.
+      expect(visibleSubtasks(tasks.last, filter, now: now).map((s) => s.id), ['s2']);
+      expect(visibleSubtasks(tasks.last, TeamTaskFilter.initial, now: now).length, 2);
+    });
+
+    test('a done subtask past its deadline does not make its parent late', () {
+      final parent = buildTeamTask(id: 'p', subtasks: const [
+        TeamSubtask(
+          id: 's1',
+          title: 'בוצעה',
+          deadline: '2026-11-10',
+          status: TeamTaskStatus.done,
+          assigneeIds: ['m1'],
+        ),
+        TeamSubtask(id: 's2', title: 'פתוחה', assigneeIds: ['m1']),
+      ]);
+      expect(isTeamTaskOrSubtaskLate(parent, now), isFalse);
+    });
+
+    test('several owners: a task of any of them', () {
+      final tasks = [
+        buildTeamTask(id: 'a', assigneeIds: ['m1']),
+        buildTeamTask(id: 'b', assigneeIds: ['m2']),
+        buildTeamTask(id: 'c', assigneeIds: ['m3']),
+      ];
+      final shown = applyTeamTaskFilter(
+          tasks, TeamTaskFilter.initial.copyWith(ownerIds: {'m1', 'm3'}), const {});
+      expect(shown.map((t) => t.id), ['a', 'c']);
+      expect(TeamTaskFilter.initial.copyWith(ownerIds: {'m1', 'm3'}),
+          TeamTaskFilter.initial.copyWith(ownerIds: {'m3', 'm1'}));
     });
   });
 }

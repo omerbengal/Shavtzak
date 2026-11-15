@@ -146,10 +146,12 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       viewer: viewer,
       all: all,
       mine: mine,
-      allGroups: groupTeamTasks(applyTeamTaskFilter(all, _filter, eventCategoryById), now),
+      allGroups:
+          groupTeamTasks(applyTeamTaskFilter(all, _filter, eventCategoryById, now: now), now),
       // "המשימות שלי" has no owner filter: they are all the viewer's.
       mineGroups: groupTeamTasks(
-        applyTeamTaskFilter(mine, _filter.copyWith(ownerId: () => null), eventCategoryById),
+        applyTeamTaskFilter(mine, _filter.copyWith(ownerIds: const {}), eventCategoryById,
+            now: now),
         now,
       ),
       filter: _filter,

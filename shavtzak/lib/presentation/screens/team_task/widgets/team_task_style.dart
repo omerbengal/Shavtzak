@@ -34,6 +34,21 @@ abstract final class TeamTaskStyle {
 
   /// A row under the mouse (desktop): a light blue, clearly seen on white.
   static const Color rowHover = TaskStyle.currentLight;
+
+  /// The row whose task is open in the side panel (wide window, round 7).
+  static const Color rowSelected = Color(0xFFFFF3E0);
+
+  /// From this width the list is not a phone's (round 7): a task opens in a
+  /// panel on the left while the list slides right, instead of a sheet.
+  static const double splitBreakpoint = 720;
+
+  /// The list's width beside the open panel: 42% of the room, between these.
+  static const double splitListMinWidth = 340;
+  static const double splitListShare = 0.42;
+
+  /// How long the list and the panel take to slide (round 7: smooth).
+  static const Duration splitDuration = Duration(milliseconds: 320);
+  static const Curve splitCurve = Curves.easeInOutCubic;
 }
 
 /// `d.M`, the way the team writes a date ("15.11").

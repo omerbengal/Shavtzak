@@ -20,6 +20,7 @@ import 'widgets/new_team_task_dialog.dart';
 import 'widgets/team_task_filter_bar.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
+import 'widgets/team_task_split_view.dart';
 import 'widgets/team_task_style.dart';
 import 'widgets/team_task_update_log.dart';
 import 'widgets/topic_management_dialog.dart';
@@ -53,6 +54,54 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// TEMP ([kTempTeamTasksViewAs]): whose "המשימות שלי" a manager looks at;
   /// null is their own.
   String? _viewAsId;
+
+  /// The task open in the side panel (a window wider than a phone, round 7);
+  /// null = closed.
+  String? _panelTaskId;
+
+  /// The link cards folded to their header (round 7), by group key; kept
+  /// while the screen is open, across both tabs.
+  final Set<String> _collapsed = {};
+
+  void _openPanel(String taskId) {
+    Logger.action('tap:teamTaskPanelOpen');
+    setState(() => _panelTaskId = taskId);
+  }
+
+  void _closePanel() {
+    Logger.action('tap:teamTaskPanelClose');
+    setState(() => _panelTaskId = null);
+  }
+
+  void _toggleGroup(String key) {
+    Logger.action('tap:teamTaskGroupFold', {'group': key});
+    setState(() {
+      if (!_collapsed.remove(key)) _collapsed.add(key);
+    });
+  }
+
+  /// "סגירת כל השיוכים" / "פתיחת כל השיוכים" (round 7): one button that
+  /// folds every card, then opens them all again.
+  Widget _foldAllButton(List<TeamTaskGroup> groups) {
+    final allClosed = groups.isNotEmpty && groups.every((g) => _collapsed.contains(g.key));
+    return IconButton(
+      key: const Key('team-tasks-fold-all'),
+      tooltip: allClosed ? 'פתיחת כל השיוכים' : 'סגירת כל השיוכים',
+      icon: Icon(allClosed ? Icons.unfold_more : Icons.unfold_less),
+      onPressed: groups.isEmpty
+          ? null
+          : () {
+              Logger.action('tap:teamTasksFoldAll', {'close': !allClosed});
+              setState(() {
+                if (allClosed) {
+                  _collapsed.removeAll(groups.map((g) => g.key));
+                } else {
+                  _collapsed.addAll(groups.map((g) => g.key));
+                }
+              });
+            },
+    );
+  }
 
   void _subscribe(TeamMember user) {
     context.read<TeamTaskBloc>().add(TeamTasksSubscribe(user));
@@ -116,6 +165,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                         )
                       : const MemberSettingsButton(),
                   actions: [
+                    if (state is TeamTasksLoaded) _foldAllButton(_shownGroups(state, canManage)),
                     // TEMP: see [kTempTeamTasksViewAs].
                     if (kTempTeamTasksViewAs && canManage && !_showAll && state is TeamTasksLoaded)
                       IconButton(
@@ -143,6 +193,11 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                     if (widget.place == TeamTasksPlace.tab) MemberBarActions(user: user),
                   ],
                 ),
+                // The panel opens on the left, where the button sits in RTL:
+                // it moves to the right meanwhile.
+                floatingActionButtonLocation: _splitting(context) && _panelTaskId != null
+                    ? FloatingActionButtonLocation.startFloat
+                    : null,
                 floatingActionButton: editing
                     ? FloatingActionButton.extended(
                         key: const Key('team-task-new'),
@@ -169,21 +224,45 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     final now = DateTime.now();
-    Widget list(List<TeamTaskGroup> groups, {required bool all, String? viewerId}) => Column(
-          children: [
-            TeamTaskFilterBar(state: state, showOwner: all),
-            const Divider(height: 1),
-            Expanded(
-              child: _GroupedList(
-                groups: groups,
-                state: state,
-                now: now,
-                editing: all,
-                viewerId: viewerId ?? state.viewer.id,
-              ),
+    final split = _splitting(context);
+    Widget list(List<TeamTaskGroup> groups, {required bool all, String? viewerId}) {
+      final column = Column(
+        children: [
+          TeamTaskFilterBar(state: state, showOwner: all),
+          const Divider(height: 1),
+          Expanded(
+            child: _GroupedList(
+              groups: groups,
+              state: state,
+              now: now,
+              editing: all,
+              viewerId: viewerId ?? state.viewer.id,
+              collapsed: _collapsed,
+              onToggleGroup: _toggleGroup,
+              selectedId: split ? _panelTaskId : null,
             ),
-          ],
-        );
+          ),
+        ],
+      );
+      if (!split) return column;
+      // Wider than a phone (round 7): a task opens in a panel on the left
+      // and the list slides right, in both tabs, with no new screen.
+      return TeamTaskPanelScope(
+        open: _openPanel,
+        close: _closePanel,
+        child: TeamTaskSplitView(
+          list: column,
+          openTaskId: _panelTaskId,
+          panelBuilder: (context, taskId) => TeamTaskSheet(
+            taskId: taskId,
+            wide: MediaQuery.sizeOf(context).width >= TaskStyle.wideBreakpoint,
+            manage: all,
+            onClose: _closePanel,
+          ),
+        ),
+      );
+    }
+
     if (!canManage) return list(state.mineGroups, all: false);
     final viewAsId = kTempTeamTasksViewAs ? _viewAsId : null;
     return Column(
@@ -201,6 +280,18 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     );
   }
 
+  /// The groups the list shows now (the tab, TEMP: whose view).
+  List<TeamTaskGroup> _shownGroups(TeamTasksLoaded state, bool canManage) {
+    if (!canManage) return state.mineGroups;
+    if (_showAll) return state.allGroups;
+    final viewAsId = kTempTeamTasksViewAs ? _viewAsId : null;
+    return viewAsId == null ? state.mineGroups : _mineGroupsOf(state, viewAsId, DateTime.now());
+  }
+
+  /// Whether the window is wider than a phone: tasks open in the side panel.
+  static bool _splitting(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= TeamTaskStyle.splitBreakpoint;
+
   // ---- TEMP: view as another member ([kTempTeamTasksViewAs]) ----
 
   /// "המשימות שלי" of [memberId], built as the bloc builds the viewer's.
@@ -209,8 +300,9 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     return groupTeamTasks(
       applyTeamTaskFilter(
         myTeamTaskRows(state.all, memberId),
-        state.filter.copyWith(ownerId: () => null),
+        state.filter.copyWith(ownerIds: const {}),
         eventCategoryById,
+        now: now,
       ),
       now,
     );
@@ -235,7 +327,10 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                 key: const Key('team-tasks-view-as-clear'),
                 tooltip: 'חזרה למשימות שלי',
                 icon: const Icon(Icons.close, size: 18),
-                onPressed: () => setState(() => _viewAsId = null),
+                onPressed: () => setState(() {
+                  _viewAsId = null;
+                  _panelTaskId = null;
+                }),
               ),
             ],
           ),
@@ -266,8 +361,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                     Expanded(
                       child: MemberNameText(name: member.name, permanent: member.isPermanent),
                     ),
-                    if (member.id == (_viewAsId ?? user.id))
-                      const Icon(Icons.check, size: 18),
+                    if (member.id == (_viewAsId ?? user.id)) const Icon(Icons.check, size: 18),
                   ],
                 ),
               ),
@@ -276,7 +370,10 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       ),
     );
     if (chosen == null || !mounted) return;
-    setState(() => _viewAsId = chosen == user.id ? null : chosen);
+    setState(() {
+      _viewAsId = chosen == user.id ? null : chosen;
+      _panelTaskId = null;
+    });
   }
 
   /// The דו יומי event screen's switch, with its colours.
@@ -309,7 +406,11 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
               selected: {_showAll},
               onSelectionChanged: (selection) {
                 Logger.action('toggle:teamTasksTab', {'all': selection.first});
-                setState(() => _showAll = selection.first);
+                setState(() {
+                  _showAll = selection.first;
+                  // The panel belongs to a tab (editing or not).
+                  _panelTaskId = null;
+                });
               },
             ),
           ),
@@ -330,7 +431,17 @@ class _GroupedList extends StatefulWidget {
     required this.now,
     required this.editing,
     required this.viewerId,
+    required this.collapsed,
+    required this.onToggleGroup,
+    this.selectedId,
   });
+
+  /// The cards folded to their header (round 7), by group key.
+  final Set<String> collapsed;
+  final ValueChanged<String> onToggleGroup;
+
+  /// The task open in the side panel, highlighted.
+  final String? selectedId;
 
   /// Whose rows these are (TEMP: another member's while viewing as them).
   final String viewerId;
@@ -387,7 +498,9 @@ class _GroupedListState extends State<_GroupedList> {
       if (rows.isNotEmpty) {
         rows.add(const Divider(height: 1, thickness: 1, color: TaskStyle.stageCardDivider));
       }
-      final shown = widget.editing ? visibleSubtasks(task, state.filter) : const <TeamSubtask>[];
+      final shown = widget.editing
+          ? visibleSubtasks(task, state.filter, now: widget.now)
+          : const <TeamSubtask>[];
       final open = widget.editing && task.subtasks.isNotEmpty && _isOpen(task, shown);
       rows.add(TeamTaskRow(
         task: task,
@@ -401,6 +514,7 @@ class _GroupedListState extends State<_GroupedList> {
             : null,
         // "המשימות שלי": the status and a new update without opening the
         // task (Omer, round 4); every row there is the viewer's own.
+        selected: task.id == widget.selectedId,
         canChangeStatus: !widget.editing,
         onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
         onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
@@ -426,6 +540,7 @@ class _GroupedListState extends State<_GroupedList> {
                     now: widget.now,
                     viewerId: widget.viewerId,
                     nested: true,
+                    selected: subtask.id == widget.selectedId,
                     onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.editing),
                   ),
               ],
@@ -435,6 +550,9 @@ class _GroupedListState extends State<_GroupedList> {
       }
     }
     final count = group.tasks.length;
+    // Folded by a tap on its header (round 7); a search opens it, as it
+    // opens a parent whose subtask matched.
+    final folded = widget.collapsed.contains(group.key) && state.filter.searchText.isEmpty;
     return Container(
       key: Key('team-task-card-${group.key}'),
       margin: const EdgeInsets.fromLTRB(
@@ -459,29 +577,52 @@ class _GroupedListState extends State<_GroupedList> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              key: Key('team-task-group-${group.key}'),
+            Material(
               color: TaskStyle.stageHeader,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${_groupKind(group.type)}${group.label}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
+              child: InkWell(
+                key: Key('team-task-group-${group.key}'),
+                hoverColor: TeamTaskStyle.rowHover,
+                onTap: () => widget.onToggleGroup(group.key),
+                child: Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 6, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${_groupKind(group.type)}${group.label}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(
+                        count == 1 ? 'משימה אחת' : '$count משימות',
+                        style: const TextStyle(
+                          fontSize: TaskStyle.rowMetaSize,
+                          color: TaskStyle.neutralText,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        folded ? Icons.expand_more : Icons.expand_less,
+                        key: Key('team-task-group-fold-${group.key}'),
+                        size: 20,
+                        color: TaskStyle.neutralText,
+                      ),
+                    ],
                   ),
-                  Text(
-                    count == 1 ? 'משימה אחת' : '$count משימות',
-                    style: const TextStyle(
-                      fontSize: TaskStyle.rowMetaSize,
-                      color: TaskStyle.neutralText,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-            ...rows,
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              alignment: Alignment.topCenter,
+              child: folded
+                  ? const SizedBox(width: double.infinity)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: rows,
+                    ),
+            ),
           ],
         ),
       ),

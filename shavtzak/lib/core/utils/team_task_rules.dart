@@ -215,17 +215,30 @@ List<TeamTaskGroup> groupTeamTasks(List<TeamTask> tasks, DateTime now) {
   return groups;
 }
 
-/// What the list shows: a set of statuses, optionally one owner, one link and
-/// a search text.
+/// What the list shows: a set of statuses, optionally some owners (any of
+/// them, round 7: several like the statuses), one link, only the late tasks
+/// ("באיחור", round 7) and a search text.
 class TeamTaskFilter extends Equatable {
   final Set<TeamTaskStatus> statuses;
-  final String? ownerId;
+
+  /// The owners shown; empty = everyone.
+  final Set<String> ownerIds;
   final TaskLink? link;
+
+  /// Only the tasks that are late ([isTeamTaskLate]); a parent counts when
+  /// it or one of its subtasks is.
+  final bool lateOnly;
 
   /// Words looked up in a task's title, description and subtasks' titles.
   final String query;
 
-  const TeamTaskFilter({required this.statuses, this.ownerId, this.link, this.query = ''});
+  const TeamTaskFilter({
+    required this.statuses,
+    this.ownerIds = const {},
+    this.link,
+    this.lateOnly = false,
+    this.query = '',
+  });
 
   /// Every status except "לא רלוונטי/בוטל" and "כפילות".
   static const TeamTaskFilter initial = TeamTaskFilter(statuses: {
@@ -241,37 +254,52 @@ class TeamTaskFilter extends Equatable {
   bool get statusesChanged =>
       statuses.length != initial.statuses.length || !statuses.containsAll(initial.statuses);
 
-  /// Whether any of the three filters (status, owner, link) is set.
-  bool get anyFilterSet => statusesChanged || ownerId != null || link != null;
+  /// Whether any of the filters (status, owner, link, late) is set.
+  bool get anyFilterSet => statusesChanged || ownerIds.isNotEmpty || link != null || lateOnly;
 
   /// [query] trimmed and lower-cased; empty = no search.
   String get searchText => query.trim().toLowerCase();
 
   TeamTaskFilter copyWith({
     Set<TeamTaskStatus>? statuses,
-    String? Function()? ownerId,
+    Set<String>? ownerIds,
     TaskLink? Function()? link,
+    bool? lateOnly,
     String? query,
   }) =>
       TeamTaskFilter(
         statuses: statuses ?? this.statuses,
-        ownerId: ownerId != null ? ownerId() : this.ownerId,
+        ownerIds: ownerIds ?? this.ownerIds,
         link: link != null ? link() : this.link,
+        lateOnly: lateOnly ?? this.lateOnly,
         query: query ?? this.query,
       );
 
   @override
-  List<Object?> get props =>
-      [statuses.toList()..sort((a, b) => a.index - b.index), ownerId, link, query];
+  List<Object?> get props => [
+        statuses.toList()..sort((a, b) => a.index - b.index),
+        ownerIds.toList()..sort(),
+        link,
+        lateOnly,
+        query,
+      ];
 }
+
+/// Whether [task] or one of its subtasks still to be done is late: the
+/// "באיחור" filter (round 7).
+bool isTeamTaskOrSubtaskLate(TeamTask task, DateTime now) =>
+    isTeamTaskLate(task, now) ||
+    task.subtasks.any((subtask) => isTeamTaskLate(TeamTask.subtaskView(task, subtask), now));
 
 /// [tasks] that pass [filter]. A category link also matches the tasks linked
 /// to an event of that category ([eventCategoryById]: event id → category id).
+/// [now] decides "באיחור" (default: the clock).
 List<TeamTask> applyTeamTaskFilter(
   List<TeamTask> tasks,
   TeamTaskFilter filter,
-  Map<String, String?> eventCategoryById,
-) {
+  Map<String, String?> eventCategoryById, {
+  DateTime? now,
+}) {
   bool linkMatches(TeamTask task) {
     final wanted = filter.link;
     if (wanted == null) return true;
@@ -283,12 +311,14 @@ List<TeamTask> applyTeamTaskFilter(
         (eventCategoryById[link.id] ?? task.event?.categoryId) == wanted.id;
   }
 
+  final today = now ?? DateTime.now();
   final search = filter.searchText;
   return [
     for (final task in tasks)
       if (filter.statuses.contains(task.status) &&
-          (filter.ownerId == null || task.ownerIds.contains(filter.ownerId)) &&
+          (filter.ownerIds.isEmpty || task.ownerIds.any(filter.ownerIds.contains)) &&
           linkMatches(task) &&
+          (!filter.lateOnly || isTeamTaskOrSubtaskLate(task, today)) &&
           (search.isEmpty ||
               _textMatches(task.title, task.description, search) ||
               task.subtasks.any((s) => _textMatches(s.title, s.description, search))))
@@ -301,14 +331,18 @@ bool _textMatches(String title, String description, String search) =>
 
 /// The subtasks of [task] shown nested under it in "כל המשימות": those that
 /// pass the status and owner filters and, while searching, match the search
-/// themselves unless the task itself matches.
-List<TeamSubtask> visibleSubtasks(TeamTask task, TeamTaskFilter filter) {
+/// themselves unless the task itself matches. With "באיחור", only the late
+/// subtasks unless the task itself is late.
+List<TeamSubtask> visibleSubtasks(TeamTask task, TeamTaskFilter filter, {DateTime? now}) {
+  final today = now ?? DateTime.now();
   final search = filter.searchText;
   final parentMatches = search.isEmpty || _textMatches(task.title, task.description, search);
+  final parentLate = !filter.lateOnly || isTeamTaskLate(task, today);
   return [
     for (final subtask in task.subtasks)
       if (filter.statuses.contains(subtask.status) &&
-          (filter.ownerId == null || subtask.assigneeIds.contains(filter.ownerId)) &&
+          (filter.ownerIds.isEmpty || subtask.assigneeIds.any(filter.ownerIds.contains)) &&
+          (parentLate || isTeamTaskLate(TeamTask.subtaskView(task, subtask), today)) &&
           (parentMatches || _textMatches(subtask.title, subtask.description, search)))
         subtask,
   ];

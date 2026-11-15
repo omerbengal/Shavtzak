@@ -17,6 +17,7 @@ import 'task_link_picker.dart';
 import 'new_team_task_dialog.dart';
 import 'team_task_actions.dart';
 import 'team_task_row.dart';
+import 'team_task_split_view.dart';
 import 'team_task_style.dart';
 import 'team_task_update_log.dart';
 
@@ -26,7 +27,15 @@ import 'team_task_update_log.dart';
 /// [manage] false opens it as a member sees it even for a manager: a manager
 /// edits tasks only from "כל המשימות"; in "המשימות שלי" they are a member like
 /// any other (Omer, round 3).
+///
+/// Inside the list of a window wider than a phone ([TeamTaskPanelScope],
+/// round 7) it opens in the list's side panel instead, with no new route.
 Future<void> showTeamTaskSheet(BuildContext context, String taskId, {bool manage = true}) {
+  final panel = TeamTaskPanelScope.maybeOf(context);
+  if (panel != null) {
+    panel.open(taskId);
+    return Future.value();
+  }
   final wide = MediaQuery.sizeOf(context).width >= TaskStyle.wideBreakpoint;
   final bloc = context.read<TeamTaskBloc>();
   Widget body(BuildContext _) => BlocProvider.value(
@@ -67,10 +76,19 @@ Future<void> showTeamTaskSheet(BuildContext context, String taskId, {bool manage
 /// (saved at once); an owner changes the status, ticks their own subtasks and
 /// writes in the log; the rest is read-only.
 class TeamTaskSheet extends StatefulWidget {
-  const TeamTaskSheet({super.key, required this.taskId, required this.wide, this.manage = true});
+  const TeamTaskSheet({
+    super.key,
+    required this.taskId,
+    required this.wide,
+    this.manage = true,
+    this.onClose,
+  });
 
   final String taskId;
   final bool wide;
+
+  /// In the side panel (round 7): closes it. Null = a route ([Navigator.pop]).
+  final VoidCallback? onClose;
 
   /// Whether a manager gets the editing view here ([showTeamTaskSheet]).
   final bool manage;
@@ -200,6 +218,11 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             _closed = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
+              final onClose = widget.onClose;
+              if (onClose != null) {
+                onClose();
+                return;
+              }
               final route = ModalRoute.of(context);
               if (route == null || !route.isActive) return;
               final navigator = Navigator.of(context);
@@ -335,7 +358,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             key: const Key('team-task-close'),
             tooltip: 'סגירה',
             icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
           ),
         ],
       ),

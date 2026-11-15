@@ -29,7 +29,11 @@ class TeamTaskRow extends StatelessWidget {
     this.onToggleSubtasks,
     this.canChangeStatus = false,
     this.onAddUpdate,
+    this.selected = false,
   });
+
+  /// Its task is the one open in the side panel (wide window, round 7).
+  final bool selected;
 
   final bool canChangeStatus;
   final VoidCallback? onAddUpdate;
@@ -59,9 +63,12 @@ class TeamTaskRow extends StatelessWidget {
       // Visible on a mouse hover (desktop) over every row, subtasks included
       // (Omer, round 4).
       hoverColor: TeamTaskStyle.rowHover,
-      child: Opacity(
-        opacity: faded ? 0.6 : 1,
-        child: nested ? _nested() : _full(),
+      child: ColoredBox(
+        color: selected ? TeamTaskStyle.rowSelected : Colors.transparent,
+        child: Opacity(
+          opacity: faded ? 0.6 : 1,
+          child: nested ? _nested() : _full(),
+        ),
       ),
     );
   }
