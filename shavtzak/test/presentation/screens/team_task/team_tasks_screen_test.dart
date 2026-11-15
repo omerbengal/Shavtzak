@@ -138,18 +138,31 @@ void main() {
     await tester.enterText(find.byKey(const Key('edit-contact-name-0')), 'רונית');
     await tester.enterText(find.byKey(const Key('edit-contact-phone-0')), '0501234567');
 
-    // Two subtasks, typed as in דו יומי: Enter opens the next line.
-    await tester.ensureVisible(find.byKey(const Key('team-subtask-add')));
-    await tester.tap(find.byKey(const Key('team-subtask-add')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('team-subtask-title-0')), 'הצעת מחיר');
-    await tester.testTextInput.receiveAction(TextInputAction.next);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('team-subtask-title-1')), 'חוזה');
-    await tester.tap(find.byKey(const Key('team-subtask-owner-1')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('team-subtask-owner-option-m2')).last);
-    await tester.pumpAndSettle();
+    // Two subtasks, each in the same form as a task (round 2).
+    Future<void> addSubtask(String title, {String? ownerId}) async {
+      await tester.ensureVisible(find.byKey(const Key('new-team-task-add-subtask')));
+      await tester.tap(find.byKey(const Key('new-team-task-add-subtask')));
+      await tester.pumpAndSettle();
+      expect(find.text('תת-משימה חדשה'), findsOneWidget);
+      // The subtask form has no link: it belongs where its parent does.
+      expect(find.byKey(const Key('new-team-task-link')), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('new-team-task-title')).last, title);
+      // No contact line appears by itself while typing (bug 6).
+      expect(find.byKey(const Key('edit-contact-name-0')), findsOneWidget);
+      if (ownerId != null) {
+        await tester.tap(find.byKey(const Key('new-team-task-owners')).last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('edit-assignee-$ownerId')).last);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const Key('new-team-task-save')).last);
+      await tester.pumpAndSettle();
+    }
+
+    await addSubtask('הצעת מחיר');
+    // The parent's title changes once it has a subtask.
+    expect(find.text('משימת אב חדשה'), findsOneWidget);
+    await addSubtask('חוזה', ownerId: 'm2');
     // With subtasks the owners are theirs: no own owners field.
     expect(find.byKey(const Key('new-team-task-owners')), findsNothing);
 
@@ -159,7 +172,7 @@ void main() {
     expect(saved.title, 'להזמין אולם');
     expect(saved.contacts.single.name, 'רונית');
     expect(saved.subtasks.map((s) => s.title), ['הצעת מחיר', 'חוזה']);
-    expect(saved.subtasks.last.assigneeId, 'm2');
+    expect(saved.subtasks.last.assigneeIds, ['m2']);
     expect(saved.ownerIds, ['m2']);
   });
 
@@ -181,5 +194,58 @@ void main() {
   testWidgets('an empty list says so', (tester) async {
     await pumpTeamTasks(tester, user: dana, board: board(const []));
     expect(find.text('אין משימות להצגה'), findsOneWidget);
+  });
+
+  testWidgets('a first subtask on a task with owners asks what to do', (tester) async {
+    await pumpTeamTasks(tester,
+        user: manager, board: board(const []), size: const Size(1200, 1000));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'להזמין אולם');
+    await tester.tap(find.byKey(const Key('new-team-task-owners')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-assignee-m1')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('new-team-task-add-subtask')));
+    await tester.tap(find.byKey(const Key('new-team-task-add-subtask')));
+    await tester.pumpAndSettle();
+    // "להשאיר כמשימה אחת": nothing changes.
+    await tester.tap(find.byKey(const Key('first-subtask-keep')));
+    await tester.pumpAndSettle();
+    expect(find.text('תת-משימה חדשה'), findsNothing);
+    expect(find.byKey(const Key('new-team-task-owners')), findsOneWidget);
+    // "ליצור תתי-משימות ולהסיר את האחראים": the subtask form opens.
+    await tester.tap(find.byKey(const Key('new-team-task-add-subtask')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('first-subtask-split')));
+    await tester.pumpAndSettle();
+    expect(find.text('תת-משימה חדשה'), findsOneWidget);
+  });
+
+  testWidgets('"המשימות שלי" lists my subtask as its own row under the parent title',
+      (tester) async {
+    final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: [
+      TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: const ['m1'], assignees: [dana]),
+      const TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
+    ]);
+    await pumpTeamTasks(tester, user: dana, board: board([parent]));
+    expect(find.byKey(const Key('team-task-row-s1')), findsOneWidget);
+    expect(find.byKey(const Key('team-task-parent-s1')), findsOneWidget);
+    expect(find.text('אולם'), findsOneWidget);
+    expect(find.byKey(const Key('team-task-row-p')), findsNothing);
+    expect(find.byKey(const Key('team-task-row-s2')), findsNothing);
+  });
+
+  testWidgets('"כל המשימות" nests the subtasks under their parent', (tester) async {
+    final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
+      TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
+      TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
+    ]);
+    await pumpTeamTasks(tester, user: manager, board: board([parent]));
+    await tester.tap(find.byKey(const Key('team-tab-all')));
+    await tester.pumpAndSettle();
+    final parentTop = tester.getTopLeft(find.byKey(const Key('team-task-row-p'))).dy;
+    expect(tester.getTopLeft(find.byKey(const Key('team-task-row-s1'))).dy, greaterThan(parentTop));
+    expect(find.byKey(const Key('team-task-row-s2')), findsOneWidget);
   });
 }

@@ -50,7 +50,7 @@ void main() {
 
   test('isTeamTaskOwner reads ownerIds', () {
     final task = buildTeamTask(subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeId: 'm2'),
+      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m2']),
     ]);
     expect(isTeamTaskOwner(task, 'm2'), isTrue);
     expect(isTeamTaskOwner(task, 'm1'), isFalse);

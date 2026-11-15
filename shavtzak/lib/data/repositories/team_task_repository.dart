@@ -71,8 +71,10 @@ class TeamTaskRepository {
             subtasks: [
               for (final subtask in task.subtasks)
                 subtask.copyWith(
-                  assignee: () =>
-                      subtask.assigneeId == null ? null : membersById[subtask.assigneeId],
+                  assignees: subtask.assigneeIds
+                      .map((id) => membersById[id])
+                      .whereType<TeamMember>()
+                      .toList(),
                 ),
             ],
           );
@@ -95,13 +97,22 @@ class TeamTaskRepository {
 
   Future<void> deleteTask(String id) => _database.deleteTeamTask(id);
 
-  Future<void> setStatus(String id, TeamTaskStatus status, {String? duplicateOfId}) =>
-      _database.setTeamTaskStatus(id, status, duplicateOfId: duplicateOfId);
+  /// With [subtaskId], the status of that subtask of task [id].
+  Future<void> setStatus(
+    String id,
+    TeamTaskStatus status, {
+    String? duplicateOfId,
+    String? subtaskId,
+  }) =>
+      _database.setTeamTaskStatus(id, status,
+          duplicateOfId: duplicateOfId, subtaskId: subtaskId);
 
   Future<void> setSubtaskDone(String id, String subtaskId, bool isDone) =>
       _database.setTeamSubtaskDone(id, subtaskId, isDone);
 
-  Future<void> addUpdate(String id, String text) => _database.addTeamTaskUpdate(id, text);
+  /// With [subtaskId], into that subtask's own log.
+  Future<void> addUpdate(String id, String text, {String? subtaskId}) =>
+      _database.addTeamTaskUpdate(id, text, subtaskId: subtaskId);
 
   Future<void> insertTopic(TaskTopic topic) => _database.insertTaskTopic(topic);
 

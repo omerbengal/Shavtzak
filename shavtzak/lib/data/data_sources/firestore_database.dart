@@ -2682,11 +2682,13 @@ class FirestoreDatabase implements DatabaseInterface {
     String id,
     TeamTaskStatus status, {
     String? duplicateOfId,
+    String? subtaskId,
   }) async {
     await _invokeMutation('teamTask.setStatus', payload: {
       'id': id,
       'status': status.key,
       'duplicateOfId': duplicateOfId,
+      if (subtaskId != null) 'subtaskId': subtaskId,
     });
   }
 
@@ -2697,8 +2699,12 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
-  Future<void> addTeamTaskUpdate(String id, String text) async {
-    await _invokeMutation('teamTask.addUpdate', payload: {'id': id, 'text': text});
+  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId}) async {
+    await _invokeMutation('teamTask.addUpdate', payload: {
+      'id': id,
+      'text': text,
+      if (subtaskId != null) 'subtaskId': subtaskId,
+    });
   }
 
   @override

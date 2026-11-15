@@ -26,10 +26,10 @@ void main() {
     TeamSubtask(
       id: 's1',
       title: 'הצעת מחיר',
-      assigneeId: 'm1',
+      assigneeIds: ['m1'],
       contacts: [StageContact(id: 'c1', name: 'רונית', phone: '050-1234567', role: 'אולם')],
     ),
-    TeamSubtask(id: 's2', title: 'חוזה', assigneeId: 'm2'),
+    TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
   ]).copyWith(owners: [dana, yossi]);
   final other = buildTeamTask(id: 'o', title: 'משימה מקורית', assigneeIds: ['m1'])
       .copyWith(owners: [dana]);
@@ -40,8 +40,8 @@ void main() {
   }
 
   testWidgets('status menu shows the five Hebrew labels', (tester) async {
-    await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
-    await openTask(tester, 't');
+    await pumpTeamTasks(tester, user: dana, board: board([other]));
+    await openTask(tester, 'o');
     await tester.tap(find.byKey(const Key('team-task-status')));
     await tester.pumpAndSettle();
     for (final label in ['פתוחה', 'בטיפול', 'בוצעה', 'לא רלוונטי/בוטל', 'כפילות']) {
@@ -80,7 +80,12 @@ void main() {
 
   testWidgets('owner can tick only their own subtask', (tester) async {
     final harness = await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
-    await openTask(tester, 't');
+    // Her subtask is her row; its contact is on its own screen, with the phone.
+    await openTask(tester, 's1');
+    expect(find.textContaining('רונית'), findsWidgets);
+    // The parent opens from the subtask's "תת-משימה של" line.
+    await tester.tap(find.byKey(const Key('team-task-kind')));
+    await tester.pumpAndSettle();
     final mineBox = tester.widget<Checkbox>(find.byKey(const Key('team-subtask-check-s1')));
     final theirsBox = tester.widget<Checkbox>(find.byKey(const Key('team-subtask-check-s2')));
     expect(mineBox.onChanged, isNotNull);
@@ -88,20 +93,18 @@ void main() {
     await tester.tap(find.byKey(const Key('team-subtask-check-s1')));
     await tester.pump();
     expect(harness.repository.calls, ['subtask:t:s1:true']);
-    // The subtask's contact is shown with its phone.
-    expect(find.textContaining('רונית'), findsWidgets);
   });
 
   testWidgets('adding an update shows it first', (tester) async {
-    final logged = withSubtasks.copyWith(updates: [
+    final logged = other.copyWith(updates: [
       TaskUpdateEntry(id: 'u0', text: 'ישן', at: DateTime(2026, 11, 2), byId: 'm1', byName: 'דנה'),
     ]);
     final harness = await pumpTeamTasks(tester, user: dana, board: board([logged]));
-    await openTask(tester, 't');
+    await openTask(tester, 'o');
     await tester.enterText(find.byKey(const Key('team-task-update-field')), 'סגרנו מחיר');
     await tester.tap(find.byKey(const Key('team-task-update-send')));
     await tester.pump();
-    expect(harness.repository.calls, ['log:t:סגרנו מחיר']);
+    expect(harness.repository.calls, ['log:o:סגרנו מחיר']);
     // The stream brings it back, newest first.
     await harness.deliver(
       tester,
@@ -150,8 +153,8 @@ void main() {
   });
 
   testWidgets('an owner sees no delete and no editing', (tester) async {
-    await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
-    await openTask(tester, 't');
+    await pumpTeamTasks(tester, user: dana, board: board([other]));
+    await openTask(tester, 'o');
     expect(find.byKey(const Key('team-task-delete')), findsNothing);
     expect(find.byKey(const Key('team-task-edit-title')), findsNothing);
   });
@@ -162,5 +165,44 @@ void main() {
     final panel = tester.getSize(find.byKey(const Key('team-task-panel')));
     expect(panel.width, lessThanOrEqualTo(960));
     expect(find.byKey(const Key('team-task-edit-title')), findsOneWidget);
+  });
+
+  testWidgets('a subtask opens in its own task screen: status and log go to it', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
+    await tester.tap(find.byKey(const Key('team-tab-all')));
+    await tester.pumpAndSettle();
+    await openTask(tester, 't');
+    expect(find.text('משימת אב'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('team-subtask-row-s1')));
+    await tester.tap(find.byKey(const Key('team-subtask-row-s1')));
+    await tester.pumpAndSettle();
+    expect(find.text('תת-משימה של: אולם'), findsOneWidget);
+    // A subtask has no subtasks of its own (the one found is the parent's,
+    // under it).
+    expect(find.byKey(const Key('team-task-add-subtask')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('team-task-status')).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')).last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('team-task-update-field')).last, 'ביקשתי הצעות');
+    await tester.tap(find.byKey(const Key('team-task-update-send')).last);
+    await tester.pumpAndSettle();
+    expect(harness.repository.calls, ['status:t/s1:inProgress', 'log:t/s1:ביקשתי הצעות']);
+  });
+
+  testWidgets('adding a first subtask to a task with owners asks first', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([other]));
+    await openTask(tester, 'o');
+    await tester.ensureVisible(find.byKey(const Key('team-task-add-subtask')));
+    await tester.tap(find.byKey(const Key('team-task-add-subtask')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('first-subtask-split')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'חוזה');
+    await tester.tap(find.byKey(const Key('new-team-task-save')));
+    await tester.pumpAndSettle();
+    final saved = harness.repository.updated.single;
+    expect(saved.subtasks.single.title, 'חוזה');
+    expect(saved.assigneeIds, isEmpty);
   });
 }

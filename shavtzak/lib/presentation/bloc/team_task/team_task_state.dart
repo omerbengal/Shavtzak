@@ -26,7 +26,8 @@ class TeamTasksLoaded extends TeamTaskState {
   /// Every task the viewer may see, with unconfirmed ticks and edits laid over.
   final List<TeamTask> all;
 
-  /// The tasks the viewer owns.
+  /// The viewer's rows of "המשימות שלי": the tasks without subtasks they own,
+  /// and each subtask they own as its own row ([myTeamTaskRows]).
   final List<TeamTask> mine;
 
   /// [all] / [mine] after [filter], grouped by link.
@@ -54,9 +55,15 @@ class TeamTasksLoaded extends TeamTaskState {
     this.members = const [],
   });
 
+  /// A task, or a subtask as a task of its own ([TeamTask.subtaskView]).
   TeamTask? taskById(String id) {
     for (final task in all) {
       if (task.id == id) return task;
+    }
+    for (final task in all) {
+      for (final subtask in task.subtasks) {
+        if (subtask.id == id) return TeamTask.subtaskView(task, subtask);
+      }
     }
     return null;
   }

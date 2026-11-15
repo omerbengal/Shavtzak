@@ -20,7 +20,7 @@ TeamTask buildTeamTask({
   final owners = ownerIds ??
       (subtasks.isEmpty
           ? assigneeIds
-          : subtasks.map((s) => s.assigneeId).whereType<String>().toSet().toList());
+          : {for (final s in subtasks) ...s.assigneeIds}.toList());
   return TeamTask(
     id: id,
     title: title,

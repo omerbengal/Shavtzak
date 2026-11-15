@@ -15,7 +15,8 @@ import '../../task/task_style.dart';
 import '../../task/widgets/confirm_delete_dialog.dart';
 import 'deadline_picker.dart';
 import 'task_link_picker.dart';
-import 'team_subtasks_editor.dart';
+import 'new_team_task_dialog.dart';
+import 'team_task_row.dart';
 import 'team_task_style.dart';
 
 /// Opens one task: a sheet from the bottom on a phone, a centred panel (at
@@ -92,10 +93,48 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     });
   }
 
+  /// The task a subtask view belongs to, as it stands now.
+  TeamTask? _parentOf(TeamTask view) {
+    final state = _bloc.state;
+    if (state is! TeamTasksLoaded || view.parentId == null) return null;
+    return state.all.where((t) => t.id == view.parentId).firstOrNull;
+  }
+
+  /// Saves a manager's edit. A subtask is saved through its parent: the
+  /// parent with this subtask's new fields.
   void _edit(TeamTask task) {
+    var toSave = task;
+    if (task.isSubtask) {
+      final parent = _parentOf(task);
+      if (parent == null) return;
+      final edited = task.toSubtask();
+      toSave = parent.copyWith(subtasks: [
+        for (final subtask in parent.subtasks) subtask.id == task.id ? edited : subtask,
+      ]);
+    }
     final completion = CrudActionCompleter();
-    _bloc.add(UpdateTeamTask(task, completion: completion));
+    _bloc.add(UpdateTeamTask(toSave, completion: completion));
     _report(completion);
+  }
+
+  /// "+ תת-משימה" on a saved task: the first one on a task with owners asks
+  /// first (Omer, round 2); then the subtask form, saved into the task.
+  Future<void> _addSubtask(TeamTask task) async {
+    if (task.subtasks.isEmpty && task.assigneeIds.isNotEmpty) {
+      final split = await confirmFirstSubtask(context);
+      if (!split || !mounted) return;
+    }
+    final subtask = await showSubtaskFormDialog(context, parentTitle: task.title);
+    if (subtask == null || !mounted) return;
+    // The task as it stands now: it may have changed while the form was open.
+    final state = _bloc.state;
+    final parent = (state is TeamTasksLoaded ? state.taskById(task.id) : null) ?? task;
+    final subtasks = [...parent.subtasks, subtask];
+    _edit(parent.copyWith(
+      subtasks: subtasks,
+      assigneeIds: const [],
+      ownerIds: teamTaskOwnerIds(parent.copyWith(subtasks: subtasks)),
+    ));
   }
 
   Future<void> _sendUpdate(TeamTask task) async {
@@ -103,7 +142,9 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     if (text.isEmpty) return;
     final completion = CrudActionCompleter();
     setState(() => _sending = true);
-    _bloc.add(AddTeamTaskUpdate(task.id, text, completion: completion));
+    _bloc.add(task.isSubtask
+        ? AddTeamTaskUpdate(task.parentId!, text, subtaskId: task.id, completion: completion)
+        : AddTeamTaskUpdate(task.id, text, completion: completion));
     final result = await completion.future;
     if (!mounted) return;
     setState(() => _sending = false);
@@ -123,15 +164,31 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       if (original == null) return;
     }
     final completion = CrudActionCompleter();
-    _bloc.add(SetTeamTaskStatus(task.id, status, duplicateOfId: original, completion: completion));
+    _bloc.add(task.isSubtask
+        ? SetTeamTaskStatus(task.parentId!, status,
+            subtaskId: task.id, duplicateOfId: original, completion: completion)
+        : SetTeamTaskStatus(task.id, status, duplicateOfId: original, completion: completion));
     _report(completion);
   }
 
   Future<String?> _pickOriginal(TeamTasksLoaded state, TeamTask task) {
-    final others = state.all
-        .where((t) => t.id != task.id && t.status != TeamTaskStatus.duplicate)
-        .toList()
-      ..sort((a, b) => a.title.compareTo(b.title));
+    // A subtask may duplicate one of its sister subtasks (listed first) or
+    // another task.
+    final parent = _parentOf(task);
+    final sisters = [
+      if (parent != null)
+        for (final subtask in parent.subtasks)
+          if (subtask.id != task.id && subtask.status != TeamTaskStatus.duplicate)
+            TeamTask.subtaskView(parent, subtask),
+    ];
+    final others = [
+      ...sisters,
+      ...state.all
+          .where((t) =>
+              t.id != task.id && t.id != task.parentId && t.status != TeamTaskStatus.duplicate)
+          .toList()
+        ..sort((a, b) => a.title.compareTo(b.title)),
+    ];
     return showDialog<String>(
       context: context,
       builder: (context) => Directionality(
@@ -150,7 +207,9 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                           key: Key('duplicate-original-${other.id}'),
                           dense: true,
                           title: Text(other.title),
-                          subtitle: Text(teamTaskLinkLabel(other)),
+                          subtitle: Text(other.isSubtask
+                              ? 'תת-משימה של ${other.parentTitle}'
+                              : teamTaskLinkLabel(other)),
                           onTap: () => Navigator.of(context).pop(other.id),
                         ),
                     ],
@@ -168,6 +227,31 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
   }
 
   Future<void> _delete(TeamTask task) {
+    if (task.isSubtask) {
+      return showConfirmDeleteDialog(
+        context,
+        title: 'מחיקת תת-משימה',
+        message: 'למחוק את "${task.title}" לגמרי? אפשר במקום זה לסמן "לא רלוונטי/בוטל".',
+        keyPrefix: 'team-task-delete',
+        onDelete: () {
+          final parent = _parentOf(task);
+          if (parent == null) return Future.value(const CrudActionResult.success());
+          final subtasks = [
+            for (final subtask in parent.subtasks)
+              if (subtask.id != task.id) subtask,
+          ];
+          final completion = CrudActionCompleter();
+          _bloc.add(UpdateTeamTask(
+            parent.copyWith(
+              subtasks: subtasks,
+              ownerIds: teamTaskOwnerIds(parent.copyWith(subtasks: subtasks)),
+            ),
+            completion: completion,
+          ));
+          return completion.future;
+        },
+      );
+    }
     return showConfirmDeleteDialog(
       context,
       title: 'מחיקת משימה',
@@ -242,16 +326,20 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
-                _section('שיוך', _linkValue(state, task, manage)),
+                // A subtask belongs where its parent does.
+                _section('שיוך', _linkValue(state, task, manage && !task.isSubtask)),
                 _section('סטטוס', _statusValue(state, task, manage || owner)),
                 _section('דד ליין', _deadlineValue(state, task, manage, late)),
                 _section('תיאור', _descriptionValue(task, manage)),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
                 _section('אנשי קשר', _contactsValue(task, manage)),
-                _section(
-                  task.subtasks.isEmpty ? 'תתי-משימות' : 'תתי-משימות (${task.doneSubtasks}/${task.subtasks.length})',
-                  _subtasksValue(task, manage, viewerId, activeMembers),
-                ),
+                if (!task.isSubtask)
+                  _section(
+                    task.subtasks.isEmpty
+                        ? 'תתי-משימות'
+                        : 'תתי-משימות (${task.doneSubtasks}/${task.subtasks.length})',
+                    _subtasksValue(task, manage, viewerId),
+                  ),
                 _section('יומן עדכונים', _log(task, manage || owner)),
                 if (manage) ...[
                   const SizedBox(height: 16),
@@ -262,7 +350,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                       style: TextButton.styleFrom(foregroundColor: TaskStyle.delete),
                       onPressed: () => _delete(task),
                       icon: const Icon(Icons.delete_outline),
-                      label: const Text('מחיקת המשימה'),
+                      label: Text(task.isSubtask ? 'מחיקת תת-המשימה' : 'מחיקת המשימה'),
                     ),
                   ),
                 ],
@@ -279,12 +367,39 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       task.title,
       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
     );
+    // What this card is: a parent of subtasks, or a subtask (and of what).
+    final kind = task.isSubtask
+        ? 'תת-משימה של: ${task.parentTitle}'
+        : (task.subtasks.isNotEmpty ? 'משימת אב' : null);
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
           Expanded(
-            child: manage
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (kind != null)
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(start: 8, top: 4),
+                    // A subtask's line opens its parent (a subtask owner
+                    // reaches the parent only from here).
+                    child: InkWell(
+                      key: const Key('team-task-kind'),
+                      onTap: task.isSubtask
+                          ? () => showTeamTaskSheet(context, task.parentId!)
+                          : null,
+                      child: Text(
+                        kind,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: task.isSubtask ? TaskStyle.edit : TaskStyle.neutralText,
+                          decoration: task.isSubtask ? TextDecoration.underline : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                manage
                 ? EditableValue<String>(
                     key: const Key('team-task-edit-title'),
                     value: task.title,
@@ -300,6 +415,8 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                     onCommit: (value) => _edit(task.copyWith(title: value.trim())),
                   )
                 : Padding(padding: const EdgeInsets.all(8), child: title),
+              ],
+            ),
           ),
           IconButton(
             key: const Key('team-task-close'),
@@ -544,17 +661,38 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     );
   }
 
-  Widget _subtasksValue(
-    TeamTask task,
-    bool manage,
-    String viewerId,
-    List<TeamMember> activeMembers,
-  ) {
+  /// The subtasks as rows like the list's (status, deadline, owners), each
+  /// opening its own task screen; a tick marks one done at once. A manager
+  /// adds one with "+ תת-משימה".
+  Widget _subtasksValue(TeamTask task, bool manage, String viewerId) {
+    final now = DateTime.now();
     final rows = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final subtask in task.subtasks)
-          _subtaskRow(task, subtask, manage || subtask.assigneeId == viewerId, viewerId),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                key: Key('team-subtask-check-${subtask.id}'),
+                value: subtask.isDone,
+                onChanged: manage || subtask.assigneeIds.contains(viewerId)
+                    ? (value) =>
+                        _bloc.add(ToggleTeamSubtask(task.id, subtask.id, value ?? false))
+                    : null,
+              ),
+              Expanded(
+                child: TeamTaskRow(
+                  key: Key('team-subtask-row-${subtask.id}'),
+                  task: TeamTask.subtaskView(task, subtask),
+                  now: now,
+                  viewerId: viewerId,
+                  nested: true,
+                  onTap: () => showTeamTaskSheet(context, subtask.id),
+                ),
+              ),
+            ],
+          ),
       ],
     );
     if (!manage) {
@@ -568,86 +706,14 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
         rows,
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: EditableValue<List<TeamSubtask>>(
-            key: const Key('team-task-edit-subtasks'),
-            value: task.subtasks,
-            expand: false,
-            display: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.edit_note, size: 18, color: TaskStyle.edit),
-                const SizedBox(width: 4),
-                Text(
-                  task.subtasks.isEmpty ? 'הוספת תתי-משימות' : 'עריכת תתי-משימות',
-                  style: const TextStyle(color: TaskStyle.edit),
-                ),
-              ],
-            ),
-            sheetTitle: 'תתי-משימות',
-            wide: widget.wide,
-            inDialog: true,
-            editor: (context, draft, onChanged, onSubmit) => TeamSubtasksEditor(
-              initial: draft,
-              members: activeMembers,
-              onChanged: onChanged,
-            ),
-            onCommit: (subtasks) => _edit(task.copyWith(subtasks: subtasks)),
+          child: TextButton.icon(
+            key: const Key('team-task-add-subtask'),
+            onPressed: () => _addSubtask(task),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('תת-משימה'),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _subtaskRow(TeamTask task, TeamSubtask subtask, bool canTick, String viewerId) {
-    final owner = subtask.assigneeId == null
-        ? null
-        : (subtask.assignee?.name ?? unknownMemberLabel);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Checkbox(
-            key: Key('team-subtask-check-${subtask.id}'),
-            value: subtask.isDone,
-            onChanged: canTick
-                ? (value) => _bloc.add(ToggleTeamSubtask(task.id, subtask.id, value ?? false))
-                : null,
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        subtask.title,
-                        style: TextStyle(
-                          fontSize: TaskStyle.subtaskSize,
-                          decoration: subtask.isDone ? TextDecoration.lineThrough : null,
-                          color: subtask.isDone ? TaskStyle.faintText : null,
-                        ),
-                      ),
-                      if (owner != null)
-                        MemberNameChip(
-                          name: owner,
-                          permanent: subtask.assignee?.isPermanent ?? false,
-                          highlight: subtask.assigneeId == viewerId,
-                        ),
-                    ],
-                  ),
-                  if (subtask.contacts.isNotEmpty)
-                    _contactLines(subtask.contacts, 'team-subtask-contact-${subtask.id}'),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

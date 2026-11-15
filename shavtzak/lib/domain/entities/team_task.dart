@@ -66,45 +66,85 @@ class TaskLink extends Equatable {
   List<Object?> get props => [type, id];
 }
 
-/// A step of a team task, with its own owner ([assigneeId]) and contacts.
+/// A subtask: a task of its own nested in its parent (Omer, round 2), with
+/// a title, description, owners, contacts, a deadline, the five statuses and
+/// its own update log. It has no link (its parent's) and no subtasks.
 class TeamSubtask extends Equatable {
   final String id;
   final String title;
-  final bool isDone;
-  final String? assigneeId;
+  final String description;
+  final List<String> assigneeIds;
   final List<StageContact> contacts;
 
-  /// Joined by the repository; null when there is no owner or the member is
-  /// no longer on the team.
-  final TeamMember? assignee;
+  /// `yyyy-MM-dd`, or null for no deadline.
+  final String? deadline;
+  final TeamTaskStatus status;
+  final String? duplicateOfId;
+
+  /// Newest first.
+  final List<TaskUpdateEntry> updates;
+  final DateTime? completedAt;
+
+  /// The members behind [assigneeIds] still on the team, joined by the
+  /// repository.
+  final List<TeamMember> assignees;
 
   const TeamSubtask({
     required this.id,
     required this.title,
-    this.isDone = false,
-    this.assigneeId,
+    this.description = '',
+    this.assigneeIds = const [],
     this.contacts = const [],
-    this.assignee,
+    this.deadline,
+    this.status = TeamTaskStatus.open,
+    this.duplicateOfId,
+    this.updates = const [],
+    this.completedAt,
+    this.assignees = const [],
   });
+
+  bool get isDone => status == TeamTaskStatus.done;
 
   TeamSubtask copyWith({
     String? title,
-    bool? isDone,
-    String? Function()? assigneeId,
+    String? description,
+    List<String>? assigneeIds,
     List<StageContact>? contacts,
-    TeamMember? Function()? assignee,
+    String? Function()? deadline,
+    TeamTaskStatus? status,
+    String? Function()? duplicateOfId,
+    List<TaskUpdateEntry>? updates,
+    DateTime? Function()? completedAt,
+    List<TeamMember>? assignees,
   }) =>
       TeamSubtask(
         id: id,
         title: title ?? this.title,
-        isDone: isDone ?? this.isDone,
-        assigneeId: assigneeId != null ? assigneeId() : this.assigneeId,
+        description: description ?? this.description,
+        assigneeIds: assigneeIds ?? this.assigneeIds,
         contacts: contacts ?? this.contacts,
-        assignee: assignee != null ? assignee() : this.assignee,
+        deadline: deadline != null ? deadline() : this.deadline,
+        status: status ?? this.status,
+        duplicateOfId: duplicateOfId != null ? duplicateOfId() : this.duplicateOfId,
+        updates: updates ?? this.updates,
+        completedAt: completedAt != null ? completedAt() : this.completedAt,
+        assignees: assignees ?? this.assignees,
       );
 
   @override
-  List<Object?> get props => [id, title, isDone, assigneeId, contacts, assignee];
+  List<Object?> get props => [
+        id,
+        title,
+        description,
+        assigneeIds,
+        contacts,
+        deadline,
+        status,
+        duplicateOfId,
+        updates,
+        completedAt,
+        assignees,
+      ];
 }
 
 /// One entry of a task's update log ("יומן עדכונים").
@@ -167,6 +207,13 @@ class TeamTask extends Equatable {
   /// The members behind [ownerIds] still on the team, in that order.
   final List<TeamMember> owners;
 
+  /// Set only on a subtask shown as a task ([TeamTask.subtaskView]): its
+  /// parent's id and title. Never stored.
+  final String? parentId;
+  final String? parentTitle;
+
+  bool get isSubtask => parentId != null;
+
   const TeamTask({
     required this.id,
     required this.title,
@@ -188,7 +235,51 @@ class TeamTask extends Equatable {
     this.category,
     this.topic,
     this.owners = const [],
+    this.parentId,
+    this.parentTitle,
   });
+
+  /// Subtask [subtask] of [parent] as a task of its own, so the list and the
+  /// task screen show it with the same widgets: the parent's link (and joined
+  /// target), the subtask's fields, [parentId] / [parentTitle] set.
+  factory TeamTask.subtaskView(TeamTask parent, TeamSubtask subtask) => TeamTask(
+        id: subtask.id,
+        title: subtask.title,
+        description: subtask.description,
+        link: parent.link,
+        assigneeIds: subtask.assigneeIds,
+        contacts: subtask.contacts,
+        deadline: subtask.deadline,
+        status: subtask.status,
+        duplicateOfId: subtask.duplicateOfId,
+        updates: subtask.updates,
+        ownerIds: subtask.assigneeIds,
+        completedAt: subtask.completedAt,
+        createdAt: parent.createdAt,
+        createdById: parent.createdById,
+        updatedAt: parent.updatedAt,
+        event: parent.event,
+        category: parent.category,
+        topic: parent.topic,
+        owners: subtask.assignees,
+        parentId: parent.id,
+        parentTitle: parent.title,
+      );
+
+  /// The subtask this view stands for, with the fields a manager edits.
+  TeamSubtask toSubtask() => TeamSubtask(
+        id: id,
+        title: title,
+        description: description,
+        assigneeIds: assigneeIds,
+        contacts: contacts,
+        deadline: deadline,
+        status: status,
+        duplicateOfId: duplicateOfId,
+        updates: updates,
+        completedAt: completedAt,
+        assignees: owners,
+      );
 
   /// [deadline] as a local date, or null.
   DateTime? get deadlineDate {
@@ -245,6 +336,8 @@ class TeamTask extends Equatable {
         category: category != null ? category() : this.category,
         topic: topic != null ? topic() : this.topic,
         owners: owners ?? this.owners,
+        parentId: parentId,
+        parentTitle: parentTitle,
       );
 
   @override
@@ -269,5 +362,7 @@ class TeamTask extends Equatable {
         category,
         topic,
         owners,
+        parentId,
+        parentTitle,
       ];
 }

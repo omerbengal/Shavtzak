@@ -64,7 +64,8 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     on<DeleteTeamTask>((event, emit) =>
         _send(event.completion, () => _repository.deleteTask(event.id)));
     on<AddTeamTaskUpdate>((event, emit) =>
-        _send(event.completion, () => _repository.addUpdate(event.id, event.text)));
+        _send(event.completion,
+            () => _repository.addUpdate(event.id, event.text, subtaskId: event.subtaskId)));
     on<CreateTaskTopic>((event, emit) =>
         _send(event.completion, () => _repository.insertTopic(event.topic)));
     on<UpdateTaskTopic>((event, emit) =>
@@ -135,7 +136,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         (_pending[task.id] ?? const <_Pending>[])
             .fold<TeamTask>(task, (value, change) => change.apply(value)),
     ];
-    final mine = all.where((task) => isTeamTaskOwner(task, viewer.id)).toList();
+    final mine = myTeamTaskRows(all, viewer.id);
     final now = _clock();
     final eventCategoryById = {for (final e in board.events) e.id: e.categoryId};
     emit(TeamTasksLoaded(
@@ -200,15 +201,26 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         description: edited.description,
         link: () => edited.link,
         assigneeIds: edited.subtasks.isEmpty ? edited.assigneeIds : const [],
+        // A subtask keeps its live status and log; an edit only brings what
+        // a manager edits (as the backend does).
         subtasks: [
           for (final subtask in edited.subtasks)
-            subtask.copyWith(
-              isDone: task.subtasks
-                      .where((old) => old.id == subtask.id)
-                      .firstOrNull
-                      ?.isDone ??
-                  false,
-            ),
+            if (task.subtasks.where((old) => old.id == subtask.id).firstOrNull
+                case final old?)
+              old.copyWith(
+                title: subtask.title,
+                description: subtask.description,
+                assigneeIds: subtask.assigneeIds,
+                contacts: subtask.contacts,
+                deadline: () => subtask.deadline,
+              )
+            else
+              subtask.copyWith(
+                status: TeamTaskStatus.open,
+                duplicateOfId: () => null,
+                updates: const [],
+                completedAt: () => null,
+              ),
         ],
         contacts: edited.contacts,
         deadline: () => edited.deadline,
@@ -223,12 +235,16 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
   Future<void> _onStatus(SetTeamTaskStatus event, Emitter<TeamTaskState> emit) {
     return _optimistic(
       event.id,
-      (task) => task.copyWith(
-        status: event.status,
-        duplicateOfId: () =>
-            event.status == TeamTaskStatus.duplicate ? event.duplicateOfId : null,
-      ),
-      () => _repository.setStatus(event.id, event.status, duplicateOfId: event.duplicateOfId),
+      (task) => event.subtaskId != null
+          ? withSubtaskStatus(task, event.subtaskId!, event.status,
+              duplicateOfId: event.duplicateOfId)
+          : task.copyWith(
+              status: event.status,
+              duplicateOfId: () =>
+                  event.status == TeamTaskStatus.duplicate ? event.duplicateOfId : null,
+            ),
+      () => _repository.setStatus(event.id, event.status,
+          duplicateOfId: event.duplicateOfId, subtaskId: event.subtaskId),
       event.completion,
       emit,
     );
@@ -254,7 +270,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     final members = {
       for (final member in task.owners) member.id: member,
       for (final subtask in task.subtasks)
-        if (subtask.assignee != null) subtask.assignee!.id: subtask.assignee!,
+        for (final member in subtask.assignees) member.id: member,
       for (final member in board.members) member.id: member,
     };
     final link = task.link;
@@ -263,7 +279,8 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       subtasks: [
         for (final subtask in task.subtasks)
           subtask.copyWith(
-            assignee: () => subtask.assigneeId == null ? null : members[subtask.assigneeId],
+            assignees:
+                subtask.assigneeIds.map((id) => members[id]).whereType<TeamMember>().toList(),
           ),
       ],
       event: () => link?.type == TaskLinkType.event
@@ -278,9 +295,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     );
   }
 
-  static List<String> _ownerIds(TeamTask task) => task.subtasks.isEmpty
-      ? task.assigneeIds
-      : task.subtasks.map((s) => s.assigneeId).whereType<String>().toSet().toList();
+  static List<String> _ownerIds(TeamTask task) => teamTaskOwnerIds(task);
 
   @override
   Future<void> close() async {

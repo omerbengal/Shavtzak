@@ -613,11 +613,18 @@ abstract class DatabaseInterface {
 
   Future<void> deleteTeamTask(String id);
 
-  Future<void> setTeamTaskStatus(String id, TeamTaskStatus status, {String? duplicateOfId});
+  /// With [subtaskId], the status of that subtask of task [id].
+  Future<void> setTeamTaskStatus(
+    String id,
+    TeamTaskStatus status, {
+    String? duplicateOfId,
+    String? subtaskId,
+  });
 
   Future<void> setTeamSubtaskDone(String id, String subtaskId, bool isDone);
 
-  Future<void> addTeamTaskUpdate(String id, String text);
+  /// With [subtaskId], into that subtask's own log.
+  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId});
 
   /// The topics list (utilities/Lists, TaskTopics), archived ones included.
   Stream<List<TaskTopic>> watchTaskTopics();

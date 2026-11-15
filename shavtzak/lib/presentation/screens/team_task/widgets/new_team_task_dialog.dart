@@ -14,14 +14,15 @@ import '../../task/task_style.dart';
 import '../../task/widgets/discard_changes_dialog.dart';
 import 'deadline_picker.dart';
 import 'task_link_picker.dart';
-import 'team_subtasks_editor.dart';
 import 'team_task_style.dart';
 
 /// "+ משימה חדשה": the whole task, before it exists, in the shape of the
 /// דו יומי task form: title, description, what it belongs to, deadline,
-/// owners (an in-place dropdown with a search), contacts and subtasks (each
-/// with its owner and contacts). A task with subtasks has no owners of its
-/// own: theirs are its owners, so the owners field steps aside.
+/// owners (an in-place dropdown with a search), contacts and subtasks. A
+/// subtask is a task of its own: "+ תת-משימה" opens this same form for it
+/// ([showSubtaskFormDialog]). A task with subtasks has no owners of its own
+/// (theirs are its owners), so the owners field steps aside and the title
+/// reads "משימת אב חדשה".
 ///
 /// Returns the new task's id, or null when cancelled.
 Future<String?> showNewTeamTaskDialog(BuildContext context, {TaskLink? link}) {
@@ -32,32 +33,94 @@ Future<String?> showNewTeamTaskDialog(BuildContext context, {TaskLink? link}) {
       value: context.read<TeamTaskBloc>(),
       child: Directionality(
         textDirection: TextDirection.rtl,
-        child: _NewTeamTaskDialog(initialLink: link),
+        child: _TeamTaskForm(initialLink: link),
       ),
     ),
   );
 }
 
-class _NewTeamTaskDialog extends StatefulWidget {
-  const _NewTeamTaskDialog({this.initialLink});
+/// The task form for one subtask of task "[parentTitle]": a new one, or
+/// [initial] to edit. The same fields as a task, without the link (the
+/// parent's) and without subtasks. Nothing is saved here: the subtask comes
+/// back to the caller, null when cancelled.
+Future<TeamSubtask?> showSubtaskFormDialog(
+  BuildContext context, {
+  required String parentTitle,
+  TeamSubtask? initial,
+}) {
+  return showDialog<TeamSubtask>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => BlocProvider.value(
+      value: context.read<TeamTaskBloc>(),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: _TeamTaskForm(subtaskOf: parentTitle, initialSubtask: initial),
+      ),
+    ),
+  );
+}
+
+/// Asks what to do when a task that has owners gets its first subtask
+/// (Omer, round 2): a task with subtasks has no owners of its own. True =
+/// create subtasks and remove the task's owners; false / null = keep it one
+/// task.
+Future<bool> confirmFirstSubtask(BuildContext context) async {
+  final split = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('למשימה יש אחראים'),
+        content: const Text(
+          'למשימה עם תתי-משימות אין אחראים משלה: האחראים הם האחראים על תתי-המשימות.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('first-subtask-keep'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('להשאיר כמשימה אחת'),
+          ),
+          FilledButton(
+            key: const Key('first-subtask-split'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('ליצור תתי-משימות ולהסיר את האחראים'),
+          ),
+        ],
+      ),
+    ),
+  );
+  return split ?? false;
+}
+
+class _TeamTaskForm extends StatefulWidget {
+  const _TeamTaskForm({this.initialLink, this.subtaskOf, this.initialSubtask});
 
   final TaskLink? initialLink;
 
+  /// Set = the form of a subtask of the task with this title.
+  final String? subtaskOf;
+  final TeamSubtask? initialSubtask;
+
+  bool get isSubtask => subtaskOf != null;
+
   @override
-  State<_NewTeamTaskDialog> createState() => _NewTeamTaskDialogState();
+  State<_TeamTaskForm> createState() => _TeamTaskFormState();
 }
 
-class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
+class _TeamTaskFormState extends State<_TeamTaskForm> {
   // Chosen once per form, so saving again after a failure sends the same task.
-  final String _id = const Uuid().v4();
-  final TextEditingController _title = TextEditingController();
-  final TextEditingController _description = TextEditingController();
+  late final String _id = widget.initialSubtask?.id ?? const Uuid().v4();
+  late final TextEditingController _title =
+      TextEditingController(text: widget.initialSubtask?.title ?? '');
+  late final TextEditingController _description =
+      TextEditingController(text: widget.initialSubtask?.description ?? '');
   late TaskLink? _link = widget.initialLink;
-  DateTime? _deadline;
-  List<String> _owners = const [];
+  late DateTime? _deadline = _parseDate(widget.initialSubtask?.deadline);
+  late List<String> _owners = widget.initialSubtask?.assigneeIds ?? const [];
   bool _ownersOpen = false;
-  List<StageContact> _contacts = const [];
-  bool _showContacts = false;
+  late List<StageContact> _contacts = widget.initialSubtask?.contacts ?? const [];
+  late bool _showContacts = _contacts.isNotEmpty;
   List<TeamSubtask> _subtasks = const [];
   String? _titleError;
   String? _error;
@@ -70,14 +133,68 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
     super.dispose();
   }
 
-  bool get _hasChanges =>
-      _title.text.trim().isNotEmpty ||
-      _description.text.trim().isNotEmpty ||
-      _link != widget.initialLink ||
-      _deadline != null ||
-      _owners.isNotEmpty ||
-      _contacts.isNotEmpty ||
-      _subtasks.isNotEmpty;
+  static DateTime? _parseDate(String? key) {
+    if (key == null) return null;
+    final parts = key.split('-');
+    if (parts.length != 3) return null;
+    return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+  }
+
+  bool get _hasChanges {
+    final initial = widget.initialSubtask;
+    if (initial != null) {
+      return _title.text.trim() != initial.title ||
+          _description.text.trim() != initial.description ||
+          (_deadline == null ? null : dateKey(_deadline!)) != initial.deadline ||
+          !_sameList(_owners, initial.assigneeIds) ||
+          _contacts != initial.contacts;
+    }
+    return _title.text.trim().isNotEmpty ||
+        _description.text.trim().isNotEmpty ||
+        _link != widget.initialLink ||
+        _deadline != null ||
+        _owners.isNotEmpty ||
+        _contacts.isNotEmpty ||
+        _subtasks.isNotEmpty;
+  }
+
+  static bool _sameList(List<String> a, List<String> b) =>
+      a.length == b.length && a.toSet().containsAll(b);
+
+  String get _heading {
+    if (widget.isSubtask) {
+      return widget.initialSubtask == null ? 'תת-משימה חדשה' : 'עריכת תת-משימה';
+    }
+    return _subtasks.isEmpty ? 'משימה חדשה' : 'משימת אב חדשה';
+  }
+
+  Future<void> _addSubtask() async {
+    if (_subtasks.isEmpty && _owners.isNotEmpty) {
+      final split = await confirmFirstSubtask(context);
+      if (!split || !mounted) return;
+      setState(() {
+        _owners = const [];
+        _ownersOpen = false;
+      });
+    }
+    final subtask = await showSubtaskFormDialog(
+      context,
+      parentTitle: _title.text.trim(),
+    );
+    if (subtask != null && mounted) setState(() => _subtasks = [..._subtasks, subtask]);
+  }
+
+  Future<void> _editSubtask(TeamSubtask subtask) async {
+    final edited = await showSubtaskFormDialog(
+      context,
+      parentTitle: _title.text.trim(),
+      initial: subtask,
+    );
+    if (edited == null || !mounted) return;
+    setState(() => _subtasks = [
+          for (final s in _subtasks) s.id == edited.id ? edited : s,
+        ]);
+  }
 
   Future<void> _cancel() async {
     if (!_hasChanges) {
@@ -94,15 +211,27 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
       setState(() => _titleError = 'חובה להזין כותרת');
       return;
     }
-    final contacts = [..._contacts, for (final s in _subtasks) ...s.contacts];
-    if (contacts.any((c) => c.name.trim().isEmpty)) {
+    if (_contacts.any((c) => c.name.trim().isEmpty)) {
       setState(() => _error = 'לכל איש קשר נדרש שם');
+      return;
+    }
+    if (widget.isSubtask) {
+      final base = widget.initialSubtask ?? TeamSubtask(id: _id, title: title);
+      final members = {for (final m in state.members) m.id: m};
+      Navigator.of(context).pop(base.copyWith(
+        title: title,
+        description: _description.text.trim(),
+        assigneeIds: _owners,
+        assignees: _owners.map((id) => members[id]).whereType<TeamMember>().toList(),
+        contacts: _contacts,
+        deadline: () => _deadline == null ? null : dateKey(_deadline!),
+      ));
       return;
     }
     final now = DateTime.now();
     final owners = _subtasks.isEmpty
         ? _owners
-        : _subtasks.map((s) => s.assigneeId).whereType<String>().toSet().toList();
+        : {for (final s in _subtasks) ...s.assigneeIds}.toList();
     final task = TeamTask(
       id: _id,
       title: title,
@@ -159,7 +288,19 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-                child: Text('משימה חדשה', style: theme.textTheme.titleLarge),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_heading,
+                        key: const Key('new-team-task-heading'),
+                        style: theme.textTheme.titleLarge),
+                    if (widget.isSubtask && widget.subtaskOf!.isNotEmpty)
+                      Text(
+                        'של המשימה: ${widget.subtaskOf}',
+                        style: const TextStyle(color: TaskStyle.neutralText),
+                      ),
+                  ],
+                ),
               ),
               Flexible(
                 child: AbsorbPointer(
@@ -201,8 +342,10 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
                             onChanged: (_) => setState(() {}),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        _linkField(state),
+                        if (!widget.isSubtask) ...[
+                          const SizedBox(height: 16),
+                          _linkField(state),
+                        ],
                         const SizedBox(height: 16),
                         _deadlineField(state),
                         if (_subtasks.isEmpty) ...[
@@ -211,20 +354,10 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
                         ],
                         const SizedBox(height: 20),
                         _contactsSection(theme),
-                        const SizedBox(height: 20),
-                        Text('תתי-משימות', style: theme.textTheme.titleSmall),
-                        if (_subtasks.isNotEmpty)
-                          const Text(
-                            'במשימה עם תתי-משימות, האחראים הם האחראים על תתי-המשימות',
-                            style: TextStyle(fontSize: 12, color: TaskStyle.faintText),
-                          ),
-                        const SizedBox(height: 4),
-                        TeamSubtasksEditor(
-                          initial: const [],
-                          members: active,
-                          startWithLine: false,
-                          onChanged: (subtasks) => setState(() => _subtasks = subtasks),
-                        ),
+                        if (!widget.isSubtask) ...[
+                          const SizedBox(height: 20),
+                          _subtasksSection(theme),
+                        ],
                       ],
                     ),
                   ),
@@ -259,7 +392,7 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
                               width: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('שמירה'),
+                          : Text(widget.isSubtask ? 'אישור' : 'שמירה'),
                     ),
                   ],
                 ),
@@ -400,7 +533,7 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
         const SizedBox(height: 4),
         if (_showContacts)
           ContactsEditor(
-            initial: const [],
+            initial: _contacts,
             onChanged: (contacts) => setState(() => _contacts = contacts),
           )
         else
@@ -414,6 +547,114 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
             ),
           ),
       ],
+    );
+  }
+
+  /// The subtasks so far, each a row like a task's (owners, deadline): a tap
+  /// opens it in the subtask form, ✕ removes it; "+ תת-משימה" adds one.
+  Widget _subtasksSection(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('תתי-משימות', style: theme.textTheme.titleSmall),
+        if (_subtasks.isNotEmpty)
+          const Text(
+            'במשימה עם תתי-משימות, האחראים הם האחראים על תתי-המשימות',
+            style: TextStyle(fontSize: 12, color: TaskStyle.faintText),
+          ),
+        const SizedBox(height: 4),
+        for (final (i, subtask) in _subtasks.indexed)
+          SubtaskSummaryTile(
+            key: Key('new-team-subtask-$i'),
+            subtask: subtask,
+            onTap: () => _editSubtask(subtask),
+            onRemove: () => setState(() => _subtasks = [
+                  for (final s in _subtasks)
+                    if (s.id != subtask.id) s,
+                ]),
+          ),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            key: const Key('new-team-task-add-subtask'),
+            onPressed: _addSubtask,
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('תת-משימה'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One subtask in a form: title, owners and deadline; a tap edits it.
+class SubtaskSummaryTile extends StatelessWidget {
+  const SubtaskSummaryTile({
+    super.key,
+    required this.subtask,
+    required this.onTap,
+    this.onRemove,
+  });
+
+  final TeamSubtask subtask;
+  final VoidCallback onTap;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final deadline = subtask.deadline;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(subtask.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (deadline != null)
+                          Text(
+                            fullDate(DateTime.parse(deadline)),
+                            style: const TextStyle(
+                              fontSize: TaskStyle.rowMetaSize,
+                              color: TaskStyle.neutralText,
+                            ),
+                          ),
+                        for (final member in subtask.assignees)
+                          MemberNameChip(name: member.name, permanent: member.isPermanent),
+                        if (subtask.assignees.isEmpty)
+                          const Text(
+                            'אין אחראים',
+                            style: TextStyle(
+                              fontSize: TaskStyle.rowMetaSize,
+                              color: TaskStyle.faintText,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (onRemove != null)
+                IconButton(
+                  tooltip: 'הסרה',
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: onRemove,
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

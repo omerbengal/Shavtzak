@@ -55,9 +55,9 @@ void main() {
     expect(task.description, 'לחנוכה');
     expect(task.link, const TaskLink(TaskLinkType.topic, 'p1'));
     expect(task.subtasks.first.isDone, isTrue);
-    expect(task.subtasks.first.assigneeId, 'a');
+    expect(task.subtasks.first.assigneeIds, ['a']);
     expect(task.subtasks.first.contacts.single.role, 'מנהל אולם');
-    expect(task.subtasks.last.assigneeId, isNull);
+    expect(task.subtasks.last.assigneeIds, isEmpty);
     expect(task.contacts.single,
         const StageContact(id: 'c1', name: 'רונית', role: 'אולם', phone: '050-2'));
     expect(task.status, TeamTaskStatus.duplicate);
@@ -78,12 +78,21 @@ void main() {
       {
         'id': 's1',
         'title': 'מחיר',
-        'assigneeId': 'a',
+        'description': '',
+        'assigneeIds': ['a'],
         'contacts': [
           {'id': 'c2', 'name': 'משה', 'phone': '050-1', 'role': 'מנהל אולם'},
         ],
+        'deadline': null,
       },
-      {'id': 's2', 'title': 'חוזה', 'assigneeId': null, 'contacts': <Object>[]},
+      {
+        'id': 's2',
+        'title': 'חוזה',
+        'description': '',
+        'assigneeIds': <String>[],
+        'contacts': <Object>[],
+        'deadline': null,
+      },
     ]);
     expect(payload['contacts'], [
       {'id': 'c1', 'name': 'רונית', 'phone': '050-2', 'role': 'אולם'},
@@ -129,5 +138,32 @@ void main() {
     expect(topics.map((t) => t.id), ['a', 'b']);
     expect(topics.first.isArchived, isTrue);
     expect(topics.last.toJson()['name'], 'כללי');
+  });
+
+  test('a subtask reads as a full task: description, owners, deadline, status, log', () {
+    final task = TeamTaskModel.fromMap('t1', {
+      'title': 'x',
+      'subtasks': [
+        {
+          'id': 's1',
+          'title': 'מחיר',
+          'description': 'שלוש הצעות',
+          'assigneeIds': ['a', 'b'],
+          'deadline': '2026-11-30',
+          'status': 'duplicate',
+          'duplicateOfId': 's2',
+          'updates': [
+            {'id': 'u1', 'text': 'ביקשתי', 'at': Timestamp.fromDate(DateTime(2026, 11, 15)), 'byId': 'a'},
+          ],
+        },
+      ],
+    });
+    final sub = task.subtasks.single;
+    expect(sub.description, 'שלוש הצעות');
+    expect(sub.assigneeIds, ['a', 'b']);
+    expect(sub.deadline, '2026-11-30');
+    expect(sub.status, TeamTaskStatus.duplicate);
+    expect(sub.duplicateOfId, 's2');
+    expect(sub.updates.single.text, 'ביקשתי');
   });
 }

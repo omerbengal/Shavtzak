@@ -45,8 +45,10 @@ class TeamTaskModel {
             {
               'id': subtask.id,
               'title': subtask.title,
-              'assigneeId': subtask.assigneeId,
+              'description': subtask.description,
+              'assigneeIds': subtask.assigneeIds,
               'contacts': contactsToJson(subtask.contacts),
+              'deadline': subtask.deadline,
             },
         ],
         'contacts': contactsToJson(task.contacts),
@@ -101,12 +103,26 @@ class TeamTaskModel {
       final id = entry['id'];
       final title = entry['title'];
       if (id is! String || id.isEmpty || title is! String) continue;
+      // Before round 2 a subtask had one owner (`assigneeId`) and a tick
+      // (`isDone`); such a document still reads.
+      final legacyOwner = _string(entry['assigneeId']);
+      final status = entry.containsKey('status')
+          ? TeamTaskStatus.fromKey(entry['status'])
+          : (entry['isDone'] == true ? TeamTaskStatus.done : TeamTaskStatus.open);
       subtasks.add(TeamSubtask(
         id: id,
         title: title,
-        isDone: entry['isDone'] == true,
-        assigneeId: _string(entry['assigneeId']),
+        description: _string(entry['description']) ?? '',
+        assigneeIds: entry['assigneeIds'] is List
+            ? _stringList(entry['assigneeIds'])
+            : [if (legacyOwner != null) legacyOwner],
         contacts: contactsFromJson(entry['contacts']),
+        deadline: _deadline(entry['deadline']),
+        status: status,
+        duplicateOfId:
+            status == TeamTaskStatus.duplicate ? _string(entry['duplicateOfId']) : null,
+        updates: _updates(entry['updates']),
+        completedAt: _date(entry['completedAt']),
       ));
     }
     return subtasks;

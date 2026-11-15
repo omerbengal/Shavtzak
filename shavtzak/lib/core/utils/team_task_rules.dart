@@ -46,27 +46,65 @@ List<String> teamTaskOwnerNames(TeamTask task) {
   return [for (final id in task.ownerIds) byId[id] ?? unknownMemberLabel];
 }
 
-/// [task] with subtask [subtaskId] ticked or unticked, and the status the
-/// backend gives it (`team_tasks.ts` withAutoStatus): cancelled and duplicate
-/// never change; every subtask done = done; a done task with an open subtask
-/// and an open task with a ticked one = in progress.
-TeamTask withSubtaskTicked(TeamTask task, String subtaskId, bool isDone) {
+/// The task's owners as the backend derives them (`deriveOwnerIds`): its own
+/// [TeamTask.assigneeIds] without subtasks, else every subtask owner, once.
+List<String> teamTaskOwnerIds(TeamTask task) {
+  if (task.subtasks.isEmpty) return task.assigneeIds.toSet().toList();
+  return {for (final subtask in task.subtasks) ...subtask.assigneeIds}.toList();
+}
+
+bool _isClosed(TeamSubtask subtask) => !subtask.status.isActive;
+
+/// [task] with subtask [subtaskId] set to [status], and the status the
+/// backend gives the parent (`team_tasks.ts` withAutoStatus): cancelled and
+/// duplicate never change; every subtask closed with one done = done; a done
+/// parent with an open subtask, and an open parent with a subtask in progress
+/// or done = in progress.
+TeamTask withSubtaskStatus(
+  TeamTask task,
+  String subtaskId,
+  TeamTaskStatus status, {
+  String? duplicateOfId,
+}) {
   if (!task.subtasks.any((subtask) => subtask.id == subtaskId)) return task;
   final subtasks = [
     for (final subtask in task.subtasks)
-      subtask.id == subtaskId ? subtask.copyWith(isDone: isDone) : subtask,
+      subtask.id == subtaskId
+          ? subtask.copyWith(
+              status: status,
+              duplicateOfId: () => status == TeamTaskStatus.duplicate ? duplicateOfId : null,
+            )
+          : subtask,
   ];
-  var status = task.status;
-  if (status != TeamTaskStatus.cancelled && status != TeamTaskStatus.duplicate) {
-    if (subtasks.every((subtask) => subtask.isDone)) {
-      status = TeamTaskStatus.done;
-    } else if (status == TeamTaskStatus.done ||
-        (status == TeamTaskStatus.open && subtasks.any((subtask) => subtask.isDone))) {
-      status = TeamTaskStatus.inProgress;
+  var parent = task.status;
+  if (parent != TeamTaskStatus.cancelled && parent != TeamTaskStatus.duplicate) {
+    if (subtasks.every(_isClosed) && subtasks.any((subtask) => subtask.isDone)) {
+      parent = TeamTaskStatus.done;
+    } else if (parent == TeamTaskStatus.done ||
+        (parent == TeamTaskStatus.open &&
+            subtasks.any((subtask) =>
+                subtask.isDone || subtask.status == TeamTaskStatus.inProgress))) {
+      parent = TeamTaskStatus.inProgress;
     }
   }
-  return task.copyWith(subtasks: subtasks, status: status);
+  return task.copyWith(subtasks: subtasks, status: parent);
 }
+
+/// The quick tick in the parent's list: done, or back to open.
+TeamTask withSubtaskTicked(TeamTask task, String subtaskId, bool isDone) => withSubtaskStatus(
+    task, subtaskId, isDone ? TeamTaskStatus.done : TeamTaskStatus.open);
+
+/// What the "המשימות שלי" tab lists for [viewerId] (Omer, round 2): every task
+/// they own that has no subtasks, and every subtask they own as its own row
+/// ([TeamTask.subtaskView], the parent's title shown above it).
+List<TeamTask> myTeamTaskRows(List<TeamTask> tasks, String viewerId) => [
+      for (final task in tasks)
+        if (task.subtasks.isEmpty) ...[
+          if (task.ownerIds.contains(viewerId)) task,
+        ] else
+          for (final subtask in task.subtasks)
+            if (subtask.assigneeIds.contains(viewerId)) TeamTask.subtaskView(task, subtask),
+    ];
 
 /// One group of the list: the tasks of one event, category or topic, or the
 /// tasks with no link ("ללא שיוך", [type] null).

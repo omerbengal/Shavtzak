@@ -59,16 +59,24 @@ class DeleteTeamTask extends TeamTaskEvent {
   List<Object?> get props => [id];
 }
 
+/// With [subtaskId], the status of that subtask of task [id].
 class SetTeamTaskStatus extends TeamTaskEvent {
   final String id;
   final TeamTaskStatus status;
   final String? duplicateOfId;
+  final String? subtaskId;
   final CrudActionCompleter? completion;
 
-  const SetTeamTaskStatus(this.id, this.status, {this.duplicateOfId, this.completion});
+  const SetTeamTaskStatus(
+    this.id,
+    this.status, {
+    this.duplicateOfId,
+    this.subtaskId,
+    this.completion,
+  });
 
   @override
-  List<Object?> get props => [id, status, duplicateOfId];
+  List<Object?> get props => [id, status, duplicateOfId, subtaskId];
 }
 
 class ToggleTeamSubtask extends TeamTaskEvent {
@@ -83,15 +91,17 @@ class ToggleTeamSubtask extends TeamTaskEvent {
   List<Object?> get props => [taskId, subtaskId, isDone];
 }
 
+/// With [subtaskId], into that subtask's own log.
 class AddTeamTaskUpdate extends TeamTaskEvent {
   final String id;
   final String text;
+  final String? subtaskId;
   final CrudActionCompleter? completion;
 
-  const AddTeamTaskUpdate(this.id, this.text, {this.completion});
+  const AddTeamTaskUpdate(this.id, this.text, {this.subtaskId, this.completion});
 
   @override
-  List<Object?> get props => [id, text];
+  List<Object?> get props => [id, text, subtaskId];
 }
 
 class CreateTaskTopic extends TeamTaskEvent {

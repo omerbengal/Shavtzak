@@ -6,7 +6,8 @@ import '../../task/task_style.dart';
 import 'team_task_style.dart';
 
 /// One task in the list: status, title, deadline (red when late), owners and
-/// the subtasks done.
+/// the subtasks done. A subtask shown on its own ("המשימות שלי") has its
+/// parent's title above it; a [nested] one sits indented under its parent.
 class TeamTaskRow extends StatelessWidget {
   const TeamTaskRow({
     super.key,
@@ -14,7 +15,12 @@ class TeamTaskRow extends StatelessWidget {
     required this.now,
     required this.viewerId,
     required this.onTap,
+    this.nested = false,
   });
+
+  /// Under its parent's row (or in its parent's screen): indented, and
+  /// without the parent's title above it.
+  final bool nested;
 
   final TeamTask task;
   final DateTime now;
@@ -33,18 +39,32 @@ class TeamTaskRow extends StatelessWidget {
       child: Opacity(
         opacity: faded ? 0.6 : 1,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: nested
+              ? const EdgeInsetsDirectional.fromSTEB(4, 8, 12, 8)
+              : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (task.isSubtask && !nested)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    task.parentTitle ?? '',
+                    key: Key('team-task-parent-${task.id}'),
+                    style: const TextStyle(
+                      fontSize: TaskStyle.rowMetaSize,
+                      color: TaskStyle.neutralText,
+                    ),
+                  ),
+                ),
               Row(
                 children: [
                   Expanded(
                     child: Text(
                       task.title,
                       style: TextStyle(
-                        fontSize: TaskStyle.rowTitleSize,
-                        fontWeight: FontWeight.w600,
+                        fontSize: nested ? TaskStyle.subtaskSize : TaskStyle.rowTitleSize,
+                        fontWeight: nested ? FontWeight.w500 : FontWeight.w600,
                         decoration: task.status == TeamTaskStatus.done
                             ? TextDecoration.lineThrough
                             : null,

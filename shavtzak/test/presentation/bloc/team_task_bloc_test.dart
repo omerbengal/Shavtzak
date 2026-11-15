@@ -78,8 +78,8 @@ void main() {
 
   test('optimistic tick then rollback on error', () async {
     final task = buildTeamTask(id: 't', subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeId: 'm1'),
-      TeamSubtask(id: 's2', title: 'y', assigneeId: 'm1'),
+      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
+      TeamSubtask(id: 's2', title: 'y', assigneeIds: ['m1']),
     ]);
     bloc.add(TeamTasksSubscribe(dana));
     await pumpEventQueue();
@@ -105,10 +105,10 @@ void main() {
 
   test('ticking every subtask shows done at once, except on a cancelled task', () async {
     final task = buildTeamTask(id: 't', subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeId: 'm1'),
+      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
     ]);
     final cancelled = buildTeamTask(id: 'c', status: TeamTaskStatus.cancelled, subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeId: 'm1'),
+      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
     ]);
     bloc.add(TeamTasksSubscribe(manager));
     await pumpEventQueue();
@@ -153,10 +153,10 @@ void main() {
     await loaded((s) => s.all.isNotEmpty);
     repository.gate = Completer<void>();
     bloc.add(UpdateTeamTask(mine.copyWith(subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeId: 'm2'),
+      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m2']),
     ])));
     final state = await loaded((s) => s.all.single.subtasks.isNotEmpty);
-    expect(state.all.single.subtasks.single.assignee?.name, 'יוסי');
+    expect(state.all.single.subtasks.single.assignees.single.name, 'יוסי');
     expect(teamTaskOwnerNames(state.all.single), ['יוסי']);
     repository.gate!.complete();
   });

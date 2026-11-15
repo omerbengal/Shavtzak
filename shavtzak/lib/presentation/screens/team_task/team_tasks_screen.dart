@@ -242,6 +242,29 @@ class _GroupedList extends StatelessWidget {
                   viewerId: state.viewer.id,
                   onTap: () => showTeamTaskSheet(context, task.id),
                 ),
+                // "כל המשימות": a parent's subtasks nested under it, by the
+                // same status and owner filter.
+                for (final subtask in task.subtasks)
+                  if (state.filter.statuses.contains(subtask.status) &&
+                      (state.filter.ownerId == null ||
+                          subtask.assigneeIds.contains(state.filter.ownerId)))
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(start: 28),
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          border: BorderDirectional(
+                            start: BorderSide(color: TaskStyle.chip, width: 3),
+                          ),
+                        ),
+                        child: TeamTaskRow(
+                          task: TeamTask.subtaskView(task, subtask),
+                          now: now,
+                          viewerId: state.viewer.id,
+                          nested: true,
+                          onTap: () => showTeamTaskSheet(context, subtask.id),
+                        ),
+                      ),
+                    ),
                 const Divider(height: 1, indent: 12, endIndent: 12),
               ],
             ],

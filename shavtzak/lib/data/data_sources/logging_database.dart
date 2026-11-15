@@ -1469,9 +1469,17 @@ class LoggingDatabase implements DatabaseInterface {
       _teamTaskWrite('deleteTeamTask', id, () => _inner.deleteTeamTask(id));
 
   @override
-  Future<void> setTeamTaskStatus(String id, TeamTaskStatus status, {String? duplicateOfId}) =>
-      _teamTaskWrite('setTeamTaskStatus', id,
-          () => _inner.setTeamTaskStatus(id, status, duplicateOfId: duplicateOfId));
+  Future<void> setTeamTaskStatus(
+    String id,
+    TeamTaskStatus status, {
+    String? duplicateOfId,
+    String? subtaskId,
+  }) =>
+      _teamTaskWrite(
+          'setTeamTaskStatus',
+          id,
+          () => _inner.setTeamTaskStatus(id, status,
+              duplicateOfId: duplicateOfId, subtaskId: subtaskId));
 
   @override
   Future<void> setTeamSubtaskDone(String id, String subtaskId, bool isDone) =>
@@ -1479,8 +1487,9 @@ class LoggingDatabase implements DatabaseInterface {
           () => _inner.setTeamSubtaskDone(id, subtaskId, isDone));
 
   @override
-  Future<void> addTeamTaskUpdate(String id, String text) =>
-      _teamTaskWrite('addTeamTaskUpdate', id, () => _inner.addTeamTaskUpdate(id, text));
+  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId}) =>
+      _teamTaskWrite('addTeamTaskUpdate', id,
+          () => _inner.addTeamTaskUpdate(id, text, subtaskId: subtaskId));
 
   @override
   Stream<List<TaskTopic>> watchTaskTopics() => _wrapStream(
