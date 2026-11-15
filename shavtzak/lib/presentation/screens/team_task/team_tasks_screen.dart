@@ -41,19 +41,9 @@ class TeamTasksScreen extends StatefulWidget {
   State<TeamTasksScreen> createState() => _TeamTasksScreenState();
 }
 
-// TEMP (round 6, remove before the merge): lets a task manager see
-// "המשימות שלי" as another member sees it, to judge the screen on real data
-// (the דו יומי screen's "תצוגה בתור", there in debug runs only). Remove this
-// flag, [_TeamTasksScreenState._viewAsId] and everything under "view as".
-const bool kTempTeamTasksViewAs = true;
-
 class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// Whether a manager looks at every task ("כל המשימות") or at their own.
   bool _showAll = true;
-
-  /// TEMP ([kTempTeamTasksViewAs]): whose "המשימות שלי" a manager looks at;
-  /// null is their own.
-  String? _viewAsId;
 
   /// The task open in the side panel (a window wider than a phone, round 7);
   /// null = closed.
@@ -166,14 +156,6 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                       : const MemberSettingsButton(),
                   actions: [
                     if (state is TeamTasksLoaded) _foldAllButton(_shownGroups(state, canManage)),
-                    // TEMP: see [kTempTeamTasksViewAs].
-                    if (kTempTeamTasksViewAs && canManage && !_showAll && state is TeamTasksLoaded)
-                      IconButton(
-                        key: const Key('team-tasks-view-as'),
-                        tooltip: 'תצוגה בתור חבר צוות אחר',
-                        icon: Icon(_viewAsId == null ? Icons.people_outline : Icons.people),
-                        onPressed: () => _pickViewer(state, user),
-                      ),
                     if (editing)
                       PopupMenuButton<String>(
                         key: const Key('team-tasks-menu'),
@@ -225,7 +207,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     }
     final now = DateTime.now();
     final split = _splitting(context);
-    Widget list(List<TeamTaskGroup> groups, {required bool all, String? viewerId}) {
+    Widget list(List<TeamTaskGroup> groups, {required bool all}) {
       final column = Column(
         children: [
           TeamTaskFilterBar(state: state, showOwner: all),
@@ -236,7 +218,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
               state: state,
               now: now,
               editing: all,
-              viewerId: viewerId ?? state.viewer.id,
+              viewerId: state.viewer.id,
               collapsed: _collapsed,
               onToggleGroup: _toggleGroup,
               selectedId: split ? _panelTaskId : null,
@@ -264,117 +246,25 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     }
 
     if (!canManage) return list(state.mineGroups, all: false);
-    final viewAsId = kTempTeamTasksViewAs ? _viewAsId : null;
     return Column(
       children: [
         _tabs(),
-        if (!_showAll && viewAsId != null) _viewAsBanner(state, viewAsId, user),
         Expanded(
-          child: _showAll
-              ? list(state.allGroups, all: true)
-              : viewAsId == null
-                  ? list(state.mineGroups, all: false)
-                  : list(_mineGroupsOf(state, viewAsId, now), all: false, viewerId: viewAsId),
+          child: _showAll ? list(state.allGroups, all: true) : list(state.mineGroups, all: false),
         ),
       ],
     );
   }
 
-  /// The groups the list shows now (the tab, TEMP: whose view).
+  /// The groups the list shows now (the tab).
   List<TeamTaskGroup> _shownGroups(TeamTasksLoaded state, bool canManage) {
     if (!canManage) return state.mineGroups;
-    if (_showAll) return state.allGroups;
-    final viewAsId = kTempTeamTasksViewAs ? _viewAsId : null;
-    return viewAsId == null ? state.mineGroups : _mineGroupsOf(state, viewAsId, DateTime.now());
+    return _showAll ? state.allGroups : state.mineGroups;
   }
 
   /// Whether the window is wider than a phone: tasks open in the side panel.
   static bool _splitting(BuildContext context) =>
       MediaQuery.sizeOf(context).width >= TeamTaskStyle.splitBreakpoint;
-
-  // ---- TEMP: view as another member ([kTempTeamTasksViewAs]) ----
-
-  /// "המשימות שלי" of [memberId], built as the bloc builds the viewer's.
-  static List<TeamTaskGroup> _mineGroupsOf(TeamTasksLoaded state, String memberId, DateTime now) {
-    final eventCategoryById = {for (final e in state.events) e.id: e.categoryId};
-    return groupTeamTasks(
-      applyTeamTaskFilter(
-        myTeamTaskRows(state.all, memberId),
-        state.filter.copyWith(ownerIds: const {}),
-        eventCategoryById,
-        now: now,
-      ),
-      now,
-    );
-  }
-
-  Widget _viewAsBanner(TeamTasksLoaded state, String viewAsId, TeamMember user) {
-    final name =
-        state.members.where((m) => m.id == viewAsId).firstOrNull?.name ?? unknownMemberLabel;
-    return Material(
-      color: TaskStyle.soonLight,
-      child: InkWell(
-        key: const Key('team-tasks-view-as-banner'),
-        onTap: () => _pickViewer(state, user),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 2, 4, 2),
-          child: Row(
-            children: [
-              const Icon(Icons.visibility_outlined, size: 18),
-              const SizedBox(width: 6),
-              Expanded(child: Text('תצוגה בתור: $name (זמני, לבדיקה)')),
-              IconButton(
-                key: const Key('team-tasks-view-as-clear'),
-                tooltip: 'חזרה למשימות שלי',
-                icon: const Icon(Icons.close, size: 18),
-                onPressed: () => setState(() {
-                  _viewAsId = null;
-                  _panelTaskId = null;
-                }),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickViewer(TeamTasksLoaded state, TeamMember user) async {
-    Logger.action('tap:teamTasksViewAs');
-    // Everyone who owns a task (or a subtask), and the viewer.
-    final owners = {user.id, for (final task in state.all) ...task.ownerIds};
-    final people = state.members.where((m) => owners.contains(m.id)).toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
-    final chosen = await showDialog<String>(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: SimpleDialog(
-          title: const Text('תצוגה בתור'),
-          children: [
-            for (final member in people)
-              SimpleDialogOption(
-                key: Key('team-tasks-view-as-${member.id}'),
-                onPressed: () => Navigator.of(context).pop(member.id),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: MemberNameText(name: member.name, permanent: member.isPermanent),
-                    ),
-                    if (member.id == (_viewAsId ?? user.id)) const Icon(Icons.check, size: 18),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (chosen == null || !mounted) return;
-    setState(() {
-      _viewAsId = chosen == user.id ? null : chosen;
-      _panelTaskId = null;
-    });
-  }
 
   /// The דו יומי event screen's switch, with its colours.
   Widget _tabs() {
@@ -443,7 +333,7 @@ class _GroupedList extends StatefulWidget {
   /// The task open in the side panel, highlighted.
   final String? selectedId;
 
-  /// Whose rows these are (TEMP: another member's while viewing as them).
+  /// Whose rows these are (the viewer).
   final String viewerId;
 
   final List<TeamTaskGroup> groups;

@@ -7683,18 +7683,6 @@ export const api = onRequest(
   app,
 );
 
-// The same app under another name, called only by a preview build
-// (`--dart-define=SHAVTZAK_API_FUNCTION=apiPreview`), so a branch's backend can
-// be tried on production data while `api` keeps running main's code. Deleted
-// after the branch is merged and `api` is deployed.
-export const apiPreview = onRequest(
-  {
-    region: 'us-central1',
-    invoker: 'public',
-  },
-  app,
-);
-
 // Test-only re-exports. Not part of the public API; used by the *.test.ts files.
 export {
   normalizeDayInIsrael as __testNormalizeDayInIsrael,

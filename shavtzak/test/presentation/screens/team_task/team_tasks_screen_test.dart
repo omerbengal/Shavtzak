@@ -556,30 +556,6 @@ void main() {
       expect(find.byKey(const Key('team-filter-status-done')), findsWidgets);
       expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
     });
-
-    testWidgets('TEMP: a manager sees "המשימות שלי" as another member', (tester) async {
-      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
-      // Only in "המשימות שלי".
-      expect(find.byKey(const Key('team-tasks-view-as')), findsNothing);
-      await tester.tap(find.text('המשימות שלי'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-tasks-view-as')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-tasks-view-as-m2')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-tasks-view-as-banner')), findsOneWidget);
-      expect(find.byKey(const Key('team-task-row-b')), findsOneWidget);
-      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
-      await tester.tap(find.byKey(const Key('team-tasks-view-as-clear')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-tasks-view-as-banner')), findsNothing);
-      expect(find.byKey(const Key('team-task-row-b')), findsNothing);
-    });
-
-    testWidgets('TEMP: a member who is not a manager has no view-as button', (tester) async {
-      await pumpTeamTasks(tester, user: dana, board: board([mine]));
-      expect(find.byKey(const Key('team-tasks-view-as')), findsNothing);
-    });
   });
 
   group('round 7', () {
