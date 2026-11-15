@@ -493,6 +493,8 @@ class _GroupedListState extends State<_GroupedList> {
         builder: (_) => EventAssignmentsDialog.withAssignments(
           event: event,
           assignments: assignments,
+          // No "by labels" switch here (Omer, round 10 review, msg 3812).
+          showLabelGrouping: false,
         ),
       );
     } catch (_) {

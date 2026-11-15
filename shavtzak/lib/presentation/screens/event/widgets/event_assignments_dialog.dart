@@ -39,6 +39,10 @@ class EventAssignmentsDialog extends StatefulWidget {
   /// only callers that hold every event and assignment can supply this.
   final Map<String, List<Event>> sameDayOtherEventsByMemberId;
 
+  /// Whether the "קיבוץ לפי לייבלים" switch shows. The team tasks 👥 hides
+  /// it (Omer, round 10): the list and the picture stay grouped by role.
+  final bool showLabelGrouping;
+
   const EventAssignmentsDialog({
     super.key,
     this.event,
@@ -46,6 +50,7 @@ class EventAssignmentsDialog extends StatefulWidget {
     this.eventName,
     this.assignments,
     this.sameDayOtherEventsByMemberId = const {},
+    this.showLabelGrouping = true,
   }) : assert(
           event != null || (eventId != null && eventName != null),
           'event or eventId/eventName must be provided',
@@ -59,6 +64,7 @@ class EventAssignmentsDialog extends StatefulWidget {
     this.eventName,
     required this.assignments,
     this.sameDayOtherEventsByMemberId = const {},
+    this.showLabelGrouping = true,
   })  : assert(assignments != null,
             'assignments cannot be null in withAssignments constructor'),
         assert(
@@ -157,6 +163,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                 ],
               ),
               const SizedBox(height: 16),
+              if (widget.showLabelGrouping) ...[
               SwitchListTile.adaptive(
                 value: _sortByLabel,
                 onChanged: (value) {
@@ -179,6 +186,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                 ),
               ),
               const SizedBox(height: 8),
+              ],
               // Content
               Expanded(
                 child: StreamBuilder<List<AssignmentLabel>>(

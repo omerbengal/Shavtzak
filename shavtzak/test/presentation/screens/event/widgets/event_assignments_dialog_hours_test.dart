@@ -107,8 +107,9 @@ void main() {
 
   Future<void> pumpDialog(
     WidgetTester tester,
-    List<Assignment> assignments,
-  ) async {
+    List<Assignment> assignments, {
+    bool showLabelGrouping = true,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: MultiRepositoryProvider(
@@ -124,6 +125,7 @@ void main() {
               body: EventAssignmentsDialog.withAssignments(
                 event: _event,
                 assignments: assignments,
+                showLabelGrouping: showLabelGrouping,
               ),
             ),
           ),
@@ -169,5 +171,15 @@ void main() {
     expect(find.text('דני'), findsOneWidget);
     expect(find.text('רותי'), findsOneWidget);
     expect(find.textContaining('שעות:'), findsNothing);
+  });
+
+  testWidgets('the "by labels" switch shows by default and hides on request (round 10)',
+      (tester) async {
+    await pumpDialog(tester, [_assignment('a1', _member('m1', 'דני'))]);
+    expect(find.text('קיבוץ לפי לייבלים'), findsOneWidget);
+    await pumpDialog(tester, [_assignment('a1', _member('m1', 'דני'))],
+        showLabelGrouping: false);
+    expect(find.text('קיבוץ לפי לייבלים'), findsNothing);
+    expect(find.text('דני'), findsOneWidget);
   });
 }
