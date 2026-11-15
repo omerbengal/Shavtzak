@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/search_utils.dart';
+import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../../domain/entities/task_topic.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
@@ -99,7 +100,7 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
   List<({String id, String name, String? note})> _options(TeamTasksLoaded state) {
     switch (_type) {
       case TaskLinkType.event:
-        final events = [...state.events]..sort((a, b) => b.startDate.compareTo(a.startDate));
+        final events = linkableEvents(state.events, DateTime.now());
         return [
           for (final event in events)
             (

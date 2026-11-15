@@ -181,4 +181,17 @@ void main() {
       );
     });
   });
+
+  group('linkableEvents', () {
+    test('drops events that ended before today and puts the nearest first', () {
+      final ended = buildEvent(id: 'old', startDate: DateTime(2026, 11, 10), endDate: DateTime(2026, 11, 14));
+      final endsToday = buildEvent(id: 'today', startDate: DateTime(2026, 11, 13), endDate: DateTime(2026, 11, 15));
+      final later = buildEvent(id: 'later', startDate: DateTime(2026, 12, 20));
+      final soon = buildEvent(id: 'soon', startDate: DateTime(2026, 11, 20));
+      expect(
+        linkableEvents([later, ended, soon, endsToday], now).map((e) => e.id),
+        ['today', 'soon', 'later'],
+      );
+    });
+  });
 }

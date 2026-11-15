@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../domain/entities/team_task.dart';
 import 'israel_calendar.dart';
@@ -216,4 +217,15 @@ bool showTeamTasksTab(TeamMember member, List<TeamTask> myTasks) {
   if (canManageTeamTasks(member)) return true;
   return myTasks.any((task) =>
       task.status != TeamTaskStatus.cancelled && task.status != TeamTaskStatus.duplicate);
+}
+
+/// The events a task can be linked to: those that have not ended before
+/// today's Israel date, the nearest first (Omer, round 2).
+List<Event> linkableEvents(List<Event> events, DateTime now) {
+  final today = IsraelCalendar.calendarDay(now);
+  DateTime day(DateTime d) => DateTime(d.year, d.month, d.day);
+  return [
+    for (final event in events)
+      if (!day(event.endDate).isBefore(today)) event,
+  ]..sort((a, b) => a.startDate.compareTo(b.startDate));
 }
