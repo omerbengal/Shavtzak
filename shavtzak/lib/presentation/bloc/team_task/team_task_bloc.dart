@@ -195,7 +195,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     final edited = event.task;
     return _optimistic(
       edited.id,
-      (task) => task.copyWith(
+      (task) => _joined(task.copyWith(
         title: edited.title,
         description: edited.description,
         link: () => edited.link,
@@ -213,7 +213,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         contacts: edited.contacts,
         deadline: () => edited.deadline,
         ownerIds: _ownerIds(edited),
-      ),
+      )),
       () => _repository.updateTask(edited),
       event.completion,
       emit,
@@ -241,6 +241,40 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       () => _repository.setSubtaskDone(event.taskId, event.subtaskId, event.isDone),
       event.completion,
       emit,
+    );
+  }
+
+  /// [task] with its owners, subtask owners and link target looked up in the
+  /// board's lists, so an edit shows names at once instead of "חבר צוות לא
+  /// ידוע" until the stream brings the joined task back. Someone the task
+  /// already had stays joined even when the board's member list lacks them.
+  TeamTask _joined(TeamTask task) {
+    final board = _board;
+    if (board == null) return task;
+    final members = {
+      for (final member in task.owners) member.id: member,
+      for (final subtask in task.subtasks)
+        if (subtask.assignee != null) subtask.assignee!.id: subtask.assignee!,
+      for (final member in board.members) member.id: member,
+    };
+    final link = task.link;
+    return task.copyWith(
+      owners: task.ownerIds.map((id) => members[id]).whereType<TeamMember>().toList(),
+      subtasks: [
+        for (final subtask in task.subtasks)
+          subtask.copyWith(
+            assignee: () => subtask.assigneeId == null ? null : members[subtask.assigneeId],
+          ),
+      ],
+      event: () => link?.type == TaskLinkType.event
+          ? board.events.where((e) => e.id == link!.id).firstOrNull ?? task.event
+          : null,
+      category: () => link?.type == TaskLinkType.category
+          ? board.categories.where((c) => c.id == link!.id).firstOrNull ?? task.category
+          : null,
+      topic: () => link?.type == TaskLinkType.topic
+          ? board.topics.where((t) => t.id == link!.id).firstOrNull ?? task.topic
+          : null,
     );
   }
 

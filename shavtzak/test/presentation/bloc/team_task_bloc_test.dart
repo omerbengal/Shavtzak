@@ -134,6 +134,33 @@ void main() {
     expect(repository.calls, ['status:a:done']);
   });
 
+  test('a manager adding an owner shows the new name at once, not as unknown', () async {
+    bloc.add(TeamTasksSubscribe(manager));
+    await pumpEventQueue();
+    repository.controller.add(TeamTaskBoard(tasks: [mine], members: [dana, yossi, manager]));
+    await loaded((s) => s.all.isNotEmpty);
+    repository.gate = Completer<void>();
+    bloc.add(UpdateTeamTask(mine.copyWith(assigneeIds: ['m1', 'm2'], ownerIds: ['m1', 'm2'])));
+    final state = await loaded((s) => s.all.single.ownerIds.length == 2);
+    expect(teamTaskOwnerNames(state.all.single), ['דנה', 'יוסי']);
+    repository.gate!.complete();
+  });
+
+  test('a manager giving a new subtask to someone shows their name at once', () async {
+    bloc.add(TeamTasksSubscribe(manager));
+    await pumpEventQueue();
+    repository.controller.add(TeamTaskBoard(tasks: [mine], members: [dana, yossi, manager]));
+    await loaded((s) => s.all.isNotEmpty);
+    repository.gate = Completer<void>();
+    bloc.add(UpdateTeamTask(mine.copyWith(subtasks: const [
+      TeamSubtask(id: 's1', title: 'x', assigneeId: 'm2'),
+    ])));
+    final state = await loaded((s) => s.all.single.subtasks.isNotEmpty);
+    expect(state.all.single.subtasks.single.assignee?.name, 'יוסי');
+    expect(teamTaskOwnerNames(state.all.single), ['יוסי']);
+    repository.gate!.complete();
+  });
+
   test('an owner archived as a member shows as unknown', () async {
     final task = buildTeamTask(id: 't', assigneeIds: ['m1', 'gone']).copyWith(owners: [dana]);
     expect(teamTaskOwnerNames(task), ['דנה', 'חבר צוות לא ידוע']);
