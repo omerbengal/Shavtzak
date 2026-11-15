@@ -13,6 +13,22 @@ import 'search_utils.dart';
 /// only. Matched by id, so renaming the category changes nothing here.
 const String duYomiCategoryId = 'dc8b7dd8-f633-4b6a-8169-a94d0561bbd5';
 
+/// The name prefix of a preparation day ("היערכות ..."). It sits in the
+/// "דו יומי" category but has no tasks, so the tasks screens leave it out.
+const String duYomiPrepNamePrefix = 'היערכות';
+
+/// Whether [event] is a preparation day of a דו יומי cycle: its name starts
+/// with [duYomiPrepNamePrefix] (leading spaces ignored).
+bool isDuYomiPrepEvent(Event event) =>
+    event.name.trim().startsWith(duYomiPrepNamePrefix);
+
+/// Whether [event] belongs on the דו יומי task screens: active, in the
+/// "דו יומי" category, and not a preparation day ([isDuYomiPrepEvent]).
+bool isTaskEvent(Event event) =>
+    !event.isDeactivated &&
+    event.categoryId == duYomiCategoryId &&
+    !isDuYomiPrepEvent(event);
+
 /// How far ahead the "התייצבות בחצי שעה הקרובה" filter looks.
 const Duration taskDueSoonWindow = Duration(minutes: 30);
 
@@ -232,17 +248,14 @@ List<DateTime> eventDays(Event event) {
   return days;
 }
 
-/// The events the tasks screen lists: active events of the "דו יומי" category,
-/// split into those not over yet (nearest first) and past ones (latest first).
+/// The events the tasks screen lists ([isTaskEvent]: active "דו יומי" events,
+/// preparation days left out), split into those not over yet (nearest first) and past ones (latest first).
 ({List<Event> upcoming, List<Event> past}) taskEvents(
   List<Event> events, {
   required DateTime now,
 }) {
   final split = splitEventsByPast(
-    events
-        .where((event) =>
-            !event.isDeactivated && event.categoryId == duYomiCategoryId)
-        .toList(),
+    events.where(isTaskEvent).toList(),
     now,
   );
   return (upcoming: split.future, past: split.past);

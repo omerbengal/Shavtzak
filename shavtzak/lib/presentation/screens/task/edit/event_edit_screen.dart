@@ -320,10 +320,8 @@ class _EventEditScreenState extends State<EventEditScreen>
   Event? _findEvent(TasksLoaded state) {
     for (final event in state.events) {
       if (event.id != widget.eventId) continue;
-      if (event.isDeactivated || event.categoryId != duYomiCategoryId) {
-        return null;
-      }
-      return event;
+      // A preparation day or another category = "האירוע לא נמצא".
+      return isTaskEvent(event) ? event : null;
     }
     return null;
   }

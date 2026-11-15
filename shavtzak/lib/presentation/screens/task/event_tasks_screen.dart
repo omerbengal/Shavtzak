@@ -448,14 +448,12 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       ? TestEnvironmentIndicator(child: child)
       : child;
 
-  /// The screen's event, if it is an active דו יומי event.
+  /// The screen's event, if it belongs on the task screens ([isTaskEvent]).
   Event? _findEvent(TasksLoaded state) {
     for (final event in state.events) {
       if (event.id != widget.eventId) continue;
-      if (event.isDeactivated || event.categoryId != duYomiCategoryId) {
-        return null;
-      }
-      return event;
+      // A preparation day or another category = "האירוע לא נמצא".
+      return isTaskEvent(event) ? event : null;
     }
     return null;
   }
