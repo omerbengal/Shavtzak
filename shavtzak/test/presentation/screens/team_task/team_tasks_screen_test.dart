@@ -365,6 +365,9 @@ void main() {
       await pumpTeamTasks(tester, user: omer, board: board([task]));
       expect(find.byKey(const Key('team-status-icon-inProgress')), findsOneWidget);
       expect(find.text('עב'), findsOneWidget);
+      // As wide as the initials, not the whole row.
+      final avatar = find.ancestor(of: find.text('עב'), matching: find.byType(Container)).first;
+      expect(tester.getSize(avatar).width, lessThan(48));
     });
   });
 }

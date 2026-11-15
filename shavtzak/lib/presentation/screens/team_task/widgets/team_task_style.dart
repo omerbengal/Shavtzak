@@ -183,22 +183,23 @@ class MemberInitialsAvatar extends StatelessWidget {
         constraints: BoxConstraints(minWidth: size),
         height: size,
         padding: const EdgeInsets.symmetric(horizontal: 3),
-        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: TaskStyle.editAvatarColor(memberId),
           borderRadius: BorderRadius.circular(size / 2),
           border: highlight ? Border.all(color: Colors.white, width: 1.5) : null,
-          boxShadow: highlight
-              ? const [BoxShadow(color: TaskStyle.mine, spreadRadius: 1.5)]
-              : null,
+          boxShadow: highlight ? const [BoxShadow(color: TaskStyle.mine, spreadRadius: 1.5)] : null,
         ),
-        child: Text(
-          memberInitials(name),
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: size * 0.44,
-            fontWeight: FontWeight.w700,
-            height: 1,
+        // widthFactor 1: as wide as the initials, never the whole row.
+        child: Center(
+          widthFactor: 1,
+          child: Text(
+            memberInitials(name),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.44,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            ),
           ),
         ),
       ),
