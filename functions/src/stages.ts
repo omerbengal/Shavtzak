@@ -128,7 +128,7 @@ function storedTimestamp(value: unknown): Timestamp | null {
   return value instanceof Timestamp ? value : null;
 }
 
-function storedContacts(value: unknown): StageContact[] {
+export function storedContacts(value: unknown): StageContact[] {
   if (!Array.isArray(value)) return [];
   const contacts: StageContact[] = [];
   for (const entry of value) {
@@ -166,7 +166,7 @@ function optionalTime(value: unknown): string | null {
   return value;
 }
 
-function parseContacts(value: unknown): StageContact[] {
+export function parseContacts(value: unknown): StageContact[] {
   if (value == null) return [];
   if (!Array.isArray(value)) throw new TaskError(400, 'אנשי קשר לא תקינים');
   if (value.length > MAX_CONTACTS) throw new TaskError(400, 'יותר מדי אנשי קשר');
