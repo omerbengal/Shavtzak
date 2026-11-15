@@ -40,6 +40,14 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   late final TextEditingController _search = TextEditingController(text: widget.state.filter.query);
   final FocusNode _focus = FocusNode();
   final MenuController _menu = MenuController();
+
+  /// Keeps the one search field alive when the tap that focuses it folds the
+  /// row into its wide layout. Without it the field is rebuilt under its new
+  /// parent: on the web that closes the browser input the tap focused and
+  /// opens a new one after the tap, and iPhone opens the keyboard only for
+  /// the input focused inside the tap (`web/ios_keyboard_fix.js`), so the
+  /// field turned blue with no keyboard.
+  final GlobalKey _fieldKey = GlobalKey(debugLabel: 'team-filter-search');
   bool _menuOpen = false;
 
   @override
@@ -215,6 +223,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
 
   Widget _searchField() {
     return SizedBox(
+      key: _fieldKey,
       height: 34,
       child: RtlArrowKeys(
         child: TextField(
