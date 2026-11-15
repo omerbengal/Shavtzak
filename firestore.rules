@@ -113,6 +113,29 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Team tasks ("משימות"). request.auth.uid is the team member's document id
+    // (the backend's /auth/login mints the custom token with it). Managers
+    // (admin or "ניהול משימות", read from the member document since
+    // canManageTasks is not a token claim) read every task; any other member
+    // reads only the tasks whose ownerIds hold their id, so a non-manager's
+    // screen must query `ownerIds array-contains <me>`.
+    function isTeamTaskManager(membersPath) {
+      let member = get(/databases/$(database)/documents/$(membersPath)/$(request.auth.uid)).data;
+      return member.isAdmin == true || member.canManageTasks == true;
+    }
+
+    match /teamTasks/{taskId} {
+      allow read: if isAuthorizedProdUser()
+        && (isTeamTaskManager('teamMembers') || request.auth.uid in resource.data.ownerIds);
+      allow write: if false;
+    }
+
+    match /test_teamTasks/{taskId} {
+      allow read: if isAuthorizedTestUser()
+        && (isTeamTaskManager('test_teamMembers') || request.auth.uid in resource.data.ownerIds);
+      allow write: if false;
+    }
+
     match /stages/{document=**} {
       allow read: if isAuthorizedProdUser();
       allow write: if false;
