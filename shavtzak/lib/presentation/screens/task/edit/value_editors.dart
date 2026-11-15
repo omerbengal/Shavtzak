@@ -260,7 +260,15 @@ class AssigneesEditor extends StatefulWidget {
     this.emptyLabel = 'אין משובצים לאירוע זה',
     this.notOfferedLabel = 'כבר לא משובץ/ת לאירוע',
     this.maxWidth = 300,
+    this.pickedFirst = false,
+    this.showPermanentMark = false,
   });
+
+  /// The picked members on top, a divider, then the rest; each part by name.
+  final bool pickedFirst;
+
+  /// The app's mark after a permanent team member's name.
+  final bool showPermanentMark;
 
   /// How wide the editor grows; a form's field is wider than a cell.
   final double maxWidth;
@@ -318,11 +326,18 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
   @override
   Widget build(BuildContext context) {
     final offeredIds = {for (final member in widget.offered) member.id};
-    final members = [
+    var members = [
       ...widget.offered,
       for (final member in widget.current)
         if (!offeredIds.contains(member.id)) member,
     ];
+    if (widget.pickedFirst) {
+      int byName(TeamMember a, TeamMember b) => a.name.compareTo(b.name);
+      members = [
+        ...members.where((m) => _picked.contains(m.id)).toList()..sort(byName),
+        ...members.where((m) => !_picked.contains(m.id)).toList()..sort(byName),
+      ];
+    }
     final query = normalizeForSearch(_query.trim()).toLowerCase();
     final visible = query.isEmpty
         ? members
@@ -362,18 +377,36 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
             child: ListView(
               shrinkWrap: true,
               children: [
-                for (final member in visible)
+                for (final (i, member) in visible.indexed) ...[
+                  if (widget.pickedFirst &&
+                      i > 0 &&
+                      _picked.contains(visible[i - 1].id) &&
+                      !_picked.contains(member.id))
+                    const Divider(key: Key('edit-assignee-divider'), height: 8),
                   CheckboxListTile(
                     key: Key('edit-assignee-${member.id}'),
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(member.name),
+                    title: widget.showPermanentMark && member.isPermanent
+                        ? Text.rich(TextSpan(children: [
+                            TextSpan(text: member.name),
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: Padding(
+                                padding: const EdgeInsetsDirectional.only(start: 4),
+                                child: Icon(Icons.verified_user,
+                                    size: 12, color: Colors.blue.shade700),
+                              ),
+                            ),
+                          ]))
+                        : Text(member.name),
                     subtitle: offeredIds.contains(member.id)
                         ? null
                         : Text(widget.notOfferedLabel),
                     value: _picked.contains(member.id),
                     onChanged: (on) => _toggle(member.id, on ?? false),
                   ),
+                ],
               ],
             ),
           ),

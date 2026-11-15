@@ -335,9 +335,9 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
   /// The דו יומי form's owners dropdown: closed, one field naming who is
   /// picked; open, a search and the team under it.
   Widget _ownersField(TeamTasksLoaded state, List<TeamMember> active) {
-    final names = [
+    final picked = [
       for (final id in _owners)
-        state.members.firstWhereOrNull((m) => m.id == id)?.name ?? '',
+        if (state.members.firstWhereOrNull((m) => m.id == id) case final member?) member,
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -353,7 +353,19 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
               border: const OutlineInputBorder(),
               suffixIcon: Icon(_ownersOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down),
             ),
-            child: _owners.isEmpty ? null : Text(names.join(', ')),
+            child: _owners.isEmpty
+                ? null
+                : Text.rich(TextSpan(children: [
+                    for (var i = 0; i < picked.length; i++) ...[
+                      if (i > 0) const TextSpan(text: ', '),
+                      TextSpan(text: picked[i].name),
+                      if (picked[i].isPermanent)
+                        const WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: PermanentMemberMark(),
+                        ),
+                    ],
+                  ])),
           ),
         ),
         if (_ownersOpen) ...[
@@ -370,6 +382,8 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
               current: const [],
               maxWidth: double.infinity,
               emptyLabel: 'אין חברי צוות',
+              pickedFirst: true,
+              showPermanentMark: true,
               onChanged: (ids) => setState(() => _owners = ids),
             ),
           ),

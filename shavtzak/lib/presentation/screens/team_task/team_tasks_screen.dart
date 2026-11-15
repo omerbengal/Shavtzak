@@ -320,7 +320,10 @@ class _FilterBar extends StatelessWidget {
               itemBuilder: (context) => [
                 const PopupMenuItem(value: '', child: Text('כל האחראים')),
                 for (final member in ownerOptions)
-                  PopupMenuItem(value: member.id, child: Text(member.name)),
+                  PopupMenuItem(
+                    value: member.id,
+                    child: MemberNameText(name: member.name, permanent: member.isPermanent),
+                  ),
               ],
               child: _FilterChipLook(
                 label: ownerName ?? 'אחראי',

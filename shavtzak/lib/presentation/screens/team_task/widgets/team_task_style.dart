@@ -71,12 +71,54 @@ class TeamTaskStatusChip extends StatelessWidget {
   }
 }
 
+/// The app's mark of a permanent team member (חבר צוות קבוע), as in the
+/// team list and the assignment member picker.
+class PermanentMemberMark extends StatelessWidget {
+  const PermanentMemberMark({super.key, this.size = 12});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsetsDirectional.only(start: 4),
+        child: Icon(Icons.verified_user, size: size, color: Colors.blue.shade700),
+      );
+}
+
+/// A member's name followed by the permanent mark when [permanent].
+class MemberNameText extends StatelessWidget {
+  const MemberNameText({super.key, required this.name, required this.permanent, this.style});
+
+  final String name;
+  final bool permanent;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => Text.rich(
+        TextSpan(children: [
+          TextSpan(text: name),
+          if (permanent)
+            const WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: PermanentMemberMark(),
+            ),
+        ]),
+        style: style,
+      );
+}
+
 /// A member's name as a small chip.
 class MemberNameChip extends StatelessWidget {
-  const MemberNameChip({super.key, required this.name, this.highlight = false});
+  const MemberNameChip({
+    super.key,
+    required this.name,
+    this.highlight = false,
+    this.permanent = false,
+  });
 
   final String name;
   final bool highlight;
+  final bool permanent;
 
   @override
   Widget build(BuildContext context) {
@@ -86,8 +128,9 @@ class MemberNameChip extends StatelessWidget {
         color: highlight ? TaskStyle.currentLight : TaskStyle.chip,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
-        name,
+      child: MemberNameText(
+        name: name,
+        permanent: permanent,
         style: TextStyle(
           fontSize: TaskStyle.rowMetaSize,
           color: highlight ? TaskStyle.mine : TaskStyle.neutralText,

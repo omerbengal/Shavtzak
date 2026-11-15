@@ -461,15 +461,19 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     List<TeamMember> activeMembers,
     String viewerId,
   ) {
-    final names = teamTaskOwnerNames(task);
-    final chips = names.isEmpty
+    final owners = teamTaskOwnerChips(task);
+    final chips = owners.isEmpty
         ? const Text('אין אחראים', style: TextStyle(color: TaskStyle.faintText))
         : Wrap(
             spacing: 6,
             runSpacing: 4,
             children: [
-              for (var i = 0; i < names.length; i++)
-                MemberNameChip(name: names[i], highlight: task.ownerIds[i] == viewerId),
+              for (final owner in owners)
+                MemberNameChip(
+                  name: owner.name,
+                  permanent: owner.permanent,
+                  highlight: owner.id == viewerId,
+                ),
             ],
           );
     if (task.subtasks.isNotEmpty) {
@@ -500,6 +504,8 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
         onChanged: onChanged,
         emptyLabel: 'אין חברי צוות',
         notOfferedLabel: 'כבר לא פעיל/ה בצוות',
+        pickedFirst: true,
+        showPermanentMark: true,
       ),
       onCommit: (ids) => _edit(task.copyWith(assigneeIds: ids, ownerIds: ids)),
     );
@@ -627,7 +633,11 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                         ),
                       ),
                       if (owner != null)
-                        MemberNameChip(name: owner, highlight: subtask.assigneeId == viewerId),
+                        MemberNameChip(
+                          name: owner,
+                          permanent: subtask.assignee?.isPermanent ?? false,
+                          highlight: subtask.assigneeId == viewerId,
+                        ),
                     ],
                   ),
                   if (subtask.contacts.isNotEmpty)

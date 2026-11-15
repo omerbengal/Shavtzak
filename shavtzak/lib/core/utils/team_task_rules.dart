@@ -24,6 +24,21 @@ bool isTeamTaskOwner(TeamTask task, String memberId) => task.ownerIds.contains(m
 
 const String unknownMemberLabel = 'חבר צוות לא ידוע';
 
+/// The owners in [TeamTask.ownerIds] order, with whether each is a permanent
+/// team member (the app's mark); an id with no joined member reads
+/// "חבר צוות לא ידוע", unmarked.
+List<({String id, String name, bool permanent})> teamTaskOwnerChips(TeamTask task) {
+  final byId = {for (final member in task.owners) member.id: member};
+  return [
+    for (final id in task.ownerIds)
+      (
+        id: id,
+        name: byId[id]?.name ?? unknownMemberLabel,
+        permanent: byId[id]?.isPermanent ?? false,
+      ),
+  ];
+}
+
 /// The owners' names in [TeamTask.ownerIds] order; an id with no joined member
 /// (deleted from the team) reads "חבר צוות לא ידוע".
 List<String> teamTaskOwnerNames(TeamTask task) {

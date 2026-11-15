@@ -194,4 +194,15 @@ void main() {
       );
     });
   });
+
+  test('teamTaskOwnerChips marks a permanent owner', () {
+    final tal = buildMember(id: 'm4', name: 'טל').copyWith(isPermanent: true);
+    final dana = buildMember(id: 'm1', name: 'דנה');
+    final task = buildTeamTask(assigneeIds: ['m4', 'm1', 'gone']).copyWith(owners: [tal, dana]);
+    expect(teamTaskOwnerChips(task).map((o) => (o.name, o.permanent)), [
+      ('טל', true),
+      ('דנה', false),
+      ('חבר צוות לא ידוע', false),
+    ]);
+  });
 }

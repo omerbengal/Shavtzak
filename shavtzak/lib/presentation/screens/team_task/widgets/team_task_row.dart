@@ -26,7 +26,7 @@ class TeamTaskRow extends StatelessWidget {
     final late = isTeamTaskLate(task, now);
     final deadline = task.deadlineDate;
     final faded = !task.status.isActive;
-    final names = teamTaskOwnerNames(task);
+    final owners = teamTaskOwnerChips(task);
     return InkWell(
       key: Key('team-task-row-${task.id}'),
       onTap: onTap,
@@ -80,10 +80,11 @@ class TeamTaskRow extends StatelessWidget {
                         color: TaskStyle.neutralText,
                       ),
                     ),
-                  for (var i = 0; i < names.length; i++)
+                  for (final owner in owners)
                     MemberNameChip(
-                      name: names[i],
-                      highlight: task.ownerIds[i] == viewerId,
+                      name: owner.name,
+                      permanent: owner.permanent,
+                      highlight: owner.id == viewerId,
                     ),
                 ],
               ),
