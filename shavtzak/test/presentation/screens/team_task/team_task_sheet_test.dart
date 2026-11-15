@@ -56,8 +56,12 @@ void main() {
     await openTask(tester, 'o');
     await tester.tap(find.byKey(const Key('team-task-edit-deadline')));
     await tester.pumpAndSettle();
-    expect(find.byType(DualCalendarDatePicker), findsOneWidget);
+    final picker = tester.widget<DualCalendarDatePicker>(find.byType(DualCalendarDatePicker));
     expect(find.byType(DatePickerDialog), findsNothing);
+    // Today and later only, and no event frames (round 2, bugs 2-3).
+    final now = DateTime.now();
+    expect(picker.minDate, DateTime(now.year, now.month, now.day));
+    expect(picker.highlightedDates, isEmpty);
   });
 
   testWidgets('choosing כפילות asks for the original', (tester) async {

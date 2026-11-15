@@ -325,7 +325,6 @@ class _NewTeamTaskDialogState extends State<_NewTeamTaskDialog> {
         final picked = await pickTeamTaskDeadline(
           context,
           initial: _deadline,
-          events: state.events,
         );
         if (picked != null) setState(() => _deadline = picked);
       },

@@ -185,7 +185,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     final picked = await pickTeamTaskDeadline(
       context,
       initial: task.deadlineDate,
-      events: state.events,
     );
     if (picked == null || !mounted) return;
     _edit(task.copyWith(deadline: () => dateKey(picked)));
