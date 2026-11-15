@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/data/repositories/team_task_repository.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/team_task.dart';
+import 'package:shavtzak/presentation/widgets/date_picker_dialog.dart';
 
 import '../../../support/task_fixtures.dart';
 import '../../../support/team_task_fixtures.dart';
@@ -44,6 +45,17 @@ void main() {
     for (final label in ['פתוחה', 'בטיפול', 'בוצעה', 'לא רלוונטי/בוטל', 'כפילות']) {
       expect(find.byKey(Key('team-task-status-option-$label')), findsOneWidget);
     }
+  });
+
+  testWidgets('the deadline opens the app date picker, as for a constraint', (tester) async {
+    // The calendar's month header needs a tablet's width with the test font.
+    await pumpTeamTasks(tester,
+        user: manager, board: board([other]), size: const Size(1200, 1000));
+    await openTask(tester, 'o');
+    await tester.tap(find.byKey(const Key('team-task-edit-deadline')));
+    await tester.pumpAndSettle();
+    expect(find.byType(DualCalendarDatePicker), findsOneWidget);
+    expect(find.byType(DatePickerDialog), findsNothing);
   });
 
   testWidgets('choosing כפילות asks for the original', (tester) async {

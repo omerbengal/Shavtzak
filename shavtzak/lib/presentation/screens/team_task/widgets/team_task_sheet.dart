@@ -13,6 +13,7 @@ import '../../task/edit/editable_value.dart';
 import '../../task/edit/value_editors.dart';
 import '../../task/task_style.dart';
 import '../../task/widgets/confirm_delete_dialog.dart';
+import 'deadline_picker.dart';
 import 'task_link_picker.dart';
 import 'team_subtasks_editor.dart';
 import 'team_task_style.dart';
@@ -180,15 +181,11 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     );
   }
 
-  Future<void> _pickDeadline(TeamTask task) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: task.deadlineDate ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      helpText: 'דד ליין',
-      cancelText: 'ביטול',
-      confirmText: 'שמירה',
+  Future<void> _pickDeadline(TeamTasksLoaded state, TeamTask task) async {
+    final picked = await pickTeamTaskDeadline(
+      context,
+      initial: task.deadlineDate,
+      events: state.events,
     );
     if (picked == null || !mounted) return;
     _edit(task.copyWith(deadline: () => dateKey(picked)));
@@ -237,7 +234,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
               children: [
                 _section('שיוך', _linkValue(state, task, manage)),
                 _section('סטטוס', _statusValue(state, task, manage || owner)),
-                _section('דד ליין', _deadlineValue(task, manage, late)),
+                _section('דד ליין', _deadlineValue(state, task, manage, late)),
                 _section('תיאור', _descriptionValue(task, manage)),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
                 _section('אנשי קשר', _contactsValue(task, manage)),
@@ -396,7 +393,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     );
   }
 
-  Widget _deadlineValue(TeamTask task, bool manage, bool late) {
+  Widget _deadlineValue(TeamTasksLoaded state, TeamTask task, bool manage, bool late) {
     final date = task.deadlineDate;
     final text = Text(
       date == null ? 'ללא דד ליין' : (late ? '${fullDate(date)} · באיחור' : fullDate(date)),
@@ -411,7 +408,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
         _tappable(
           key: const Key('team-task-edit-deadline'),
           enabled: true,
-          onTap: () => _pickDeadline(task),
+          onTap: () => _pickDeadline(state, task),
           child: text,
         ),
         if (date != null)
