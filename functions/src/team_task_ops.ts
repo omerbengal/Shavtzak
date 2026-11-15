@@ -8,6 +8,8 @@ import {
   applyTeamTaskEdit,
   applyTeamTaskStatus,
   buildNewTeamTask,
+  deleteTeamTaskUpdate,
+  editTeamTaskUpdate,
   parseTeamTaskStatus,
   teamTaskFromStored,
 } from './team_tasks';
@@ -24,6 +26,7 @@ export interface TeamTaskStore {
   eventExists(id: string): Promise<boolean>;
   categoryExists(id: string): Promise<boolean>;
   topicExists(id: string): Promise<boolean>;
+  pendingEventExists(id: string): Promise<boolean>;
   /** The ids among [ids] that are not an active, unarchived team member. */
   inactiveMemberIds(ids: string[]): Promise<string[]>;
   writeTask(doc: TeamTaskDoc): Promise<void>;
@@ -45,6 +48,8 @@ export const TEAM_TASK_OPERATIONS = [
   'teamTask.setStatus',
   'teamTask.setSubtaskDone',
   'teamTask.addUpdate',
+  'teamTask.editUpdate',
+  'teamTask.deleteUpdate',
 ] as const;
 
 function requireId(value: unknown, field: string): string {
@@ -83,6 +88,9 @@ async function requireLinkExists(store: TeamTaskStore, next: TeamTaskDoc): Promi
   }
   if (link.type === 'topic' && !(await store.topicExists(link.id))) {
     throw new TaskError(404, 'הנושא לא נמצא');
+  }
+  if (link.type === 'pendingEvent' && !(await store.pendingEventExists(link.id))) {
+    throw new TaskError(404, 'האירוע שעוד לא נוצר לא נמצא');
   }
 }
 
@@ -215,6 +223,32 @@ export async function runTeamTaskOperation(
         before,
         after: next,
         details: subtaskId == null ? {text: log[0]?.text} : {text: log[0]?.text, subtaskId},
+      };
+    }
+    case 'teamTask.editUpdate':
+    case 'teamTask.deleteUpdate': {
+      const before = await loadTask(store, requireId(payload['id'], 'id'));
+      const updateId = requireId(payload['updateId'], 'updateId');
+      const subtaskId = optionalId(payload['subtaskId'], 'subtaskId');
+      const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+      const next = operation === 'teamTask.editUpdate'
+        ? editTeamTaskUpdate(before, updateId, text, ctx, subtaskId)
+        : deleteTeamTaskUpdate(before, updateId, ctx, subtaskId);
+      await store.writeTask(next);
+      const log = subtaskId == null
+        ? before.updates
+        : before.subtasks.find((subtask) => subtask.id === subtaskId)?.updates ?? [];
+      const old = log.find((entry) => entry.id === updateId);
+      return {
+        entityId: next.id,
+        before,
+        after: next,
+        details: {
+          updateId,
+          oldText: old?.text ?? null,
+          ...(operation === 'teamTask.editUpdate' ? {text: text.trim()} : {}),
+          ...(subtaskId == null ? {} : {subtaskId}),
+        },
       };
     }
     default:

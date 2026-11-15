@@ -21,7 +21,12 @@ export type TeamTaskStatus = 'open' | 'inProgress' | 'done' | 'cancelled' | 'dup
 export const TEAM_TASK_STATUSES: readonly TeamTaskStatus[] =
   ['open', 'inProgress', 'done', 'cancelled', 'duplicate'];
 
-export type TaskLinkType = 'event' | 'category' | 'topic';
+/**
+ * `pendingEvent` = "אירוע שעוד לא נוצר" (round 10): a named placeholder in
+ * `utilities/Lists` → `PendingEvents`, linked later to the real event
+ * (`pendingEvent.link` moves every task of it at once).
+ */
+export type TaskLinkType = 'event' | 'category' | 'topic' | 'pendingEvent';
 
 export type TaskLink = {type: TaskLinkType; id: string} | null;
 
@@ -55,6 +60,8 @@ export type TaskUpdateEntry = {
   at: Timestamp;
   byId: string;
   byName: string | null;
+  /** Set when its writer (or a manager) edited it (round 10); shown "(נערך)". */
+  editedAt?: Timestamp | null;
 };
 
 export type TeamTaskDoc = {
@@ -92,7 +99,7 @@ const MAX_UPDATES = 500;
 const MAX_SUBTASK_UPDATES = 100;
 const DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
-const LINK_TYPES: readonly TaskLinkType[] = ['event', 'category', 'topic'];
+const LINK_TYPES: readonly TaskLinkType[] = ['event', 'category', 'topic', 'pendingEvent'];
 
 // ---- owners and permissions ----
 
@@ -223,6 +230,9 @@ function storedUpdates(value: unknown): TaskUpdateEntry[] {
       at,
       byId: storedString(record['byId']) ?? '',
       byName: storedString(record['byName']),
+      ...(storedTimestamp(record['editedAt']) != null
+        ? {editedAt: storedTimestamp(record['editedAt'])}
+        : {}),
     });
   }
   return updates;
@@ -588,4 +598,65 @@ export function appendTeamTaskUpdate(
     updates: [entry, ...task.updates].slice(0, MAX_UPDATES),
     updatedAt: ctx.now,
   });
+}
+
+// ---- editing the log (round 10) ----
+
+/**
+ * Who may change an update: its writer, or a manager. An update with no
+ * writer (`byId` empty, "מהאקסל") only a manager. The app offers a manager
+ * the others' updates only in "כל המשימות" (Omer, round 10).
+ */
+function requireUpdateEditor(entry: TaskUpdateEntry, actor: TaskActor): void {
+  if (canManageTasks(actor)) return;
+  if (entry.byId.length > 0 && entry.byId === actor.memberId) return;
+  throw new TaskError(403, 'אפשר לערוך או למחוק רק עדכון שכתבת');
+}
+
+function changeLog(
+  task: TeamTaskDoc,
+  subtaskId: string | null,
+  updateId: string,
+  ctx: Ctx,
+  change: (log: TaskUpdateEntry[], index: number) => TaskUpdateEntry[],
+): TeamTaskDoc {
+  const log = subtaskId == null ? task.updates : findSubtask(task, subtaskId).updates;
+  const index = log.findIndex((entry) => entry.id === updateId);
+  if (index < 0) throw new TaskError(404, 'העדכון לא נמצא');
+  requireUpdateEditor(log[index], ctx.actor);
+  const next = change(log, index);
+  if (subtaskId == null) {
+    return finish({...task, updates: next, updatedAt: ctx.now});
+  }
+  return finish({
+    ...task,
+    subtasks: task.subtasks.map((subtask) =>
+      subtask.id === subtaskId ? {...subtask, updates: next} : subtask),
+    updatedAt: ctx.now,
+  });
+}
+
+/** A new text for update [updateId], marked edited; its date and writer stay. */
+export function editTeamTaskUpdate(
+  task: TeamTaskDoc,
+  updateId: string,
+  text: string,
+  ctx: Ctx,
+  subtaskId: string | null = null,
+): TeamTaskDoc {
+  const trimmed = typeof text === 'string' ? text.trim() : '';
+  if (trimmed.length === 0) throw new TaskError(400, 'חובה להזין עדכון');
+  if (trimmed.length > MAX_UPDATE_LENGTH) throw new TaskError(400, 'העדכון ארוך מדי');
+  return changeLog(task, subtaskId, updateId, ctx, (log, index) => log.map((entry, i) =>
+    i === index ? {...entry, text: trimmed, editedAt: ctx.now} : entry));
+}
+
+export function deleteTeamTaskUpdate(
+  task: TeamTaskDoc,
+  updateId: string,
+  ctx: Ctx,
+  subtaskId: string | null = null,
+): TeamTaskDoc {
+  return changeLog(task, subtaskId, updateId, ctx,
+    (log, index) => log.filter((_, i) => i !== index));
 }

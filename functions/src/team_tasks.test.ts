@@ -13,6 +13,8 @@ import {
   buildNewTeamTask,
   deriveOwnerIds,
   deriveParentStatus,
+  deleteTeamTaskUpdate,
+  editTeamTaskUpdate,
   isTeamTaskOwner,
   teamTaskAuditDetails,
   teamTaskFromStored,
@@ -368,4 +370,49 @@ test('a stored subtask from before round 2 still reads', () => {
   assert.deepEqual(task.subtasks[0].assigneeIds, ['a']);
   assert.equal(task.subtasks[1].status, 'open');
   assert.deepEqual(task.subtasks[1].assigneeIds, []);
+});
+
+test('the log: a writer edits and deletes only their own update (round 10)', () => {
+  let task = buildNewTeamTask(input(), {now, actor: manager});
+  task = appendTeamTaskUpdate(task, 'של דנה', {now, actor: ownerA});
+  task = appendTeamTaskUpdate(task, 'של יוסי', {now, actor: ownerB});
+  const [byB, byA] = task.updates;
+  const edited = editTeamTaskUpdate(task, byA.id, 'דנה מתקנת', {now: later, actor: ownerA});
+  assert.equal(edited.updates[1].text, 'דנה מתקנת');
+  assert.deepEqual(edited.updates[1].editedAt, later);
+  assert.equal(edited.updates[0].editedAt, undefined);
+  expectTaskError(() => editTeamTaskUpdate(task, byB.id, 'x', {now, actor: ownerA}), 403);
+  expectTaskError(() => deleteTeamTaskUpdate(task, byB.id, {now, actor: ownerA}), 403);
+  expectTaskError(() => editTeamTaskUpdate(task, byA.id, '  ', {now, actor: ownerA}), 400);
+  assert.equal(deleteTeamTaskUpdate(task, byA.id, {now, actor: ownerA}).updates.length, 1);
+  // A manager (also "ניהול משימות") changes anyone's.
+  assert.equal(deleteTeamTaskUpdate(task, byB.id, {now, actor: flagged}).updates[0].id, byA.id);
+});
+
+test('the log: an update with no writer only a manager changes', () => {
+  const stored = teamTaskFromStored('t9', {
+    title: 'מיובא',
+    assigneeIds: ['a'],
+    ownerIds: ['a'],
+    updates: [{id: 'u1', text: 'מהאקסל', at: now, byId: '', byName: 'מהאקסל'}],
+  });
+  expectTaskError(() => editTeamTaskUpdate(stored, 'u1', 'x', {now, actor: ownerA}), 403);
+  assert.equal(editTeamTaskUpdate(stored, 'u1', 'x', {now, actor: manager}).updates[0].text, 'x');
+});
+
+test('the log: the updates of a subtask', () => {
+  let task = withSubtasks();
+  task = appendTeamTaskUpdate(task, 'מחיר התקבל', {now, actor: ownerA}, 's1');
+  const id = task.subtasks[0].updates[0].id;
+  expectTaskError(() => editTeamTaskUpdate(task, id, 'x', {now, actor: ownerB}, 's1'), 403);
+  const edited = editTeamTaskUpdate(task, id, 'מחיר סופי', {now, actor: ownerA}, 's1');
+  assert.equal(edited.subtasks[0].updates[0].text, 'מחיר סופי');
+  assert.equal(deleteTeamTaskUpdate(task, id, {now, actor: ownerA}, 's1').subtasks[0].updates.length, 0);
+});
+
+test('a task may link to a pending event (round 10)', () => {
+  const task = buildNewTeamTask(input({link: {type: 'pendingEvent', id: 'pe1'}}), {now, actor: manager});
+  assert.deepEqual(task.link, {type: 'pendingEvent', id: 'pe1'});
+  assert.deepEqual(teamTaskFromStored('x', {link: {type: 'pendingEvent', id: 'pe1'}}).link,
+    {type: 'pendingEvent', id: 'pe1'});
 });

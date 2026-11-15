@@ -49,6 +49,11 @@ import type {
 import {normalizeParticipantGroups} from './participant_groups';
 import {applyEventItemCatalogueMutation, normalizeEventItemChoices} from './event_items';
 import {applyTaskTopicMutation, isLinkedToTopic} from './task_topics';
+import {
+  applyPendingEventMutation,
+  isLinkedToPendingEvent,
+  planPendingEventLink,
+} from './pending_events';
 import {TeamTaskStore, runTeamTaskOperation} from './team_task_ops';
 import {TeamTaskDoc, teamTaskAuditDetails} from './team_tasks';
 import {
@@ -6643,7 +6648,9 @@ async function executeMutation(
     case 'teamTask.delete':
     case 'teamTask.setStatus':
     case 'teamTask.setSubtaskDone':
-    case 'teamTask.addUpdate': {
+    case 'teamTask.addUpdate':
+    case 'teamTask.editUpdate':
+    case 'teamTask.deleteUpdate': {
       const taskActor = taskActorFrom(actor);
       const now = Timestamp.now();
       // Categories and topics live in utilities/Lists, outside the transaction
@@ -6705,9 +6712,82 @@ async function executeMutation(
       return {ok: true};
     }
 
+    // "אירוע שעוד לא נוצר" (round 10): placeholders in utilities/Lists.
+    case 'pendingEvent.insert':
+    case 'pendingEvent.update':
+    case 'pendingEvent.permanentlyDelete': {
+      const listsRef = db.collection('utilities').doc('Lists');
+      const listsData = await getUtilitiesListsDoc();
+      const change = applyPendingEventMutation(
+        getPendingEventsArray(listsData), operation, payload, new Date().toISOString(),
+        taskActorFrom(actor),
+      );
+      // Deleted for good: its tasks move to "ללא שיוך", as for a topic.
+      const unlinked: string[] = [];
+      const batch = db.batch();
+      batch.set(listsRef, {PendingEvents: change.items}, {merge: true});
+      if (operation === 'pendingEvent.permanentlyDelete') {
+        const linked = await db.collection(collections.teamTasks)
+          .where('link.id', '==', change.entityId)
+          .get();
+        for (const doc of linked.docs) {
+          if (!isLinkedToPendingEvent(doc.data(), change.entityId)) continue;
+          unlinked.push(doc.id);
+          batch.update(doc.ref, {link: null, updatedAt: Timestamp.now()});
+        }
+      }
+      await batch.commit();
+      await writeAuditLog(db, collections, actor, operation, 'pendingEvent', change.entityId, {
+        name: change.after?.['name'] ?? change.before?.['name'],
+        ...(unlinked.length > 0 ? {unlinkedTaskIds: unlinked} : {}),
+      }, {before: change.before, after: change.after});
+      return {ok: true};
+    }
+
+    // The real event now exists: every task of the placeholder moves to it,
+    // and the placeholder leaves the list, in one batch.
+    case 'pendingEvent.link': {
+      const listsRef = db.collection('utilities').doc('Lists');
+      const listsData = await getUtilitiesListsDoc();
+      const plan = planPendingEventLink(
+        getPendingEventsArray(listsData), payload, taskActorFrom(actor),
+      );
+      const eventSnapshot = await db.collection(collections.events).doc(plan.eventId).get();
+      if (!eventSnapshot.exists ||
+          eventSnapshot.data()?.[EVENT_DELETION_PENDING_FIELD] === true) {
+        throw new HttpError(404, 'האירוע לא נמצא');
+      }
+      const linked = await db.collection(collections.teamTasks)
+        .where('link.id', '==', plan.pendingEventId)
+        .get();
+      const moved: string[] = [];
+      const batch = db.batch();
+      const now = Timestamp.now();
+      for (const doc of linked.docs) {
+        if (!isLinkedToPendingEvent(doc.data(), plan.pendingEventId)) continue;
+        moved.push(doc.id);
+        batch.update(doc.ref, {link: {type: 'event', id: plan.eventId}, updatedAt: now});
+      }
+      batch.set(listsRef, {PendingEvents: plan.items}, {merge: true});
+      await batch.commit();
+      await writeAuditLog(db, collections, actor, operation, 'pendingEvent', plan.pendingEventId, {
+        name: plan.before['name'],
+        eventId: plan.eventId,
+        eventName: eventSnapshot.data()?.['name'] ?? null,
+        movedTaskIds: moved,
+      }, {before: plan.before, after: null});
+      return {ok: true};
+    }
+
     default:
       throw new HttpError(400, `Unsupported operation: ${operation}`);
   }
+}
+
+function getPendingEventsArray(listsData: Record<string, unknown>): Array<Record<string, unknown>> {
+  return Array.isArray(listsData['PendingEvents'])
+    ? (listsData['PendingEvents'] as Array<Record<string, unknown>>)
+    : [];
 }
 
 function getTaskTopicsArray(listsData: Record<string, unknown>): Array<Record<string, unknown>> {
@@ -6737,6 +6817,9 @@ function teamTaskStoreFor(
     },
     async topicExists(id) {
       return getTaskTopicsArray(listsData).some((topic) => topic['id'] === id);
+    },
+    async pendingEventExists(id) {
+      return getPendingEventsArray(listsData).some((entry) => entry['id'] === id);
     },
     async inactiveMemberIds(ids) {
       if (ids.length === 0) return [];

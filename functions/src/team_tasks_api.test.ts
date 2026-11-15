@@ -23,6 +23,8 @@ class MemoryStore implements TeamTaskStore {
   async eventExists(id: string) { return this.events.has(id); }
   async categoryExists(id: string) { return this.categories.has(id); }
   async topicExists(id: string) { return this.topics.has(id); }
+  pendingEvents = new Set<string>(['pe1']);
+  async pendingEventExists(id: string) { return this.pendingEvents.has(id); }
   async inactiveMemberIds(ids: string[]) {
     return ids.filter((id) => {
       const m = this.members.get(id);
@@ -147,4 +149,34 @@ test('setStatus and addUpdate with a subtaskId act on that subtask', async () =>
     {id: 't1', subtaskId: 's1', text: 'התחלתי'}, owner, now);
   assert.equal(logged.after?.subtasks[0].updates[0].text, 'התחלתי');
   assert.equal(logged.after?.updates.length, 0);
+});
+
+test('insert links to a pending event only when it exists (round 10)', async () => {
+  const store = new MemoryStore();
+  await assert.rejects(insert(store, {link: {type: 'pendingEvent', id: 'nope'}}),
+    status(404, 'האירוע שעוד לא נוצר לא נמצא'));
+  const done = await insert(store, {link: {type: 'pendingEvent', id: 'pe1'}});
+  assert.deepEqual(done.after?.link, {type: 'pendingEvent', id: 'pe1'});
+});
+
+test('editUpdate / deleteUpdate: the writer, or a manager (round 10)', async () => {
+  const store = new MemoryStore();
+  await insert(store);
+  await runTeamTaskOperation(store, 'teamTask.addUpdate', {id: 't1', text: 'שלי'}, owner, now);
+  const updateId = (store.tasks.get('t1')!['updates'] as Array<{id: string}>)[0].id;
+  const later = Timestamp.fromMillis(1_800_000_600_000);
+  const edited = await runTeamTaskOperation(store, 'teamTask.editUpdate',
+    {id: 't1', updateId, text: ' מתוקן '}, owner, later);
+  assert.equal(edited.after?.updates[0].text, 'מתוקן');
+  assert.deepEqual(edited.after?.updates[0].editedAt, later);
+  assert.deepEqual(edited.after?.updates[0].at, now);
+  assert.equal(edited.details['oldText'], 'שלי');
+  const other: TaskActor = {memberId: 'b', name: 'יוסי', isAdmin: false, canManageTasks: false};
+  await assert.rejects(runTeamTaskOperation(store, 'teamTask.deleteUpdate',
+    {id: 't1', updateId}, other, now), status(403));
+  await assert.rejects(runTeamTaskOperation(store, 'teamTask.deleteUpdate',
+    {id: 't1', updateId: 'nope'}, manager, now), status(404));
+  const deleted = await runTeamTaskOperation(store, 'teamTask.deleteUpdate',
+    {id: 't1', updateId}, manager, now);
+  assert.equal(deleted.after?.updates.length, 0);
 });
