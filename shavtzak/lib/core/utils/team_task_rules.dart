@@ -21,6 +21,37 @@ bool canManageTeamTasks(TeamMember member) => member.isAdmin || member.canManage
 
 bool isTeamTaskOwner(TeamTask task, String memberId) => task.ownerIds.contains(memberId);
 
+const String unknownMemberLabel = 'חבר צוות לא ידוע';
+
+/// The owners' names in [TeamTask.ownerIds] order; an id with no joined member
+/// (deleted from the team) reads "חבר צוות לא ידוע".
+List<String> teamTaskOwnerNames(TeamTask task) {
+  final byId = {for (final member in task.owners) member.id: member.name};
+  return [for (final id in task.ownerIds) byId[id] ?? unknownMemberLabel];
+}
+
+/// [task] with subtask [subtaskId] ticked or unticked, and the status the
+/// backend gives it (`team_tasks.ts` withAutoStatus): cancelled and duplicate
+/// never change; every subtask done = done; a done task with an open subtask
+/// and an open task with a ticked one = in progress.
+TeamTask withSubtaskTicked(TeamTask task, String subtaskId, bool isDone) {
+  if (!task.subtasks.any((subtask) => subtask.id == subtaskId)) return task;
+  final subtasks = [
+    for (final subtask in task.subtasks)
+      subtask.id == subtaskId ? subtask.copyWith(isDone: isDone) : subtask,
+  ];
+  var status = task.status;
+  if (status != TeamTaskStatus.cancelled && status != TeamTaskStatus.duplicate) {
+    if (subtasks.every((subtask) => subtask.isDone)) {
+      status = TeamTaskStatus.done;
+    } else if (status == TeamTaskStatus.done ||
+        (status == TeamTaskStatus.open && subtasks.any((subtask) => subtask.isDone))) {
+      status = TeamTaskStatus.inProgress;
+    }
+  }
+  return task.copyWith(subtasks: subtasks, status: status);
+}
+
 /// One group of the list: the tasks of one event, category or topic, or the
 /// tasks with no link ("ללא שיוך", [type] null).
 class TeamTaskGroup extends Equatable {
