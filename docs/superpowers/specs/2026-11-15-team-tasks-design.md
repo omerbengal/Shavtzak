@@ -1,0 +1,147 @@
+# משימות צוות — team tasks design
+
+Date: 2026-11-15 · Worktree: `.claude/worktrees/team-tasks` · Branch: `team-tasks`
+Status: decisions confirmed by Omer in Telegram (topic "Shavtzak", msgs 3070-3141); design approved
+(msg 3141) with one addition (contacts). Not yet implemented.
+
+## Why
+
+The headquarters team (מטה) runs its ongoing work from an Excel sheet (`todo_list.xlsx`, 83 rows on
+15/11/2026): columns #, אירוע, אחראי, משימה, דד ליין, פירוט, סטטוס. Everything is free text: the
+"אירוע" column is mostly a category or a topic, not one event ("אירועי חנוכה" 34 rows, "נשות מג״דים"
+16, "דו יומי מ״פ סמג״ד" 13, "כללי" 5); it already splits by typo ("נשות מג״דים" vs "נשות מגדים");
+"סטטוס" is empty in every row and done is a green fill; "דד ליין" is filled in 6 rows, as a number
+(15.11); "פירוט" is a dated update log ("0211 עדיין פתוח", "8/11 הבוט מוכן"); one row (#938) is a
+meeting summary with 22 lines, each owned by a different person.
+
+The דו יומי task screens already moved one event series from Excel into the app. This feature does the
+same for the team's general tasks, reusing that structure: instead of a stage, a task belongs to an
+event, a category or a topic; there is no timeline; every task has its own (optional) deadline.
+
+## Goals
+
+- One place in the app for every team task, with owners, subtasks, a deadline, a status and an update
+  log, replacing the Excel sheet.
+- Managers see and edit everything; any other team member sees only the tasks they own.
+- Same look and building blocks as the דו יומי screens.
+
+## Non-goals
+
+- No Excel import or export. The team starts clean (Omer, msg 3132). A one-off load of the sheet into
+  the database may be requested later, after Omer and the other admins have tested the feature; it is
+  not part of this feature.
+- No notifications or reminders.
+- No change to the דו יומי tasks, screens or the `tasks` / `stages` collections.
+
+## Anti-goals
+
+- Two layers of owners on one task (Omer, msg 3103: "זה עושה בלאגן").
+- A free-text topic per task that splits groups by spelling.
+
+## Decisions
+
+| # | Decision | Source |
+|---|---|---|
+| 1 | A task is linked to **an event, a category or a topic** (all three are needed). | Omer, msg 3087 |
+| 2 | **Owners (אחראים) are team members only** (חבר צוות), with no tie to the event's assignments. | Omer, button `taskowner:member` |
+| 3 | Progress is an **update log**: every update is kept with its date and author, newest first. | Omer, button `taskupd:log` |
+| 4 | **Visibility**: admins and members with "ניהול משימות" (`canManageTasks`) see every task; any other team member sees only the tasks they own. | Omer, button `taskview:managers` |
+| 5 | A **subtask has its own owner** (one team member). | Omer, msg 3103 |
+| 6 | A task **with subtasks has no owner of its own**: its owners are its subtasks' owners. A task without subtasks has owners as usual (one or more). | Omer, button `taskpar:union` |
+| 7 | **Topics** come from a managed list, like "ניהול קטגוריות"; a task picks one, with "נושא חדש" right from the task. | Omer, button `tasktopic:list` |
+| 8 | **Statuses**: פתוחה, בטיפול, בוצעה, לא רלוונטי/בוטל, כפילות ("managers don't want to delete duplicates for good"). | Omer, msg 3124 |
+| 9 | **Deadline**: optional, a date only. | Omer, button `taskdue:date` |
+| 10 | **No import**: start clean. | Omer, msg 3132 |
+| 11 | **Placement**: a new "משימות" card on the admin choice screen next to "דו יומי"; for team members a 4th bottom tab "משימות", shown only to a member who owns a task or has "ניהול משימות". | Omer, button `taskplace:separate` |
+| 12 | **Contacts**: every task and every subtask can have contacts (שם, תפקיד/תיאור, טלפון), exactly like a דו יומי stage's contacts. | Omer, msg 3141 |
+
+Proposals Omer saw in the design key points (msg 3139) and approved:
+
+- A task has **one link** (event, category or topic). Filtering by a category also shows the tasks
+  linked to events of that category.
+- "כפילות" **points to the original task**. "לא רלוונטי/בוטל" and "כפילות" are **hidden by default**
+  and shown through the status filter.
+- "באיחור" is **derived**, not a status: deadline before today and status פתוחה or בטיפול.
+- When **every subtask is ticked** the task moves to בוצעה by itself.
+- An **owner** may change the task's status, tick their own subtasks and write in the log; everything
+  else is edited by managers.
+- Team tasks get **their own collection**; the דו יומי UI pieces are shared, not copied.
+
+## Approaches
+
+1. **Generalize the `tasks` collection** (stage optional, new fields beside the old ones). Rejected:
+   a דו יומי task's due moment, single overwritten note, done flag, fixed `stageId` and the
+   assignees-must-be-assigned rule differ from team tasks in almost every field; one collection would
+   tangle both rule sets, the backend checks and the Excel import/sync code.
+2. **Revive the unmerged May 2026 `feat/tasks-feature` branch** (it had general tasks, statuses and an
+   update history). Rejected: hundreds of commits behind `main` (387 already on 11/10), built before the דו יומי screens; its ideas
+   are reused, its code is not.
+3. **New collection, shared building blocks** (chosen): a `teamTasks` collection with its own backend
+   endpoints, and the דו יומי widgets (subtask rows, assignee picker and chips, contact rows with tap to
+   call, in-place value editors, optimistic ticks, `RowHold`) extracted where needed so both features use
+   them.
+
+## Data
+
+`teamTasks` (`test_teamTasks` in test mode), one document per task:
+
+- `title`, `description`
+- `link`: `{type: 'event' | 'category' | 'topic', id}` or null (shown under "ללא שיוך")
+- `assigneeIds`: team member ids, used only when the task has no subtasks
+- `subtasks`: `[{id, title, isDone, assigneeId | null, contacts: [...]}]`
+- `contacts`: `[{id, name, role, phone}]` (same shape as `StageContact`)
+- `deadline`: `yyyy-MM-dd` or null
+- `status`: `open | inProgress | done | cancelled | duplicate`; `duplicateOfId` when `duplicate`
+- `updates`: `[{id, text, at, byId, byName}]` (the log; newest first on screen)
+- `ownerIds`: derived and stored on every write = `assigneeIds` when there are no subtasks, else the
+  distinct subtask `assigneeId`s. Used by the read rule and the "my tasks" query.
+- `completedAt`, `createdAt`, `createdById`, `updatedAt`
+
+Topics: a managed list in the same place and shape as the categories / `EventItems` lists
+(`{id, name, sortOrder, isArchived}`), managed in "ניהול נושאים". An archived topic stays on its tasks.
+
+Rules: `teamTasks` reads are allowed to a manager (admin or `canManageTasks`) or when
+`request.auth.uid in resource.data.ownerIds` (the existing rules already treat `request.auth.uid` as the team member id, see `isAuthorizedProdUser`; the builder confirms this before relying on it); writes only
+through the backend, as for every other collection. A non-manager's screen queries
+`ownerIds array-contains <me>`.
+
+## Screens
+
+1. **Entry**: admin choice screen gets a "משימות" card next to "דו יומי" (route `/team-tasks`,
+   `/test/team-tasks`). The member shell gets a 4th tab "משימות" (`/user/team-tasks`), present only when
+   the member owns a visible task or has "ניהול משימות".
+2. **Tasks list**: two tabs, "המשימות שלי" and (managers only) "כל המשימות". Tasks grouped by link
+   (an event, a category, a topic, "ללא שיוך"), groups by their nearest deadline, tasks inside a group by
+   deadline (none last), done at the bottom. Each row: status chip, title, deadline (red when late),
+   owner chips, subtask progress (3/5). A one-row filter bar: status (default: all but בוטל/כפילות),
+   owner, link. Managers: "+ משימה חדשה" and a ⋯ menu with "ניהול נושאים".
+3. **Task screen** (bottom sheet on a phone, centred panel on a wide window, as in דו יומי): link,
+   status (owners and managers change it), deadline, description, owners, contacts (tap = call, as in a
+   stage), subtasks (tick, owner chip, the subtask's own contacts), then the update log with a "+ עדכון"
+   box. A manager edits every value in place, saved at once (the דו יומי עריכה pattern).
+4. **New task**: the same task screen, empty, opened from "+ משימה חדשה"; link picker with three
+   segments (אירוע / קטגוריה / נושא) and "נושא חדש".
+5. **ניהול נושאים**: the "ניהול קטגוריות" dialog pattern (add, rename, archive, restore).
+
+## Behaviour
+
+- Ticking the last open subtask sets בוצעה; unticking a subtask of a בוצעה task sets בטיפול.
+- Status "כפילות" asks for the original task (a picker of the other tasks).
+- A task linked to an event that was deleted shows "אירוע שנמחק" under its group; nothing is lost.
+- Deleting a task: managers only, behind a confirm (the statuses cover the "don't delete" cases).
+- Every write goes through the backend (`teamTask.*`, `taskTopic.*` in `functions/`), which validates
+  the link, the owners (active team members), the status/duplicate pair and recomputes `ownerIds`.
+
+## Left to the builder
+
+- Exact widget extraction from the דו יומי screens and their names.
+- The bloc split (one `TeamTaskBloc` like `TaskBloc`, or more).
+- The topics list document name and endpoint names.
+- Mockup in the image sent to Omer is a sketch; follow the app's existing styles (`task_style.dart`).
+
+## Testing
+
+- Pure rules (grouping, sorting, late, owners derivation, auto status, visibility of the tab) as pure
+  functions with unit tests, `now` injected.
+- Backend: endpoint tests for validation and `ownerIds`.
+- Rules: an owner can read their task and not another; a manager reads all.
