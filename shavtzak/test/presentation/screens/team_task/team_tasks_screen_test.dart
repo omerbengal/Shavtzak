@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/core/theme/app_theme.dart';
 import 'package:shavtzak/data/repositories/team_task_repository.dart';
 import 'package:shavtzak/domain/entities/team_task.dart';
 import 'package:shavtzak/presentation/screens/task/task_style.dart';
@@ -44,6 +45,19 @@ void main() {
     expect(find.byKey(const Key('team-task-row-a')), findsNothing);
   });
 
+  testWidgets('tabs as in דו יומי: "המשימות שלי" on the right, the chosen one readable', (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board([mine]));
+    final mineTab = tester.getCenter(find.byKey(const Key('team-tab-mine')));
+    final allTab = tester.getCenter(find.byKey(const Key('team-tab-all')));
+    expect(mineTab.dx, greaterThan(allTab.dx));
+    // The same segmented switch as the דו יומי event screen, white on dark blue.
+    final tabs = tester.widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>));
+    final selected = {WidgetState.selected};
+    expect(tabs.style?.foregroundColor?.resolve(selected), Colors.white);
+    expect(tabs.style?.backgroundColor?.resolve(selected), AppTheme.primaryDark);
+    expect(find.byType(TabBar), findsNothing);
+  });
+
   testWidgets('late deadline is red', (tester) async {
     final late = buildTeamTask(id: 'l', title: 'באיחור', deadline: '2026-11-10').copyWith(owners: [dana]);
     final fine = buildTeamTask(id: 'f', title: 'בזמן', deadline: '2026-11-20').copyWith(owners: [dana]);
@@ -72,6 +86,32 @@ void main() {
     expect(saved.title, 'לסגור להקה');
     expect(saved.link, const TaskLink(TaskLinkType.topic, 'p1'));
     expect(saved.status, TeamTaskStatus.open);
+  });
+
+  testWidgets('the link picker reads well: dark segments, roomy lines, the current one not blue',
+      (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board(const []));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('new-team-task-link')));
+    await tester.pumpAndSettle();
+    final segments =
+        tester.widget<SegmentedButton<TaskLinkType>>(find.byType(SegmentedButton<TaskLinkType>));
+    expect(segments.style?.foregroundColor?.resolve({WidgetState.selected}), Colors.white);
+    expect(segments.style?.backgroundColor?.resolve({WidgetState.selected}), AppTheme.primaryDark);
+    await tester.tap(find.text('נושא'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('task-link-option-p1')));
+    await tester.pumpAndSettle();
+    // Open again: the chosen topic is marked in words, in the normal colour.
+    await tester.tap(find.byKey(const Key('new-team-task-link')));
+    await tester.pumpAndSettle();
+    final option = find.byKey(const Key('task-link-option-p1'));
+    expect(find.descendant(of: option, matching: find.text('השיוך הנוכחי')), findsOneWidget);
+    final name = tester.widget<Text>(find.descendant(of: option, matching: find.text('נשות מגדים')));
+    expect(name.style?.fontSize, 16);
+    expect(name.style?.color, isNull);
+    expect(find.descendant(of: option, matching: find.byType(ListTile)), findsNothing);
   });
 
   testWidgets('a new task needs a title', (tester) async {

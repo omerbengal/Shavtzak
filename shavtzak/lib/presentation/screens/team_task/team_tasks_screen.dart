@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/debug/logger.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/team_task_rules.dart';
 import '../../../domain/entities/team_member.dart';
@@ -25,8 +26,10 @@ import 'widgets/topic_management_dialog.dart';
 /// The team tasks screen ("משימות"): the headquarters team's tasks, grouped
 /// by the event, category or topic they belong to.
 ///
-/// Two tabs for a manager, "כל המשימות" (first) and "המשימות שלי"; a member
-/// who is not a manager sees only their own tasks, with no tabs.
+/// Two tabs for a manager, "המשימות שלי" and "כל המשימות", as the דו יומי
+/// event screen: the same segmented switch, "המשימות שלי" on the right, a
+/// manager opening on every task. A member who is not a manager sees only
+/// their own tasks, with no tabs.
 class TeamTasksScreen extends StatefulWidget {
   const TeamTasksScreen({super.key, required this.place});
 
@@ -37,6 +40,9 @@ class TeamTasksScreen extends StatefulWidget {
 }
 
 class _TeamTasksScreenState extends State<TeamTasksScreen> {
+  /// Whether a manager looks at every task ("כל המשימות") or at their own.
+  bool _showAll = true;
+
   void _subscribe(TeamMember user) {
     context.read<TeamTaskBloc>().add(TeamTasksSubscribe(user));
   }
@@ -115,9 +121,6 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                       ),
                     if (widget.place == TeamTasksPlace.tab) MemberBarActions(user: user),
                   ],
-                  bottom: canManage
-                      ? const TabBar(tabs: [Tab(text: 'כל המשימות'), Tab(text: 'המשימות שלי')])
-                      : null,
                 ),
                 floatingActionButton: canManage
                     ? FloatingActionButton.extended(
@@ -129,7 +132,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                     : null,
                 body: _withBanner(_body(state, canManage)),
               );
-              return canManage ? DefaultTabController(length: 2, child: scaffold) : scaffold;
+              return scaffold;
             },
           );
         },
@@ -153,7 +156,51 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
           ],
         );
     if (!canManage) return list(state.mineGroups);
-    return TabBarView(children: [list(state.allGroups), list(state.mineGroups)]);
+    return Column(
+      children: [
+        _tabs(),
+        Expanded(child: list(_showAll ? state.allGroups : state.mineGroups)),
+      ],
+    );
+  }
+
+  /// The דו יומי event screen's switch, with its colours.
+  Widget _tabs() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<bool>(
+              showSelectedIcon: false,
+              // Explicit colours: the app theme's defaults for a selected
+              // segment are white text on light orange, which is unreadable.
+              style: SegmentedButton.styleFrom(
+                selectedBackgroundColor: AppTheme.primaryDark,
+                selectedForegroundColor: Colors.white,
+              ),
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  label: Text('המשימות שלי', key: Key('team-tab-mine')),
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text('כל המשימות', key: Key('team-tab-all')),
+                ),
+              ],
+              selected: {_showAll},
+              onSelectionChanged: (selection) {
+                Logger.action('toggle:teamTasksTab', {'all': selection.first});
+                setState(() => _showAll = selection.first);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

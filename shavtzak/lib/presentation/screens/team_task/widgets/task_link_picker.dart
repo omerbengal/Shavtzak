@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/search_utils.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../../domain/entities/task_topic.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
 import '../../../widgets/rtl_arrow_keys.dart';
+import '../../task/task_style.dart';
 
 /// What the picker returns: a link, or "ללא שיוך" ([link] null). Null from
 /// the dialog itself = cancelled.
@@ -136,6 +138,12 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SegmentedButton<TaskLinkType>(
+              // The דו יומי switch's colours: the theme's own are white text
+              // on light orange, which is unreadable.
+              style: SegmentedButton.styleFrom(
+                selectedBackgroundColor: AppTheme.primaryDark,
+                selectedForegroundColor: Colors.white,
+              ),
               segments: const [
                 ButtonSegment(value: TaskLinkType.event, label: Text('אירוע')),
                 ButtonSegment(value: TaskLinkType.category, label: Text('קטגוריה')),
@@ -165,12 +173,11 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
                   : ListView(
                       children: [
                         for (final option in options)
-                          ListTile(
+                          _LinkOption(
                             key: Key('task-link-option-${option.id}'),
-                            dense: true,
-                            title: Text(option.name),
-                            subtitle: option.note == null ? null : Text(option.note!),
-                            selected: widget.initial == TaskLink(_type, option.id),
+                            name: option.name,
+                            note: option.note,
+                            current: widget.initial == TaskLink(_type, option.id),
                             onTap: () => Navigator.of(context)
                                 .pop(TaskLinkChoice(TaskLink(_type, option.id))),
                           ),
@@ -218,6 +225,65 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
           child: const Text('ביטול'),
         ),
       ],
+    );
+  }
+}
+
+/// One choice in the picker, in the look of the דו יומי "העברה לשלב אחר"
+/// list: a roomy line in the normal text colour, the current one marked in
+/// words rather than in colour.
+class _LinkOption extends StatelessWidget {
+  const _LinkOption({
+    super.key,
+    required this.name,
+    required this.note,
+    required this.current,
+    required this.onTap,
+  });
+
+  final String name;
+  final String? note;
+  final bool current;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: TaskStyle.editRowLine)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  ),
+                  if (note != null)
+                    Text(
+                      note!,
+                      style: const TextStyle(fontSize: 13, color: TaskStyle.editMuted),
+                    ),
+                ],
+              ),
+            ),
+            if (current)
+              const Padding(
+                padding: EdgeInsetsDirectional.only(start: 8),
+                child: Text(
+                  'השיוך הנוכחי',
+                  style: TextStyle(fontSize: 12, color: TaskStyle.editMuted),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
