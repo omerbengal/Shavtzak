@@ -103,23 +103,25 @@ void main() {
     expect(repository.calls, ['subtask:t:s1:true']);
   });
 
-  test('ticking every subtask shows done at once, except on a cancelled task', () async {
+  test("a parent's status follows its subtasks at once, whatever was stored", () async {
     final task = buildTeamTask(id: 't', subtasks: const [
       TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
     ]);
+    // Stored before round 4 with a status set by hand.
     final cancelled = buildTeamTask(id: 'c', status: TeamTaskStatus.cancelled, subtasks: const [
       TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
     ]);
     bloc.add(TeamTasksSubscribe(manager));
     await pumpEventQueue();
     repository.controller.add(TeamTaskBoard(tasks: [task, cancelled]));
-    await loaded((s) => s.all.length == 2);
+    final first = await loaded((s) => s.all.length == 2);
+    expect(first.all.firstWhere((t) => t.id == 'c').status, TeamTaskStatus.open);
     bloc.add(const ToggleTeamSubtask('t', 's1', true));
     bloc.add(const ToggleTeamSubtask('c', 's1', true));
     final state = await loaded(
         (s) => s.all.every((t) => t.subtasks.single.isDone));
     expect(state.all.firstWhere((t) => t.id == 't').status, TeamTaskStatus.done);
-    expect(state.all.firstWhere((t) => t.id == 'c').status, TeamTaskStatus.cancelled);
+    expect(state.all.firstWhere((t) => t.id == 'c').status, TeamTaskStatus.done);
   });
 
   test('optimistic status, kept once the backend accepts', () async {

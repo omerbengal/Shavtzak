@@ -59,25 +59,24 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       _filter = event.filter;
       _emitLoaded(emit);
     });
-    on<CreateTeamTask>((event, emit) =>
-        _send(event.completion, () => _repository.insertTask(event.task)));
-    on<DeleteTeamTask>((event, emit) =>
-        _send(event.completion, () => _repository.deleteTask(event.id)));
-    on<AddTeamTaskUpdate>((event, emit) =>
-        _send(event.completion,
-            () => _repository.addUpdate(event.id, event.text, subtaskId: event.subtaskId)));
-    on<CreateTaskTopic>((event, emit) =>
-        _send(event.completion, () => _repository.insertTopic(event.topic)));
-    on<UpdateTaskTopic>((event, emit) =>
-        _send(event.completion, () => _repository.updateTopic(event.topic)));
+    on<CreateTeamTask>(
+        (event, emit) => _send(event.completion, () => _repository.insertTask(event.task)));
+    on<DeleteTeamTask>(
+        (event, emit) => _send(event.completion, () => _repository.deleteTask(event.id)));
+    on<AddTeamTaskUpdate>((event, emit) => _send(event.completion,
+        () => _repository.addUpdate(event.id, event.text, subtaskId: event.subtaskId)));
+    on<CreateTaskTopic>(
+        (event, emit) => _send(event.completion, () => _repository.insertTopic(event.topic)));
+    on<UpdateTaskTopic>(
+        (event, emit) => _send(event.completion, () => _repository.updateTopic(event.topic)));
     on<ArchiveTaskTopic>((event, emit) => _send(
           event.completion,
           () => event.archive
               ? _repository.archiveTopic(event.id)
               : _repository.restoreTopic(event.id),
         ));
-    on<DeleteTaskTopic>((event, emit) =>
-        _send(event.completion, () => _repository.deleteTopic(event.id)));
+    on<DeleteTaskTopic>(
+        (event, emit) => _send(event.completion, () => _repository.deleteTopic(event.id)));
     on<UpdateTeamTask>(_onUpdate);
     on<SetTeamTaskStatus>(_onStatus);
     on<ToggleTeamSubtask>(_onToggle);
@@ -133,10 +132,12 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     final board = _board;
     final viewer = _viewer;
     if (board == null || viewer == null) return;
+    // A parent's status always follows its subtasks, also for a document
+    // written before that rule (round 4) and while a change is in flight.
     final all = [
       for (final task in board.tasks)
-        (_pending[task.id] ?? const <_Pending>[])
-            .fold<TeamTask>(task, (value, change) => change.apply(value)),
+        withParentStatus((_pending[task.id] ?? const <_Pending>[])
+            .fold<TeamTask>(task, (value, change) => change.apply(value))),
     ];
     final mine = myTeamTaskRows(all, viewer.id);
     final now = _clock();
@@ -211,8 +212,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         // a manager edits (as the backend does).
         subtasks: [
           for (final subtask in edited.subtasks)
-            if (task.subtasks.where((old) => old.id == subtask.id).firstOrNull
-                case final old?)
+            if (task.subtasks.where((old) => old.id == subtask.id).firstOrNull case final old?)
               old.copyWith(
                 title: subtask.title,
                 description: subtask.description,

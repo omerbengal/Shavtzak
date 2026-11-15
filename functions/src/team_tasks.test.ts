@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {Timestamp} from 'firebase-admin/firestore';
 import {TaskActor, TaskError} from './tasks';
 import {
+  TeamSubtask,
   TeamTaskDoc,
   appendTeamTaskUpdate,
   applyTeamSubtaskStatus,
@@ -11,6 +12,7 @@ import {
   applyTeamTaskStatus,
   buildNewTeamTask,
   deriveOwnerIds,
+  deriveParentStatus,
   isTeamTaskOwner,
   teamTaskAuditDetails,
   teamTaskFromStored,
@@ -133,13 +135,37 @@ test('unticking a subtask of a done task sets inProgress and clears completedAt'
   assert.equal(task.completedAt, null);
 });
 
-test('ticking the last subtask of a cancelled task keeps cancelled', () => {
+test("a parent's status is never set by hand", () => {
+  const task = withSubtasks();
+  expectTaskError(
+    () => applyTeamTaskStatus(task, 'cancelled', null, {now, actor: manager}),
+    400,
+    'הסטטוס של משימת אב נקבע לפי תתי-המשימות',
+  );
+});
+
+test("deriveParentStatus follows Omer's round-4 rules", () => {
+  const sub = (status: TeamSubtask['status']): TeamSubtask => ({
+    id: status, title: status, description: '', assigneeIds: [], contacts: [], deadline: null,
+    status, duplicateOfId: null, updates: [], completedAt: null,
+  });
+  // Cancelled and duplicate subtasks do not count.
+  assert.equal(deriveParentStatus([sub('open'), sub('open'), sub('cancelled')]), 'open');
+  assert.equal(deriveParentStatus([sub('done'), sub('duplicate'), sub('done')]), 'done');
+  assert.equal(deriveParentStatus([sub('open'), sub('inProgress'), sub('done')]), 'inProgress');
+  // Not in the rules: open and done mixed = in progress; nothing left = cancelled.
+  assert.equal(deriveParentStatus([sub('open'), sub('done')]), 'inProgress');
+  assert.equal(deriveParentStatus([sub('cancelled'), sub('duplicate')]), 'cancelled');
+});
+
+test('cancelling every subtask cancels the parent; reopening one reopens it', () => {
   let task = withSubtasks();
-  task = applyTeamTaskStatus(task, 'cancelled', null, {now, actor: manager});
-  task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
-  task = applyTeamSubtaskToggle(task, 's2', true, {now, actor: ownerB});
+  task = applyTeamSubtaskStatus(task, 's1', 'cancelled', null, {now, actor: ownerA});
+  task = applyTeamSubtaskStatus(task, 's2', 'cancelled', null, {now, actor: ownerB});
   assert.equal(task.status, 'cancelled');
   assert.equal(task.completedAt, null);
+  task = applyTeamSubtaskStatus(task, 's2', 'open', null, {now, actor: ownerB});
+  assert.equal(task.status, 'open');
 });
 
 test('duplicate requires duplicateOfId and refuses the task\'s own id', () => {
@@ -252,10 +278,11 @@ test('teamTaskFromStored tolerates missing fields', () => {
   assert.equal(task.deadline, null);
 });
 
-test('an edit that keeps the subtasks keeps a status set by hand', () => {
+test('an edit recomputes a stored parent status that does not fit its subtasks', () => {
   let task = withSubtasks();
   task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
-  task = applyTeamTaskStatus(task, 'done', null, {now, actor: ownerA});
+  // A document written before round 4 may hold a status set by hand.
+  task = {...task, status: 'done'};
   const edited = applyTeamTaskEdit(task, input({
     title: 'אולם חדש',
     subtasks: [
@@ -263,8 +290,8 @@ test('an edit that keeps the subtasks keeps a status set by hand', () => {
       {id: 's2', title: 'חוזה מעודכן', assigneeIds: ['b'], contacts: []},
     ],
   }), {now: later, actor: manager});
-  assert.equal(edited.status, 'done');
-  assert.deepEqual(edited.completedAt, now);
+  assert.equal(edited.status, 'inProgress');
+  assert.equal(edited.completedAt, null);
 });
 
 test('a subtask is a full task: its fields, its status and its own log', () => {

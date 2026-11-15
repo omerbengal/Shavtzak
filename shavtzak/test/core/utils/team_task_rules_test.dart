@@ -56,6 +56,48 @@ void main() {
     expect(isTeamTaskOwner(task, 'm1'), isFalse);
   });
 
+  group('teamTaskParentStatus (Omer, round 4)', () {
+    TeamSubtask sub(TeamTaskStatus status) =>
+        TeamSubtask(id: status.name, title: status.name, status: status);
+    const open = TeamTaskStatus.open;
+    const inProgress = TeamTaskStatus.inProgress;
+    const done = TeamTaskStatus.done;
+    const cancelled = TeamTaskStatus.cancelled;
+    const duplicate = TeamTaskStatus.duplicate;
+
+    test('his three rules, cancelled and duplicate not counted', () {
+      expect(teamTaskParentStatus([sub(open), sub(open), sub(cancelled)]), open);
+      expect(teamTaskParentStatus([sub(done), sub(duplicate)]), done);
+      expect(teamTaskParentStatus([sub(open), sub(inProgress), sub(done)]), inProgress);
+    });
+
+    test('open and done mixed = in progress; nothing left = cancelled', () {
+      expect(teamTaskParentStatus([sub(open), sub(done)]), inProgress);
+      expect(teamTaskParentStatus([sub(cancelled), sub(duplicate)]), cancelled);
+    });
+
+    test('withParentStatus overrides a stored parent status; a plain task keeps its own', () {
+      final parent = buildTeamTask(
+        status: done,
+        subtasks: [TeamSubtask(id: 's1', title: 'x', status: open)],
+      );
+      expect(withParentStatus(parent).status, open);
+      final plain = buildTeamTask(status: done);
+      expect(withParentStatus(plain).status, done);
+    });
+
+    test('withSubtaskStatus moves the parent with the subtask', () {
+      final parent = buildTeamTask(subtasks: const [
+        TeamSubtask(id: 's1', title: 'a'),
+        TeamSubtask(id: 's2', title: 'b'),
+      ]);
+      final moved = withSubtaskStatus(parent, 's1', inProgress);
+      expect(moved.status, inProgress);
+      final allDone = withSubtaskStatus(withSubtaskStatus(parent, 's1', done), 's2', done);
+      expect(allDone.status, done);
+    });
+  });
+
   group('groupTeamTasks', () {
     final hanukkah = buildCategory();
     final wives = buildTopic();

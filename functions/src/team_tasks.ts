@@ -368,35 +368,34 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
 
 // ---- status ----
 
-/** A subtask that no longer needs work: done, cancelled or a duplicate. */
-function isSubtaskClosed(subtask: TeamSubtask): boolean {
-  return subtask.status !== 'open' && subtask.status !== 'inProgress';
+/**
+ * A parent's status, computed from its subtasks (Omer, round 4: it is never
+ * set by hand). Cancelled and duplicate subtasks do not count; of the rest:
+ * every one open = open, every one done = done, anything else (one in
+ * progress, or open and done mixed) = in progress. When every subtask is
+ * cancelled or a duplicate there is nothing left to do: cancelled.
+ */
+export function deriveParentStatus(subtasks: readonly TeamSubtask[]): TeamTaskStatus {
+  const counted = subtasks.filter((subtask) =>
+    subtask.status !== 'cancelled' && subtask.status !== 'duplicate');
+  if (counted.length === 0) return 'cancelled';
+  if (counted.every((subtask) => subtask.status === 'open')) return 'open';
+  if (counted.every((subtask) => subtask.status === 'done')) return 'done';
+  return 'inProgress';
 }
 
-/**
- * The parent's status after its subtasks changed. A cancelled or duplicate
- * parent is never touched. Every subtask closed with at least one done =
- * done; otherwise a done parent goes back to inProgress, and an open parent
- * with a subtask in progress or done moves to inProgress.
- */
+/** [next] with the status its subtasks give it; a task without subtasks keeps its own. */
 function withAutoStatus(previous: TeamTaskDoc, next: TeamTaskDoc, ctx: Ctx): TeamTaskDoc {
-  if (next.status === 'cancelled' || next.status === 'duplicate') return next;
   if (next.subtasks.length === 0) return next;
-  const allDone = next.subtasks.every(isSubtaskClosed) &&
-    next.subtasks.some((subtask) => subtask.status === 'done');
-  if (allDone) {
-    return {
-      ...next,
-      status: 'done',
-      completedAt: previous.status === 'done' ? previous.completedAt : ctx.now,
-    };
-  }
-  const anyMoved = next.subtasks.some((subtask) =>
-    subtask.status === 'done' || subtask.status === 'inProgress');
-  if (next.status === 'done' || (next.status === 'open' && anyMoved)) {
-    return {...next, status: 'inProgress', completedAt: null};
-  }
-  return next;
+  const status = deriveParentStatus(next.subtasks);
+  return {
+    ...next,
+    status,
+    duplicateOfId: null,
+    completedAt: status === 'done'
+      ? (previous.status === 'done' && previous.completedAt != null ? previous.completedAt : ctx.now)
+      : null,
+  };
 }
 
 function finish(task: TeamTaskDoc): TeamTaskDoc {
@@ -457,11 +456,7 @@ export function applyTeamTaskEdit(
     }),
     updatedAt: ctx.now,
   };
-  // The status follows the subtasks only when the set of subtasks changed; an
-  // edit of anything else keeps a status someone chose by hand.
-  const sameSet = task.subtasks.length === next.subtasks.length &&
-    next.subtasks.every((subtask) => storedById.has(subtask.id));
-  return finish(sameSet ? next : withAutoStatus(task, next, ctx));
+  return finish(withAutoStatus(task, next, ctx));
 }
 
 export function parseTeamTaskStatus(value: unknown): TeamTaskStatus {
@@ -478,6 +473,9 @@ export function applyTeamTaskStatus(
   ctx: Ctx,
 ): TeamTaskDoc {
   requireManagerOrOwner(task, ctx.actor);
+  if (task.subtasks.length > 0) {
+    throw new TaskError(400, 'הסטטוס של משימת אב נקבע לפי תתי-המשימות');
+  }
   let original: string | null = null;
   if (status === 'duplicate') {
     if (duplicateOfId == null || !ID_PATTERN.test(duplicateOfId)) {

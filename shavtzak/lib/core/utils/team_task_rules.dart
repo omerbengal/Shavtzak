@@ -53,13 +53,34 @@ List<String> teamTaskOwnerIds(TeamTask task) {
   return {for (final subtask in task.subtasks) ...subtask.assigneeIds}.toList();
 }
 
-bool _isClosed(TeamSubtask subtask) => !subtask.status.isActive;
+/// A parent's status, computed from its subtasks as the backend does
+/// (`team_tasks.ts` deriveParentStatus; Omer, round 4: never set by hand).
+/// Cancelled and duplicate subtasks do not count; of the rest: every one open
+/// = open, every one done = done, anything else = in progress. Every subtask
+/// cancelled or a duplicate = cancelled.
+TeamTaskStatus teamTaskParentStatus(List<TeamSubtask> subtasks) {
+  final counted = [
+    for (final subtask in subtasks)
+      if (subtask.status != TeamTaskStatus.cancelled && subtask.status != TeamTaskStatus.duplicate)
+        subtask.status,
+  ];
+  if (counted.isEmpty) return TeamTaskStatus.cancelled;
+  if (counted.every((status) => status == TeamTaskStatus.open)) return TeamTaskStatus.open;
+  if (counted.every((status) => status == TeamTaskStatus.done)) return TeamTaskStatus.done;
+  return TeamTaskStatus.inProgress;
+}
 
-/// [task] with subtask [subtaskId] set to [status], and the status the
-/// backend gives the parent (`team_tasks.ts` withAutoStatus): cancelled and
-/// duplicate never change; every subtask closed with one done = done; a done
-/// parent with an open subtask, and an open parent with a subtask in progress
-/// or done = in progress.
+/// [task] with the status its subtasks give it; a task without subtasks
+/// keeps its own.
+TeamTask withParentStatus(TeamTask task) {
+  if (task.subtasks.isEmpty) return task;
+  final status = teamTaskParentStatus(task.subtasks);
+  if (status == task.status && task.duplicateOfId == null) return task;
+  return task.copyWith(status: status, duplicateOfId: () => null);
+}
+
+/// [task] with subtask [subtaskId] set to [status], and the parent's status
+/// that follows ([teamTaskParentStatus]).
 TeamTask withSubtaskStatus(
   TeamTask task,
   String subtaskId,
@@ -76,23 +97,12 @@ TeamTask withSubtaskStatus(
             )
           : subtask,
   ];
-  var parent = task.status;
-  if (parent != TeamTaskStatus.cancelled && parent != TeamTaskStatus.duplicate) {
-    if (subtasks.every(_isClosed) && subtasks.any((subtask) => subtask.isDone)) {
-      parent = TeamTaskStatus.done;
-    } else if (parent == TeamTaskStatus.done ||
-        (parent == TeamTaskStatus.open &&
-            subtasks.any((subtask) =>
-                subtask.isDone || subtask.status == TeamTaskStatus.inProgress))) {
-      parent = TeamTaskStatus.inProgress;
-    }
-  }
-  return task.copyWith(subtasks: subtasks, status: parent);
+  return withParentStatus(task.copyWith(subtasks: subtasks));
 }
 
 /// The quick tick in the parent's list: done, or back to open.
-TeamTask withSubtaskTicked(TeamTask task, String subtaskId, bool isDone) => withSubtaskStatus(
-    task, subtaskId, isDone ? TeamTaskStatus.done : TeamTaskStatus.open);
+TeamTask withSubtaskTicked(TeamTask task, String subtaskId, bool isDone) =>
+    withSubtaskStatus(task, subtaskId, isDone ? TeamTaskStatus.done : TeamTaskStatus.open);
 
 /// What the "המשימות שלי" tab lists for [viewerId] (Omer, round 2): every task
 /// they own that has no subtasks, and every subtask they own as its own row
@@ -308,8 +318,8 @@ List<TeamSubtask> visibleSubtasks(TeamTask task, TeamTaskFilter filter) {
 /// one of [myTasks] (the tasks they own) is not cancelled or a duplicate.
 bool showTeamTasksTab(TeamMember member, List<TeamTask> myTasks) {
   if (canManageTeamTasks(member)) return true;
-  return myTasks.any((task) =>
-      task.status != TeamTaskStatus.cancelled && task.status != TeamTaskStatus.duplicate);
+  return myTasks.any(
+      (task) => task.status != TeamTaskStatus.cancelled && task.status != TeamTaskStatus.duplicate);
 }
 
 /// The events a task can be linked to: those that have not ended before
