@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/data/repositories/team_task_repository.dart';
@@ -122,6 +124,25 @@ void main() {
     await tester.tap(find.byKey(const Key('team-task-delete-confirm')));
     await tester.pumpAndSettle();
     expect(harness.repository.calls, ['delete:t']);
+  });
+
+  testWidgets('a delete closes the sheet, also when the list updates first', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
+    await openTask(tester, 't');
+    await tester.ensureVisible(find.byKey(const Key('team-task-delete')));
+    await tester.tap(find.byKey(const Key('team-task-delete')));
+    await tester.pumpAndSettle();
+    final gate = Completer<void>();
+    harness.repository.gate = gate;
+    await tester.tap(find.byKey(const Key('team-task-delete-confirm')));
+    await tester.pump();
+    // The stream drops the task while the confirm still waits for the backend.
+    await harness.deliver(tester, board([]));
+    await tester.pump();
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(ModalBarrier), findsOneWidget); // the app's own route only
   });
 
   testWidgets('an owner sees no delete and no editing', (tester) async {

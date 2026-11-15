@@ -198,11 +198,22 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
         if (state is! TeamTasksLoaded) return const SizedBox.shrink();
         final task = state.taskById(widget.taskId);
         if (task == null) {
-          // Deleted, here or by someone else: close, once.
+          // Deleted, here or by someone else: close THIS sheet, once. A pop
+          // would hit whatever is on top (the delete confirm, still waiting
+          // for the backend, refuses it) and leave an empty sheet whose
+          // barrier dims the screen until a tap.
           if (!_closed) {
             _closed = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) Navigator.of(context).maybePop();
+              if (!mounted) return;
+              final route = ModalRoute.of(context);
+              if (route == null || !route.isActive) return;
+              final navigator = Navigator.of(context);
+              if (route.isCurrent) {
+                navigator.pop();
+              } else {
+                navigator.removeRoute(route);
+              }
             });
           }
           return const SizedBox.shrink();
