@@ -358,6 +358,31 @@ void main() {
       expect(find.byKey(const Key('team-filter-status')), findsOneWidget);
     });
 
+    testWidgets('tapping the search keeps the same field while it widens, so the keyboard opens',
+        (tester) async {
+      // On the web the field's text connection is the browser's hidden input,
+      // and iPhone opens the keyboard only for the input focused in the tap.
+      // Folding into the wide row must move the field, not rebuild it: a new
+      // field would close that input and open another one after the tap.
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      final search = find.descendant(
+        of: find.byKey(const Key('team-filter-search')),
+        matching: find.byType(EditableText),
+      );
+      final before = tester.state<EditableTextState>(search);
+      await tester.tap(find.byKey(const Key('team-filter-search')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-filter-funnel')), findsOneWidget);
+      expect(tester.state<EditableTextState>(search), same(before));
+      expect(before.mounted, isTrue);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      expect(
+        tester.testTextInput.log.where((call) => call.method == 'TextInput.clearClient'),
+        isEmpty,
+        reason: 'the text connection the tap opened stays open',
+      );
+    });
+
     testWidgets('a search that matches a subtask opens its parent', (tester) async {
       final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
         TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
