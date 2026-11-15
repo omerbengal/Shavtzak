@@ -41,16 +41,19 @@ class AppRouter {
   /// This is set by main.dart at the very start
   static String? capturedInitialHash;
 
-  /// The checklist link the app was opened on, kept until the member is
-  /// signed in.
+  /// The link the app was opened on, kept until the member is signed in:
+  /// the checklist (`/tasks`) or a דו יומי event's tasks screen
+  /// (`/du-yomi/<eventId>`, also the members' `/user/du-yomi/<eventId>`).
   ///
-  /// The checklist at `/tasks` is reachable only by link. Without this, a
-  /// member who follows the link while signed out is sent to "מי את/ה?" and
-  /// from there to their home, and the link is lost.
+  /// The checklist is reachable only by link, and an event's link is sent to
+  /// the team. Without this, a member who follows the link while signed out
+  /// is sent to "מי את/ה?" and from there to their home, and the link is
+  /// lost.
   static String? _pendingDeepLink;
 
-  /// The route to restore after sign-in when [initialHash] is the checklist
-  /// link (`#/tasks` or `#/test/tasks`), otherwise null.
+  /// The route to restore after sign-in when [initialHash] is a link worth
+  /// keeping ([_tasksLink]: the checklist or a דו יומי event, in either
+  /// environment), otherwise null.
   static String? pendingTasksLinkFor(String? initialHash) {
     if (initialHash == null) return null;
     var path =
@@ -63,10 +66,13 @@ class AppRouter {
     return _tasksLink.hasMatch(path) ? path : null;
   }
 
-  // The checklist, in either environment.
-  static final RegExp _tasksLink = RegExp(r'^(/test)?/tasks$');
+  // The checklist, or one דו יומי event (its tasks screen or its editing
+  // screen) on the admins' screen or the members' tab, in either environment.
+  static final RegExp _tasksLink = RegExp(
+    r'^(/test)?(/tasks|(/user)?/du-yomi/[^/]+(/edit)?)$',
+  );
 
-  /// Remember [route] when it is the tasks link. Called whenever a visitor who
+  /// Remember [route] when it is a link worth keeping ([_tasksLink]). Called whenever a visitor who
   /// is not signed in is turned away from a route, which also covers a tab
   /// where the app is already loaded: there the link arrives as a hash change
   /// and never passes through [capturedInitialHash].
@@ -75,7 +81,7 @@ class AppRouter {
     if (link != null) _pendingDeepLink = link;
   }
 
-  /// Where a freshly authenticated member should land: the pending tasks link
+  /// Where a freshly authenticated member should land: the pending link
   /// if there is one, otherwise [home]. The link is used once.
   static String postAuthDestination(String home) {
     final pending = _pendingDeepLink;
@@ -84,7 +90,7 @@ class AppRouter {
     return pending;
   }
 
-  /// Drop the pending link once the member is on the checklist, so a later
+  /// Drop the pending link once the member is on it, so a later
   /// sign-out and sign-in goes home as usual.
   static void clearPendingDeepLinkIfArrived(String route) {
     if (route == _pendingDeepLink) _pendingDeepLink = null;

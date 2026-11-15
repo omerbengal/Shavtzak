@@ -28,6 +28,36 @@ void main() {
       }
     });
 
+    test('recognises a דו יומי event link, in both places and environments',
+        () {
+      for (final path in [
+        '/du-yomi/4be102b6-e5c8-408a-a4b2-a77b73975ed2',
+        '/user/du-yomi/4be102b6-e5c8-408a-a4b2-a77b73975ed2',
+        '/test/du-yomi/e1',
+        '/test/user/du-yomi/e1',
+        '/du-yomi/e1/edit',
+        '/test/user/du-yomi/e1/edit',
+      ]) {
+        expect(AppRouter.pendingTasksLinkFor('#$path'), path, reason: path);
+      }
+    });
+
+    test('keeps a דו יומי event link without its query or trailing slash', () {
+      expect(AppRouter.pendingTasksLinkFor('#/du-yomi/e1/?x=1'), '/du-yomi/e1');
+    });
+
+    test('ignores the דו יומי list and anything deeper than an event', () {
+      for (final hash in [
+        '#/du-yomi',
+        '#/user/du-yomi',
+        '#/du-yomi/e1/other',
+        '#/du-yomi/e1/edit/x',
+        '#/admin/du-yomi/e1',
+      ]) {
+        expect(AppRouter.pendingTasksLinkFor(hash), isNull, reason: hash);
+      }
+    });
+
     test('accepts a hash without the leading #', () {
       expect(AppRouter.pendingTasksLinkFor('/tasks'), '/tasks');
     });
@@ -86,6 +116,17 @@ void main() {
 
       AppRouter.rememberTasksLink('/test/tasks');
       expect(AppRouter.postAuthDestination('/test/admin'), '/test/tasks');
+    });
+
+    test('a signed-out visit to a דו יומי event is remembered', () {
+      AppRouter.rememberTasksLink('/du-yomi/e1');
+      expect(AppRouter.postAuthDestination('/user/assignments'), '/du-yomi/e1');
+
+      AppRouter.rememberTasksLink('/test/user/du-yomi/e1');
+      expect(
+        AppRouter.postAuthDestination('/test/admin'),
+        '/test/user/du-yomi/e1',
+      );
     });
 
     test('a signed-out visit to any other route is not remembered', () {
