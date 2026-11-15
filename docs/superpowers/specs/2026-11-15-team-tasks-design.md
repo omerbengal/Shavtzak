@@ -46,8 +46,9 @@ event, a category or a topic; there is no timeline; every task has its own (opti
 | 2 | **Owners (אחראים) are team members only** (חבר צוות), with no tie to the event's assignments. | Omer, button `taskowner:member` |
 | 3 | Progress is an **update log**: every update is kept with its date and author, newest first. | Omer, button `taskupd:log` |
 | 4 | **Visibility**: admins and members with "ניהול משימות" (`canManageTasks`) see every task; any other team member sees only the tasks they own. | Omer, button `taskview:managers` |
-| 5 | A **subtask has its own owner** (one team member). | Omer, msg 3103 |
-| 6 | A task **with subtasks has no owner of its own**: its owners are its subtasks' owners. A task without subtasks has owners as usual (one or more). | Omer, button `taskpar:union` |
+| 5 | ~~A subtask has its own owner (one team member).~~ Replaced in round 2: **a subtask is a full task nested in its parent** (title, description, owners (one or more), contacts, deadline, the five statuses, its own update log); it has no link of its own (the parent's) and no subtasks. | Omer, msg 3103; round 2: msg 3199 + button `subfull:all` |
+| 6 | A task **with subtasks has no owner of its own**: its owners are its subtasks' owners. A task without subtasks has owners as usual (one or more). Adding the first subtask to a task that has owners asks: "ליצור תתי-משימות ולהסיר את האחראים" or "להשאיר כמשימה אחת". Such a task reads "משימת אב" ("משימת אב חדשה" in the new-task form). | Omer, button `taskpar:union`; round 2: msg 3199 |
+| 13 | **"המשימות שלי"** lists each subtask the viewer owns as its own row, with its parent's title above it and its own deadline and status; **"כל המשימות"** shows the parent with its subtasks nested under it. | Omer, round 2: button `submine:own` |
 | 7 | **Topics** come from a managed list, like "ניהול קטגוריות"; a task picks one, with "נושא חדש" right from the task. | Omer, button `tasktopic:list` |
 | 8 | **Statuses**: פתוחה, בטיפול, בוצעה, לא רלוונטי/בוטל, כפילות ("managers don't want to delete duplicates for good"). | Omer, msg 3124 |
 | 9 | **Deadline**: optional, a date only. | Omer, button `taskdue:date` |
@@ -88,13 +89,17 @@ Proposals Omer saw in the design key points (msg 3139) and approved:
 - `title`, `description`
 - `link`: `{type: 'event' | 'category' | 'topic', id}` or null (shown under "ללא שיוך")
 - `assigneeIds`: team member ids, used only when the task has no subtasks
-- `subtasks`: `[{id, title, isDone, assigneeId | null, contacts: [...]}]`
+- `subtasks`: `[{id, title, description, assigneeIds, contacts, deadline, status, duplicateOfId,
+  updates, completedAt}]` (round 2; a stored subtask from before it, `{isDone, assigneeId}`, still
+  reads). A subtask's `duplicateOfId` is a sister subtask or another task. Its status, log and
+  completion change only through `teamTask.setStatus` / `teamTask.addUpdate` with `subtaskId`
+  (a manager or one of the subtask's owners); `teamTask.update` carries only its editable fields.
 - `contacts`: `[{id, name, role, phone}]` (same shape as `StageContact`)
 - `deadline`: `yyyy-MM-dd` or null
 - `status`: `open | inProgress | done | cancelled | duplicate`; `duplicateOfId` when `duplicate`
 - `updates`: `[{id, text, at, byId, byName}]` (the log; newest first on screen)
 - `ownerIds`: derived and stored on every write = `assigneeIds` when there are no subtasks, else the
-  distinct subtask `assigneeId`s. Used by the read rule and the "my tasks" query.
+  distinct owners of all its subtasks. Used by the read rule and the "my tasks" query.
 - `completedAt`, `createdAt`, `createdById`, `updatedAt`
 
 Topics: a managed list in the same place and shape as the categories / `EventItems` lists
@@ -125,7 +130,10 @@ through the backend, as for every other collection. A non-manager's screen queri
 
 ## Behaviour
 
-- Ticking the last open subtask sets בוצעה; unticking a subtask of a בוצעה task sets בטיפול.
+- The parent's status follows its subtasks: every subtask closed (בוצעה / בוטל / כפילות) with at
+  least one בוצעה sets בוצעה; a subtask reopened under a בוצעה parent sets בטיפול; a subtask in
+  progress or done moves a פתוחה parent to בטיפול. A cancelled / duplicate parent is never touched.
+  The tick in the parent's list is a shortcut: בוצעה, or back to פתוחה.
 - Status "כפילות" asks for the original task (a picker of the other tasks).
 - A task linked to an event that was deleted shows "אירוע שנמחק" under its group; nothing is lost.
 - Deleting a task: managers only, behind a confirm (the statuses cover the "don't delete" cases).
@@ -145,3 +153,11 @@ through the backend, as for every other collection. A non-manager's screen queri
   functions with unit tests, `now` injected.
 - Backend: endpoint tests for validation and `ownerIds`.
 - Rules: an owner can read their task and not another; a manager reads all.
+
+## Round 2 (Omer's review of the preview, msg 3199)
+
+Besides the subtask change above (decisions 5, 6, 13): a deleted task closes its sheet even when the
+list updates first; the deadline picker allows today and later only and frames no events; the link
+picker lists only events that have not ended, nearest first; the owner picker lists the picked members
+first (a divider, then the rest, each part by name); every team member shown in the feature carries
+the app's permanent-member mark.
