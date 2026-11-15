@@ -1,0 +1,129 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/data/repositories/team_task_repository.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
+import 'package:shavtzak/domain/entities/team_task.dart';
+
+import '../../../support/task_fixtures.dart';
+import '../../../support/team_task_fixtures.dart';
+import '../../../support/team_tasks_harness.dart';
+
+void main() {
+  final dana = buildMember(id: 'm1', name: 'דנה');
+  final yossi = buildMember(id: 'm2', name: 'יוסי');
+  final manager = buildMember(id: 'mgr', name: 'מנהלת', isAdmin: true);
+
+  TeamTaskBoard board(List<TeamTask> tasks) => TeamTaskBoard(
+        tasks: tasks,
+        members: [dana, yossi, manager],
+        topics: [buildTopic()],
+      );
+
+  final withSubtasks = buildTeamTask(id: 't', title: 'אולם', subtasks: const [
+    TeamSubtask(
+      id: 's1',
+      title: 'הצעת מחיר',
+      assigneeId: 'm1',
+      contacts: [StageContact(id: 'c1', name: 'רונית', phone: '050-1234567', role: 'אולם')],
+    ),
+    TeamSubtask(id: 's2', title: 'חוזה', assigneeId: 'm2'),
+  ]).copyWith(owners: [dana, yossi]);
+  final other = buildTeamTask(id: 'o', title: 'משימה מקורית', assigneeIds: ['m1'])
+      .copyWith(owners: [dana]);
+
+  Future<void> openTask(WidgetTester tester, String id) async {
+    await tester.tap(find.byKey(Key('team-task-row-$id')));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('status menu shows the five Hebrew labels', (tester) async {
+    await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
+    await openTask(tester, 't');
+    await tester.tap(find.byKey(const Key('team-task-status')));
+    await tester.pumpAndSettle();
+    for (final label in ['פתוחה', 'בטיפול', 'בוצעה', 'לא רלוונטי/בוטל', 'כפילות']) {
+      expect(find.byKey(Key('team-task-status-option-$label')), findsOneWidget);
+    }
+  });
+
+  testWidgets('choosing כפילות asks for the original', (tester) async {
+    final harness =
+        await pumpTeamTasks(tester, user: manager, board: board([withSubtasks, other]));
+    await openTask(tester, 't');
+    await tester.tap(find.byKey(const Key('team-task-status')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('team-task-status-option-כפילות')));
+    await tester.pumpAndSettle();
+    expect(find.text('כפילות של איזו משימה?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('duplicate-original-o')));
+    await tester.pumpAndSettle();
+    expect(harness.repository.calls, contains('status:t:duplicate:o'));
+  });
+
+  testWidgets('owner can tick only their own subtask', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
+    await openTask(tester, 't');
+    final mineBox = tester.widget<Checkbox>(find.byKey(const Key('team-subtask-check-s1')));
+    final theirsBox = tester.widget<Checkbox>(find.byKey(const Key('team-subtask-check-s2')));
+    expect(mineBox.onChanged, isNotNull);
+    expect(theirsBox.onChanged, isNull);
+    await tester.tap(find.byKey(const Key('team-subtask-check-s1')));
+    await tester.pump();
+    expect(harness.repository.calls, ['subtask:t:s1:true']);
+    // The subtask's contact is shown with its phone.
+    expect(find.textContaining('רונית'), findsWidgets);
+  });
+
+  testWidgets('adding an update shows it first', (tester) async {
+    final logged = withSubtasks.copyWith(updates: [
+      TaskUpdateEntry(id: 'u0', text: 'ישן', at: DateTime(2026, 11, 2), byId: 'm1', byName: 'דנה'),
+    ]);
+    final harness = await pumpTeamTasks(tester, user: dana, board: board([logged]));
+    await openTask(tester, 't');
+    await tester.enterText(find.byKey(const Key('team-task-update-field')), 'סגרנו מחיר');
+    await tester.tap(find.byKey(const Key('team-task-update-send')));
+    await tester.pump();
+    expect(harness.repository.calls, ['log:t:סגרנו מחיר']);
+    // The stream brings it back, newest first.
+    await harness.deliver(
+      tester,
+      board([
+        logged.copyWith(updates: [
+          TaskUpdateEntry(id: 'u1', text: 'סגרנו מחיר', at: DateTime(2026, 11, 15), byId: 'm1', byName: 'דנה'),
+          ...logged.updates,
+        ]),
+      ]),
+    );
+    await tester.pumpAndSettle();
+    final first = tester.getTopLeft(find.text('סגרנו מחיר').last).dy;
+    final second = tester.getTopLeft(find.text('ישן')).dy;
+    expect(first, lessThan(second));
+  });
+
+  testWidgets('manager deletes only after the confirm', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
+    await openTask(tester, 't');
+    await tester.ensureVisible(find.byKey(const Key('team-task-delete')));
+    await tester.tap(find.byKey(const Key('team-task-delete')));
+    await tester.pumpAndSettle();
+    expect(harness.repository.calls, isEmpty);
+    await tester.tap(find.byKey(const Key('team-task-delete-confirm')));
+    await tester.pumpAndSettle();
+    expect(harness.repository.calls, ['delete:t']);
+  });
+
+  testWidgets('an owner sees no delete and no editing', (tester) async {
+    await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
+    await openTask(tester, 't');
+    expect(find.byKey(const Key('team-task-delete')), findsNothing);
+    expect(find.byKey(const Key('team-task-edit-title')), findsNothing);
+  });
+
+  testWidgets('wide window shows the task in a centred panel', (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]), size: teamWideSize);
+    await openTask(tester, 't');
+    final panel = tester.getSize(find.byKey(const Key('team-task-panel')));
+    expect(panel.width, lessThanOrEqualTo(960));
+    expect(find.byKey(const Key('team-task-edit-title')), findsOneWidget);
+  });
+}

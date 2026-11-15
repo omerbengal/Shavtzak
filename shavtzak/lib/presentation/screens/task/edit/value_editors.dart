@@ -257,12 +257,20 @@ class AssigneesEditor extends StatefulWidget {
     required this.offered,
     required this.current,
     required this.onChanged,
+    this.emptyLabel = 'אין משובצים לאירוע זה',
+    this.notOfferedLabel = 'כבר לא משובץ/ת לאירוע',
   });
 
   final List<String> initial;
 
   /// The event's assigned members, by name.
   final List<TeamMember> offered;
+
+  /// Shown when nobody can be picked.
+  final String emptyLabel;
+
+  /// Under a member on the task who is not in [offered].
+  final String notOfferedLabel;
 
   /// The task's assignees as they stand.
   final List<TeamMember> current;
@@ -321,9 +329,9 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
             onChanged: (value) => setState(() => _query = value),
           )),
           if (members.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('אין משובצים לאירוע זה'),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(widget.emptyLabel),
             ),
           ConstrainedBox(
             constraints: const BoxConstraints(
@@ -340,7 +348,7 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
                     title: Text(member.name),
                     subtitle: offeredIds.contains(member.id)
                         ? null
-                        : const Text('כבר לא משובץ/ת לאירוע'),
+                        : Text(widget.notOfferedLabel),
                     value: _picked.contains(member.id),
                     onChanged: (on) => _toggle(member.id, on ?? false),
                   ),

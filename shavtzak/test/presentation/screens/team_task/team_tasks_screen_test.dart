@@ -1,0 +1,91 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/data/repositories/team_task_repository.dart';
+import 'package:shavtzak/domain/entities/team_task.dart';
+import 'package:shavtzak/presentation/screens/task/task_style.dart';
+
+import '../../../support/task_fixtures.dart';
+import '../../../support/team_task_fixtures.dart';
+import '../../../support/team_tasks_harness.dart';
+
+void main() {
+  final dana = buildMember(id: 'm1', name: 'דנה');
+  final yossi = buildMember(id: 'm2', name: 'יוסי');
+  final manager = buildMember(id: 'mgr', name: 'מנהלת', isAdmin: true);
+
+  TeamTaskBoard board(List<TeamTask> tasks) => TeamTaskBoard(
+        tasks: tasks,
+        members: [dana, yossi, manager],
+        topics: [buildTopic()],
+        categories: [buildCategory()],
+      );
+
+  final mine = buildTeamTask(id: 'a', title: 'להזמין אולם', assigneeIds: ['m1'])
+      .copyWith(owners: [dana]);
+
+  testWidgets('owner sees no FAB and no all-tasks tab', (tester) async {
+    await pumpTeamTasks(tester, user: dana, board: board([mine]));
+    expect(find.byKey(const Key('team-task-new')), findsNothing);
+    expect(find.text('כל המשימות'), findsNothing);
+    expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+  });
+
+  testWidgets('manager sees both', (tester) async {
+    final theirs = buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2'])
+        .copyWith(owners: [yossi]);
+    await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+    expect(find.byKey(const Key('team-task-new')), findsOneWidget);
+    expect(find.text('כל המשימות'), findsOneWidget);
+    // A manager opens on every task.
+    expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('team-task-row-b')), findsOneWidget);
+    await tester.tap(find.text('המשימות שלי'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+  });
+
+  testWidgets('late deadline is red', (tester) async {
+    final late = buildTeamTask(id: 'l', title: 'באיחור', deadline: '2026-11-10').copyWith(owners: [dana]);
+    final fine = buildTeamTask(id: 'f', title: 'בזמן', deadline: '2026-11-20').copyWith(owners: [dana]);
+    await pumpTeamTasks(tester, user: dana, board: board([late, fine]));
+    Text deadline(String id) => tester.widget<Text>(find.byKey(Key('team-task-deadline-$id')));
+    expect(deadline('l').style?.color, TaskStyle.late);
+    expect(deadline('f').style?.color, isNot(TaskStyle.late));
+    expect(deadline('l').data, contains('10.11'));
+  });
+
+  testWidgets('new task saves with a topic link', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: manager, board: board(const []));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'לסגור להקה');
+    await tester.tap(find.byKey(const Key('new-team-task-link')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('נושא'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('task-link-option-p1')));
+    await tester.pumpAndSettle();
+    expect(find.text('נשות מגדים'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('new-team-task-save')));
+    await tester.pumpAndSettle();
+    final saved = harness.repository.inserted.single;
+    expect(saved.title, 'לסגור להקה');
+    expect(saved.link, const TaskLink(TaskLinkType.topic, 'p1'));
+    expect(saved.status, TeamTaskStatus.open);
+  });
+
+  testWidgets('a new task needs a title', (tester) async {
+    final harness = await pumpTeamTasks(tester, user: manager, board: board(const []));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('new-team-task-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('חובה להזין כותרת'), findsOneWidget);
+    expect(harness.repository.inserted, isEmpty);
+  });
+
+  testWidgets('an empty list says so', (tester) async {
+    await pumpTeamTasks(tester, user: dana, board: board(const []));
+    expect(find.text('אין משימות להצגה'), findsOneWidget);
+  });
+}
