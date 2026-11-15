@@ -58,6 +58,31 @@ void main() {
       }
     });
 
+    test('reads the link "מי את/ה?" carries, so a reload keeps it', () {
+      expect(
+        AppRouter.pendingTasksLinkFor('#/whoami?next=%2Fdu-yomi%2Fe1'),
+        '/du-yomi/e1',
+      );
+      expect(
+        AppRouter.pendingTasksLinkFor(
+            '#/test/whoami?next=%2Ftest%2Fuser%2Fdu-yomi%2Fe1'),
+        '/test/user/du-yomi/e1',
+      );
+      expect(AppRouter.pendingTasksLinkFor('#/whoami?next=%2Ftasks'), '/tasks');
+    });
+
+    test('ignores a carried link that is not one worth keeping', () {
+      for (final hash in [
+        '#/whoami',
+        '#/whoami?next=%2Fadmin',
+        '#/whoami?next=https%3A%2F%2Fevil.example',
+        '#/whoami?next=%E0%A4%A',
+        '#/admin?next=%2Fdu-yomi%2Fe1',
+      ]) {
+        expect(AppRouter.pendingTasksLinkFor(hash), isNull, reason: hash);
+      }
+    });
+
     test('accepts a hash without the leading #', () {
       expect(AppRouter.pendingTasksLinkFor('/tasks'), '/tasks');
     });
@@ -81,6 +106,26 @@ void main() {
           reason: 'hash: $hash',
         );
       }
+    });
+  });
+
+  group('AppRouter.whoamiRoute', () {
+    tearDown(() => AppRouter.debugSetPendingDeepLink(null));
+
+    test('is plain "מי את/ה?" when no link is pending', () {
+      expect(AppRouter.whoamiRoute(''), '/whoami');
+      expect(AppRouter.whoamiRoute('/test'), '/test/whoami');
+    });
+
+    test('carries the pending link, and reading it back gives the link', () {
+      AppRouter.debugSetPendingDeepLink('/du-yomi/e1');
+      final route = AppRouter.whoamiRoute('');
+      expect(route, '/whoami?next=%2Fdu-yomi%2Fe1');
+      expect(AppRouter.pendingTasksLinkFor('#$route'), '/du-yomi/e1');
+
+      AppRouter.debugSetPendingDeepLink('/test/du-yomi/e1');
+      final testRoute = AppRouter.whoamiRoute('/test');
+      expect(AppRouter.pendingTasksLinkFor('#$testRoute'), '/test/du-yomi/e1');
     });
   });
 

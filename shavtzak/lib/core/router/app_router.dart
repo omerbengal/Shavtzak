@@ -54,16 +54,47 @@ class AppRouter {
   /// The route to restore after sign-in when [initialHash] is a link worth
   /// keeping ([_tasksLink]: the checklist or a דו יומי event, in either
   /// environment), otherwise null.
+  ///
+  /// "מי את/ה?" carries the link along as `?next=` ([whoamiRoute]), so a
+  /// reload of the sign-in screen still has it: a phone browser that reloads
+  /// the tab, or Telegram's "open in browser", starts again from the address
+  /// shown, which by then is the sign-in screen.
   static String? pendingTasksLinkFor(String? initialHash) {
     if (initialHash == null) return null;
     var path =
         initialHash.startsWith('#') ? initialHash.substring(1) : initialHash;
+    var query = '';
     final queryStart = path.indexOf('?');
-    if (queryStart >= 0) path = path.substring(0, queryStart);
+    if (queryStart >= 0) {
+      query = path.substring(queryStart + 1);
+      path = path.substring(0, queryStart);
+    }
     if (path.length > 1 && path.endsWith('/')) {
       path = path.substring(0, path.length - 1);
     }
+    if (_whoamiPath.hasMatch(path)) {
+      final String? next;
+      try {
+        next = Uri.splitQueryString(query)['next'];
+      } on FormatException {
+        return null;
+      } on ArgumentError {
+        // A broken %-escape ("Truncated URI").
+        return null;
+      }
+      return next != null && _tasksLink.hasMatch(next) ? next : null;
+    }
     return _tasksLink.hasMatch(path) ? path : null;
+  }
+
+  static final RegExp _whoamiPath = RegExp(r'^(/test)?/whoami$');
+
+  /// "מי את/ה?" in [envPrefix]'s environment, carrying the pending link (if
+  /// any) as `?next=` so it survives a reload of the sign-in screen.
+  static String whoamiRoute(String envPrefix) {
+    final pending = _pendingDeepLink;
+    if (pending == null) return '$envPrefix/whoami';
+    return '$envPrefix/whoami?next=${Uri.encodeComponent(pending)}';
   }
 
   // The checklist, or one דו יומי event (its tasks screen or its editing
@@ -306,7 +337,7 @@ class AppRouter {
                 'signed out, redirecting to whoami',
                 name: 'AppRouter',
               );
-              _instance?.go('$envPrefix/whoami');
+              _instance?.go(whoamiRoute(envPrefix));
             }
           }
         });
@@ -382,11 +413,11 @@ class AppRouter {
             }
           }
 
-          return '$envPrefix/whoami';
+          return whoamiRoute(envPrefix);
         }
 
         if (_userSelectionBloc == null || _userSelectionRepository == null) {
-          return '$envPrefix/whoami';
+          return whoamiRoute(envPrefix);
         }
 
         final currentState = _userSelectionBloc!.state;
@@ -403,7 +434,7 @@ class AppRouter {
         if (currentState is UserSignedOut) {
           if (!strippedRoute.startsWith('/whoami')) {
             rememberTasksLink(currentRoute);
-            return '$envPrefix/whoami';
+            return whoamiRoute(envPrefix);
           }
         } else if (currentState is UserAuthenticated) {
           clearPendingDeepLinkIfArrived(currentRoute);
@@ -449,7 +480,7 @@ class AppRouter {
               name: 'AppRouter',
             );
             rememberTasksLink(currentRoute);
-            return '$envPrefix/whoami';
+            return whoamiRoute(envPrefix);
           }
         }
 
