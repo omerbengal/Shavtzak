@@ -282,16 +282,32 @@ class AssigneesEditor extends StatefulWidget {
 
 class _AssigneesEditorState extends State<AssigneesEditor> {
   late final List<String> _picked = [...widget.initial];
+  final TextEditingController _search = TextEditingController();
+  late final FocusNode _searchFocus = createRtlCursorFixedFocusNode(_search);
   String _query = '';
 
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
   void _toggle(String id, bool on) {
+    // A search has done its job once its result is ticked: empty it and put
+    // the cursor back (and a phone's keyboard up), ready for the next name,
+    // as the task form's dropdown does.
+    final wasSearching = _query.isNotEmpty;
+    if (wasSearching) _search.clear();
     setState(() {
       if (on) {
         if (!_picked.contains(id)) _picked.add(id);
       } else {
         _picked.remove(id);
       }
+      _query = '';
     });
+    if (wasSearching) _searchFocus.requestFocus();
     widget.onChanged([..._picked]);
   }
 
@@ -319,6 +335,8 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
           RtlArrowKeys(
               child: TextField(
             key: const Key('edit-assignee-search'),
+            controller: _search,
+            focusNode: _searchFocus,
             autofocus: true,
             decoration: const InputDecoration(
               isDense: true,
