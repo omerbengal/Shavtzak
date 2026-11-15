@@ -124,6 +124,60 @@ void main() {
     expect(harness.repository.inserted, isEmpty);
   });
 
+  testWidgets('a new task is filled in full before it exists: owners, contacts, subtasks',
+      (tester) async {
+    final harness = await pumpTeamTasks(tester,
+        user: manager, board: board(const []), size: const Size(1200, 1000));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'להזמין אולם');
+
+    // Contacts.
+    await tester.tap(find.byKey(const Key('new-team-task-add-contact')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('edit-contact-name-0')), 'רונית');
+    await tester.enterText(find.byKey(const Key('edit-contact-phone-0')), '0501234567');
+
+    // Two subtasks, typed as in דו יומי: Enter opens the next line.
+    await tester.ensureVisible(find.byKey(const Key('team-subtask-add')));
+    await tester.tap(find.byKey(const Key('team-subtask-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('team-subtask-title-0')), 'הצעת מחיר');
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('team-subtask-title-1')), 'חוזה');
+    await tester.tap(find.byKey(const Key('team-subtask-owner-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('team-subtask-owner-option-m2')).last);
+    await tester.pumpAndSettle();
+    // With subtasks the owners are theirs: no own owners field.
+    expect(find.byKey(const Key('new-team-task-owners')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('new-team-task-save')));
+    await tester.pumpAndSettle();
+    final saved = harness.repository.inserted.single;
+    expect(saved.title, 'להזמין אולם');
+    expect(saved.contacts.single.name, 'רונית');
+    expect(saved.subtasks.map((s) => s.title), ['הצעת מחיר', 'חוזה']);
+    expect(saved.subtasks.last.assigneeId, 'm2');
+    expect(saved.ownerIds, ['m2']);
+  });
+
+  testWidgets('a new task without subtasks picks its owners in the form', (tester) async {
+    final harness = await pumpTeamTasks(tester,
+        user: manager, board: board(const []), size: const Size(1200, 1000));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'לסגור להקה');
+    await tester.tap(find.byKey(const Key('new-team-task-owners')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-assignee-m1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('new-team-task-save')));
+    await tester.pumpAndSettle();
+    expect(harness.repository.inserted.single.ownerIds, ['m1']);
+  });
+
   testWidgets('an empty list says so', (tester) async {
     await pumpTeamTasks(tester, user: dana, board: board(const []));
     expect(find.text('אין משימות להצגה'), findsOneWidget);

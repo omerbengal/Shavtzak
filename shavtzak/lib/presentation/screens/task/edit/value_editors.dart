@@ -259,7 +259,11 @@ class AssigneesEditor extends StatefulWidget {
     required this.onChanged,
     this.emptyLabel = 'אין משובצים לאירוע זה',
     this.notOfferedLabel = 'כבר לא משובץ/ת לאירוע',
+    this.maxWidth = 300,
   });
+
+  /// How wide the editor grows; a form's field is wider than a cell.
+  final double maxWidth;
 
   final List<String> initial;
 
@@ -327,7 +331,7 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
                 normalizeForSearch(member.name).toLowerCase().contains(query))
             .toList();
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 300),
+      constraints: BoxConstraints(maxWidth: widget.maxWidth),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
