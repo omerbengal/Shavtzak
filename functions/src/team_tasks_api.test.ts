@@ -63,7 +63,7 @@ test('insert refuses an inactive owner', async () => {
   await assert.rejects(insert(store, {assigneeIds: ['gone']}), status(400, 'חבר צוות לא נמצא'));
   await assert.rejects(insert(store, {
     assigneeIds: [],
-    subtasks: [{id: 's1', title: 'x', assigneeId: 'gone'}],
+    subtasks: [{id: 's1', title: 'x', assigneeIds: ['gone']}],
   }), status(400));
 });
 
@@ -99,7 +99,7 @@ test('setStatus duplicate refuses a missing original', async () => {
 
 test('setSubtaskDone, addUpdate and delete', async () => {
   const store = new MemoryStore();
-  await insert(store, {assigneeIds: [], subtasks: [{id: 's1', title: 'x', assigneeId: 'a'}]});
+  await insert(store, {assigneeIds: [], subtasks: [{id: 's1', title: 'x', assigneeIds: ['a']}]});
   const ticked = await runTeamTaskOperation(store, 'teamTask.setSubtaskDone',
     {id: 't1', subtaskId: 's1', isDone: true}, owner, now);
   assert.equal(ticked.after?.status, 'done');
@@ -126,4 +126,25 @@ test('update keeps a link to a deleted event', async () => {
   // A new link to a missing event is still refused.
   await assert.rejects(runTeamTaskOperation(store, 'teamTask.update',
     {task: task({link: {type: 'event', id: 'nope'}})}, manager, now), status(404));
+});
+
+test('setStatus and addUpdate with a subtaskId act on that subtask', async () => {
+  const store = new MemoryStore();
+  await insert(store, {assigneeIds: [], subtasks: [
+    {id: 's1', title: 'x', assigneeIds: ['a']},
+    {id: 's2', title: 'y', assigneeIds: ['a']},
+  ]});
+  const moved = await runTeamTaskOperation(store, 'teamTask.setStatus',
+    {id: 't1', subtaskId: 's1', status: 'inProgress'}, owner, now);
+  assert.equal(moved.after?.subtasks[0].status, 'inProgress');
+  assert.equal(moved.after?.status, 'inProgress');
+  const dup = await runTeamTaskOperation(store, 'teamTask.setStatus',
+    {id: 't1', subtaskId: 's2', status: 'duplicate', duplicateOfId: 's1'}, owner, now);
+  assert.equal(dup.after?.subtasks[1].duplicateOfId, 's1');
+  await assert.rejects(runTeamTaskOperation(store, 'teamTask.setStatus',
+    {id: 't1', subtaskId: 's2', status: 'duplicate', duplicateOfId: 'missing'}, owner, now), status(404));
+  const logged = await runTeamTaskOperation(store, 'teamTask.addUpdate',
+    {id: 't1', subtaskId: 's1', text: 'התחלתי'}, owner, now);
+  assert.equal(logged.after?.subtasks[0].updates[0].text, 'התחלתי');
+  assert.equal(logged.after?.updates.length, 0);
 });

@@ -5,6 +5,7 @@ import {TaskActor, TaskError} from './tasks';
 import {
   TeamTaskDoc,
   appendTeamTaskUpdate,
+  applyTeamSubtaskStatus,
   applyTeamSubtaskToggle,
   applyTeamTaskEdit,
   applyTeamTaskStatus,
@@ -42,8 +43,8 @@ function withSubtasks(): TeamTaskDoc {
   return buildNewTeamTask(
     input({
       subtasks: [
-        {id: 's1', title: 'מחיר', assigneeId: 'a', contacts: []},
-        {id: 's2', title: 'חוזה', assigneeId: 'b', contacts: []},
+        {id: 's1', title: 'מחיר', assigneeIds: ['a'], contacts: []},
+        {id: 's2', title: 'חוזה', assigneeIds: ['b'], contacts: []},
       ],
     }),
     {now, actor: manager},
@@ -64,14 +65,16 @@ test('deriveOwnerIds uses assigneeIds without subtasks', () => {
 });
 
 test('deriveOwnerIds is the distinct subtask owners when there are subtasks', () => {
-  const sub = (id: string, assigneeId: string | null) =>
-    ({id, title: id, isDone: false, assigneeId, contacts: []});
+  const sub = (id: string, assigneeIds: string[]) => ({
+    id, title: id, description: '', assigneeIds, contacts: [], deadline: null,
+    status: 'open' as const, duplicateOfId: null, updates: [], completedAt: null,
+  });
   assert.deepEqual(
     deriveOwnerIds({
       assigneeIds: ['x'],
-      subtasks: [sub('1', 'a'), sub('2', 'b'), sub('3', 'a'), sub('4', null)],
+      subtasks: [sub('1', ['a']), sub('2', ['b', 'c']), sub('3', ['a']), sub('4', [])],
     }),
-    ['a', 'b'],
+    ['a', 'b', 'c'],
   );
 });
 
@@ -172,8 +175,8 @@ test('an owner may set status, a stranger may not', () => {
 test('only the subtask\'s owner or a manager ticks it', () => {
   const task = withSubtasks();
   expectTaskError(() => applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerB}), 403);
-  assert.ok(applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA}).subtasks[0].isDone);
-  assert.ok(applyTeamSubtaskToggle(task, 's1', true, {now, actor: flagged}).subtasks[0].isDone);
+  assert.ok(applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA}).subtasks[0].status === 'done');
+  assert.ok(applyTeamSubtaskToggle(task, 's1', true, {now, actor: flagged}).subtasks[0].status === 'done');
   expectTaskError(() => applyTeamSubtaskToggle(task, 'nope', true, {now, actor: manager}), 404);
 });
 
@@ -204,14 +207,14 @@ test('applyTeamTaskEdit keeps ticks, status, log and recomputes owners', () => {
     input({
       title: 'אולם לחנוכה',
       subtasks: [
-        {id: 's1', title: 'מחיר', assigneeId: 'c', contacts: []},
-        {id: 's2', title: 'חוזה', assigneeId: 'b', contacts: []},
+        {id: 's1', title: 'מחיר', assigneeIds: ['c'], contacts: []},
+        {id: 's2', title: 'חוזה', assigneeIds: ['b'], contacts: []},
       ],
     }),
     {now: later, actor: manager},
   );
   assert.equal(edited.title, 'אולם לחנוכה');
-  assert.ok(edited.subtasks[0].isDone);
+  assert.ok(edited.subtasks[0].status === 'done');
   assert.deepEqual(edited.ownerIds, ['c', 'b']);
   assert.equal(edited.updates.length, 1);
   assert.equal(edited.status, 'inProgress');
@@ -226,7 +229,7 @@ test('applyTeamTaskEdit: removing the last open subtask completes the task', () 
   task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
   const edited = applyTeamTaskEdit(
     task,
-    input({subtasks: [{id: 's1', title: 'מחיר', assigneeId: 'a', contacts: []}]}),
+    input({subtasks: [{id: 's1', title: 'מחיר', assigneeIds: ['a'], contacts: []}]}),
     {now: later, actor: manager},
   );
   assert.equal(edited.status, 'done');
@@ -256,10 +259,86 @@ test('an edit that keeps the subtasks keeps a status set by hand', () => {
   const edited = applyTeamTaskEdit(task, input({
     title: 'אולם חדש',
     subtasks: [
-      {id: 's1', title: 'מחיר', assigneeId: 'a', contacts: []},
-      {id: 's2', title: 'חוזה מעודכן', assigneeId: 'b', contacts: []},
+      {id: 's1', title: 'מחיר', assigneeIds: ['a'], contacts: []},
+      {id: 's2', title: 'חוזה מעודכן', assigneeIds: ['b'], contacts: []},
     ],
   }), {now: later, actor: manager});
   assert.equal(edited.status, 'done');
   assert.deepEqual(edited.completedAt, now);
+});
+
+test('a subtask is a full task: its fields, its status and its own log', () => {
+  let task = buildNewTeamTask(input({
+    assigneeIds: [],
+    subtasks: [{
+      id: 's1', title: 'מחיר', description: 'שלוש הצעות', assigneeIds: ['a', 'b'],
+      contacts: [{id: 'c9', name: 'רונית', role: '', phone: '050-1234567'}], deadline: '2026-11-30',
+    }],
+  }), {now, actor: manager});
+  const sub = task.subtasks[0];
+  assert.equal(sub.description, 'שלוש הצעות');
+  assert.deepEqual(sub.assigneeIds, ['a', 'b']);
+  assert.equal(sub.deadline, '2026-11-30');
+  assert.equal(sub.status, 'open');
+  assert.deepEqual(task.ownerIds, ['a', 'b']);
+  task = applyTeamSubtaskStatus(task, 's1', 'inProgress', null, {now, actor: ownerB});
+  assert.equal(task.subtasks[0].status, 'inProgress');
+  assert.equal(task.status, 'inProgress');
+  task = appendTeamTaskUpdate(task, 'ביקשתי הצעות', {now, actor: ownerA}, 's1');
+  assert.equal(task.subtasks[0].updates[0].text, 'ביקשתי הצעות');
+  assert.equal(task.updates.length, 0);
+  expectTaskError(() => appendTeamTaskUpdate(task, 'x', {now, actor: stranger}, 's1'), 403);
+  expectTaskError(
+    () => applyTeamSubtaskStatus(task, 's1', 'done', null, {now, actor: stranger}), 403);
+});
+
+test('the parent is done when every subtask is closed and one is done', () => {
+  let task = withSubtasks();
+  task = applyTeamSubtaskStatus(task, 's1', 'cancelled', null, {now, actor: ownerA});
+  assert.notEqual(task.status, 'done');
+  task = applyTeamSubtaskStatus(task, 's2', 'done', null, {now: later, actor: ownerB});
+  assert.equal(task.status, 'done');
+  assert.deepEqual(task.completedAt, later);
+  task = applyTeamSubtaskStatus(task, 's2', 'inProgress', null, {now: later, actor: ownerB});
+  assert.equal(task.status, 'inProgress');
+});
+
+test('a subtask duplicate points elsewhere, never to itself', () => {
+  const task = withSubtasks();
+  expectTaskError(
+    () => applyTeamSubtaskStatus(task, 's1', 'duplicate', 's1', {now, actor: manager}), 400);
+  expectTaskError(
+    () => applyTeamSubtaskStatus(task, 's1', 'duplicate', null, {now, actor: manager}), 400);
+  const dup = applyTeamSubtaskStatus(task, 's1', 'duplicate', 's2', {now, actor: manager});
+  assert.equal(dup.subtasks[0].duplicateOfId, 's2');
+});
+
+test('an edit keeps a subtask\'s status and log', () => {
+  let task = withSubtasks();
+  task = applyTeamSubtaskStatus(task, 's1', 'inProgress', null, {now, actor: ownerA});
+  task = appendTeamTaskUpdate(task, 'עדכון', {now, actor: ownerA}, 's1');
+  const edited = applyTeamTaskEdit(task, input({
+    subtasks: [
+      {id: 's1', title: 'מחיר חדש', assigneeIds: ['a'], deadline: '2026-12-05'},
+      {id: 's2', title: 'חוזה', assigneeIds: ['b']},
+    ],
+  }), {now: later, actor: manager});
+  assert.equal(edited.subtasks[0].title, 'מחיר חדש');
+  assert.equal(edited.subtasks[0].deadline, '2026-12-05');
+  assert.equal(edited.subtasks[0].status, 'inProgress');
+  assert.equal(edited.subtasks[0].updates.length, 1);
+});
+
+test('a stored subtask from before round 2 still reads', () => {
+  const task = teamTaskFromStored('t9', {
+    title: 'x',
+    subtasks: [
+      {id: 's1', title: 'ישן', isDone: true, assigneeId: 'a'},
+      {id: 's2', title: 'ישן 2', isDone: false, assigneeId: null},
+    ],
+  });
+  assert.equal(task.subtasks[0].status, 'done');
+  assert.deepEqual(task.subtasks[0].assigneeIds, ['a']);
+  assert.equal(task.subtasks[1].status, 'open');
+  assert.deepEqual(task.subtasks[1].assigneeIds, []);
 });

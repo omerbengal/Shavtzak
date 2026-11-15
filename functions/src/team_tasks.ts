@@ -25,13 +25,29 @@ export type TaskLinkType = 'event' | 'category' | 'topic';
 
 export type TaskLink = {type: TaskLinkType; id: string} | null;
 
+/**
+ * A subtask is a task of its own nested in its parent (Omer, round 2): title,
+ * description, owners, contacts, deadline, the five statuses and its own
+ * update log. It has no link (the parent's) and no subtasks.
+ */
 export type TeamSubtask = {
   id: string;
   title: string;
-  isDone: boolean;
-  assigneeId: string | null;
+  description: string;
+  assigneeIds: string[];
   contacts: StageContact[];
+  deadline: string | null;
+  status: TeamTaskStatus;
+  duplicateOfId: string | null;
+  /** Newest first. */
+  updates: TaskUpdateEntry[];
+  completedAt: Timestamp | null;
 };
+
+/** What a manager edits on a subtask; the rest has its own operations. */
+export type SubtaskFields = Pick<
+  TeamSubtask, 'id' | 'title' | 'description' | 'assigneeIds' | 'contacts' | 'deadline'
+>;
 
 export type TaskUpdateEntry = {
   id: string;
@@ -72,6 +88,8 @@ const MAX_SUBTASKS = 50;
 const MAX_ASSIGNEES = 100;
 const MAX_UPDATE_LENGTH = 2000;
 const MAX_UPDATES = 500;
+/** A subtask's log is capped lower: up to 50 of them share one document. */
+const MAX_SUBTASK_UPDATES = 100;
 const DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const LINK_TYPES: readonly TaskLinkType[] = ['event', 'category', 'topic'];
@@ -84,8 +102,8 @@ export function deriveOwnerIds(
   if (task.subtasks.length === 0) return [...new Set(task.assigneeIds)];
   const ids: string[] = [];
   for (const subtask of task.subtasks) {
-    if (subtask.assigneeId != null && !ids.includes(subtask.assigneeId)) {
-      ids.push(subtask.assigneeId);
+    for (const id of subtask.assigneeIds) {
+      if (!ids.includes(id)) ids.push(id);
     }
   }
   return ids;
@@ -101,6 +119,19 @@ export function isTeamTaskOwner(
 function requireManagerOrOwner(task: TeamTaskDoc, actor: TaskActor): void {
   if (!canManageTasks(actor) && !isTeamTaskOwner(task, actor)) {
     throw new TaskError(403, 'אין לך הרשאה לעדכן את המשימה');
+  }
+}
+
+function findSubtask(task: TeamTaskDoc, subtaskId: string): TeamSubtask {
+  const subtask = task.subtasks.find((entry) => entry.id === subtaskId);
+  if (subtask == null) throw new TaskError(404, 'תת-המשימה לא נמצאה');
+  return subtask;
+}
+
+/** A subtask is changed by a manager or by one of ITS owners. */
+function requireManagerOrSubtaskOwner(subtask: TeamSubtask, actor: TaskActor): void {
+  if (!canManageTasks(actor) && !subtask.assigneeIds.includes(actor.memberId)) {
+    throw new TaskError(403, 'רק אחראי על תת-המשימה יכול לעדכן אותה');
   }
 }
 
@@ -152,12 +183,25 @@ function storedSubtasks(value: unknown): TeamSubtask[] {
     const id = record['id'];
     const title = record['title'];
     if (typeof id !== 'string' || id.length === 0 || typeof title !== 'string') continue;
+    // Before round 2 a subtask had one owner (`assigneeId`) and a tick
+    // (`isDone`); such a document still reads.
+    const legacyOwner = storedString(record['assigneeId']);
+    const status = record['status'] === undefined
+      ? (record['isDone'] === true ? 'done' : 'open')
+      : storedStatus(record['status']);
     subtasks.push({
       id,
       title,
-      isDone: record['isDone'] === true,
-      assigneeId: storedString(record['assigneeId']),
+      description: storedString(record['description']) ?? '',
+      assigneeIds: Array.isArray(record['assigneeIds'])
+        ? storedStringList(record['assigneeIds'])
+        : (legacyOwner == null ? [] : [legacyOwner]),
       contacts: storedContacts(record['contacts']),
+      deadline: storedString(record['deadline']),
+      status,
+      duplicateOfId: status === 'duplicate' ? storedString(record['duplicateOfId']) : null,
+      updates: storedUpdates(record['updates']),
+      completedAt: storedTimestamp(record['completedAt']),
     });
   }
   return subtasks;
@@ -213,7 +257,7 @@ type EditableFields = {
   description: string;
   link: TaskLink;
   assigneeIds: string[];
-  subtasks: Omit<TeamSubtask, 'isDone'>[];
+  subtasks: SubtaskFields[];
   contacts: StageContact[];
   deadline: string | null;
 };
@@ -260,11 +304,22 @@ function parseAssigneeIds(value: unknown): string[] {
   return ids;
 }
 
-function parseSubtasks(value: unknown): Omit<TeamSubtask, 'isDone'>[] {
+function parseDescription(value: unknown): string {
+  if (value != null && typeof value !== 'string') {
+    throw new TaskError(400, 'תיאור לא תקין');
+  }
+  const description = (value ?? '').trim();
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    throw new TaskError(400, 'התיאור ארוך מדי');
+  }
+  return description;
+}
+
+function parseSubtasks(value: unknown): SubtaskFields[] {
   if (value == null) return [];
   if (!Array.isArray(value)) throw new TaskError(400, 'תתי-משימות לא תקינות');
   if (value.length > MAX_SUBTASKS) throw new TaskError(400, 'יותר מדי תתי-משימות');
-  const subtasks: Omit<TeamSubtask, 'isDone'>[] = [];
+  const subtasks: SubtaskFields[] = [];
   const seen = new Set<string>();
   for (const entry of value) {
     if (entry == null || typeof entry !== 'object') {
@@ -278,13 +333,14 @@ function parseSubtasks(value: unknown): Omit<TeamSubtask, 'isDone'>[] {
     const title = typeof record['title'] === 'string' ? record['title'].trim() : '';
     if (title.length === 0) throw new TaskError(400, 'חובה להזין שם לתת-משימה');
     if (title.length > MAX_TITLE_LENGTH) throw new TaskError(400, 'שם תת-המשימה ארוך מדי');
-    const rawAssignee = record['assigneeId'];
     seen.add(id);
     subtasks.push({
       id,
       title,
-      assigneeId: rawAssignee == null || rawAssignee === '' ? null : parseMemberId(rawAssignee),
+      description: parseDescription(record['description']),
+      assigneeIds: parseAssigneeIds(record['assigneeIds']),
       contacts: parseContacts(record['contacts']),
+      deadline: parseDeadline(record['deadline']),
     });
   }
   return subtasks;
@@ -295,14 +351,7 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
   if (title.length === 0) throw new TaskError(400, 'חובה להזין כותרת');
   if (title.length > MAX_TITLE_LENGTH) throw new TaskError(400, 'הכותרת ארוכה מדי');
 
-  const descriptionRaw = input['description'];
-  if (descriptionRaw != null && typeof descriptionRaw !== 'string') {
-    throw new TaskError(400, 'תיאור לא תקין');
-  }
-  const description = (descriptionRaw ?? '').trim();
-  if (description.length > MAX_DESCRIPTION_LENGTH) {
-    throw new TaskError(400, 'התיאור ארוך מדי');
-  }
+  const description = parseDescription(input['description']);
 
   const subtasks = parseSubtasks(input['subtasks']);
   return {
@@ -319,15 +368,22 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
 
 // ---- status ----
 
+/** A subtask that no longer needs work: done, cancelled or a duplicate. */
+function isSubtaskClosed(subtask: TeamSubtask): boolean {
+  return subtask.status !== 'open' && subtask.status !== 'inProgress';
+}
+
 /**
- * Status after the subtasks changed. Cancelled and duplicate are never touched;
- * every subtask done = done; otherwise a done task goes back to inProgress, and
- * an open task with a ticked subtask moves to inProgress.
+ * The parent's status after its subtasks changed. A cancelled or duplicate
+ * parent is never touched. Every subtask closed with at least one done =
+ * done; otherwise a done parent goes back to inProgress, and an open parent
+ * with a subtask in progress or done moves to inProgress.
  */
 function withAutoStatus(previous: TeamTaskDoc, next: TeamTaskDoc, ctx: Ctx): TeamTaskDoc {
   if (next.status === 'cancelled' || next.status === 'duplicate') return next;
   if (next.subtasks.length === 0) return next;
-  const allDone = next.subtasks.every((subtask) => subtask.isDone);
+  const allDone = next.subtasks.every(isSubtaskClosed) &&
+    next.subtasks.some((subtask) => subtask.status === 'done');
   if (allDone) {
     return {
       ...next,
@@ -335,8 +391,9 @@ function withAutoStatus(previous: TeamTaskDoc, next: TeamTaskDoc, ctx: Ctx): Tea
       completedAt: previous.status === 'done' ? previous.completedAt : ctx.now,
     };
   }
-  const anyDone = next.subtasks.some((subtask) => subtask.isDone);
-  if (next.status === 'done' || (next.status === 'open' && anyDone)) {
+  const anyMoved = next.subtasks.some((subtask) =>
+    subtask.status === 'done' || subtask.status === 'inProgress');
+  if (next.status === 'done' || (next.status === 'open' && anyMoved)) {
     return {...next, status: 'inProgress', completedAt: null};
   }
   return next;
@@ -348,6 +405,16 @@ function finish(task: TeamTaskDoc): TeamTaskDoc {
 
 // ---- transitions ----
 
+function newSubtask(fields: SubtaskFields): TeamSubtask {
+  return {
+    ...fields,
+    status: 'open',
+    duplicateOfId: null,
+    updates: [],
+    completedAt: null,
+  };
+}
+
 export function buildNewTeamTask(input: Record<string, unknown>, ctx: Ctx): TeamTaskDoc {
   requireTaskManager(ctx.actor);
   const id = input['id'];
@@ -358,7 +425,7 @@ export function buildNewTeamTask(input: Record<string, unknown>, ctx: Ctx): Team
   return finish({
     id,
     ...fields,
-    subtasks: fields.subtasks.map((subtask) => ({...subtask, isDone: false})),
+    subtasks: fields.subtasks.map(newSubtask),
     status: 'open',
     duplicateOfId: null,
     updates: [],
@@ -378,20 +445,22 @@ export function applyTeamTaskEdit(
   requireTaskManager(ctx.actor);
   if (input['id'] !== task.id) throw new TaskError(400, 'מזהה משימה לא תואם');
   const fields = parseEditableFields(input);
-  const doneById = new Map(task.subtasks.map((subtask) => [subtask.id, subtask.isDone]));
+  const storedById = new Map(task.subtasks.map((subtask) => [subtask.id, subtask]));
   const next: TeamTaskDoc = {
     ...task,
     ...fields,
-    subtasks: fields.subtasks.map((subtask) => ({
-      ...subtask,
-      isDone: doneById.get(subtask.id) ?? false,
-    })),
+    // A subtask keeps its status, log and completion; only what a manager
+    // edits comes from the payload.
+    subtasks: fields.subtasks.map((subtask) => {
+      const stored = storedById.get(subtask.id);
+      return stored == null ? newSubtask(subtask) : {...stored, ...subtask};
+    }),
     updatedAt: ctx.now,
   };
   // The status follows the subtasks only when the set of subtasks changed; an
   // edit of anything else keeps a status someone chose by hand.
   const sameSet = task.subtasks.length === next.subtasks.length &&
-    next.subtasks.every((subtask) => doneById.has(subtask.id));
+    next.subtasks.every((subtask) => storedById.has(subtask.id));
   return finish(sameSet ? next : withAutoStatus(task, next, ctx));
 }
 
@@ -431,29 +500,70 @@ export function applyTeamTaskStatus(
   });
 }
 
-export function applyTeamSubtaskToggle(
+/**
+ * A subtask's own status, by a manager or one of its owners. A duplicate
+ * points to another subtask of the same task or to another task (the caller
+ * checks that a task id exists). The parent's status follows.
+ */
+export function applyTeamSubtaskStatus(
   task: TeamTaskDoc,
   subtaskId: string,
-  isDone: boolean,
+  status: TeamTaskStatus,
+  duplicateOfId: string | null,
   ctx: Ctx,
 ): TeamTaskDoc {
-  const subtask = task.subtasks.find((entry) => entry.id === subtaskId);
-  if (subtask == null) throw new TaskError(404, 'תת-המשימה לא נמצאה');
-  if (!canManageTasks(ctx.actor) && subtask.assigneeId !== ctx.actor.memberId) {
-    throw new TaskError(403, 'רק האחראי על תת-המשימה יכול לסמן אותה');
+  const subtask = findSubtask(task, subtaskId);
+  requireManagerOrSubtaskOwner(subtask, ctx.actor);
+  let original: string | null = null;
+  if (status === 'duplicate') {
+    if (duplicateOfId == null || !ID_PATTERN.test(duplicateOfId)) {
+      throw new TaskError(400, 'יש לבחור את המשימה המקורית');
+    }
+    if (duplicateOfId === subtaskId || duplicateOfId === task.id) {
+      throw new TaskError(400, 'משימה לא יכולה להיות כפילות של עצמה');
+    }
+    original = duplicateOfId;
   }
+  const completedAt = status === 'done'
+    ? (subtask.status === 'done' ? subtask.completedAt : ctx.now)
+    : null;
   const next: TeamTaskDoc = {
     ...task,
     subtasks: task.subtasks.map((entry) =>
-      entry.id === subtaskId ? {...entry, isDone} : entry,
+      entry.id === subtaskId
+        ? {...entry, status, duplicateOfId: original, completedAt}
+        : entry,
     ),
     updatedAt: ctx.now,
   };
   return finish(withAutoStatus(task, next, ctx));
 }
 
-export function appendTeamTaskUpdate(task: TeamTaskDoc, text: string, ctx: Ctx): TeamTaskDoc {
-  requireManagerOrOwner(task, ctx.actor);
+/** The quick tick in the parent's list: done, or back to open. */
+export function applyTeamSubtaskToggle(
+  task: TeamTaskDoc,
+  subtaskId: string,
+  isDone: boolean,
+  ctx: Ctx,
+): TeamTaskDoc {
+  return applyTeamSubtaskStatus(task, subtaskId, isDone ? 'done' : 'open', null, ctx);
+}
+
+/**
+ * Adds to the task's log, or with [subtaskId] to that subtask's own log (a
+ * manager or one of the subtask's owners).
+ */
+export function appendTeamTaskUpdate(
+  task: TeamTaskDoc,
+  text: string,
+  ctx: Ctx,
+  subtaskId: string | null = null,
+): TeamTaskDoc {
+  if (subtaskId == null) {
+    requireManagerOrOwner(task, ctx.actor);
+  } else {
+    requireManagerOrSubtaskOwner(findSubtask(task, subtaskId), ctx.actor);
+  }
   const trimmed = typeof text === 'string' ? text.trim() : '';
   if (trimmed.length === 0) throw new TaskError(400, 'חובה להזין עדכון');
   if (trimmed.length > MAX_UPDATE_LENGTH) throw new TaskError(400, 'העדכון ארוך מדי');
@@ -464,6 +574,17 @@ export function appendTeamTaskUpdate(task: TeamTaskDoc, text: string, ctx: Ctx):
     byId: ctx.actor.memberId,
     byName: ctx.actor.name,
   };
+  if (subtaskId != null) {
+    return finish({
+      ...task,
+      subtasks: task.subtasks.map((subtask) =>
+        subtask.id === subtaskId
+          ? {...subtask, updates: [entry, ...subtask.updates].slice(0, MAX_SUBTASK_UPDATES)}
+          : subtask,
+      ),
+      updatedAt: ctx.now,
+    });
+  }
   return finish({
     ...task,
     updates: [entry, ...task.updates].slice(0, MAX_UPDATES),

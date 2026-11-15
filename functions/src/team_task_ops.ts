@@ -3,6 +3,7 @@ import {TaskActor, TaskError, requireTaskManager} from './tasks';
 import {
   TeamTaskDoc,
   appendTeamTaskUpdate,
+  applyTeamSubtaskStatus,
   applyTeamSubtaskToggle,
   applyTeamTaskEdit,
   applyTeamTaskStatus,
@@ -53,6 +54,11 @@ function requireId(value: unknown, field: string): string {
   return value;
 }
 
+function optionalId(value: unknown, field: string): string | null {
+  if (value == null) return null;
+  return requireId(value, field);
+}
+
 function requireTaskObject(value: unknown): Record<string, unknown> {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     throw new TaskError(400, 'Missing or invalid task');
@@ -93,11 +99,11 @@ async function requireNewOwnersActive(
 ): Promise<void> {
   const known = new Set<string>([
     ...(before?.assigneeIds ?? []),
-    ...(before?.subtasks ?? []).map((subtask) => subtask.assigneeId ?? ''),
+    ...(before?.subtasks ?? []).flatMap((subtask) => subtask.assigneeIds),
   ]);
   const named = [
     ...next.assigneeIds,
-    ...next.subtasks.map((subtask) => subtask.assigneeId).filter((id): id is string => id != null),
+    ...next.subtasks.flatMap((subtask) => subtask.assigneeIds),
   ];
   const added = [...new Set(named)].filter((id) => !known.has(id));
   if (added.length === 0) return;
@@ -148,6 +154,28 @@ export async function runTeamTaskOperation(
       const duplicateOfId = typeof payload['duplicateOfId'] === 'string'
         ? payload['duplicateOfId']
         : null;
+      const subtaskId = optionalId(payload['subtaskId'], 'subtaskId');
+      if (subtaskId != null) {
+        const next = applyTeamSubtaskStatus(before, subtaskId, status, duplicateOfId, ctx);
+        const original = next.subtasks.find((subtask) => subtask.id === subtaskId)?.duplicateOfId;
+        // A subtask's original: a sibling subtask or another task.
+        if (original != null &&
+            !next.subtasks.some((subtask) => subtask.id === original) &&
+            (await store.getTask(original)) == null) {
+          throw new TaskError(404, 'המשימה המקורית לא נמצאה');
+        }
+        await store.writeTask(next);
+        return {
+          entityId: next.id,
+          before,
+          after: next,
+          details: {
+            subtaskTitle: next.subtasks.find((subtask) => subtask.id === subtaskId)?.title ?? null,
+            status,
+            duplicateOfId: original ?? null,
+          },
+        };
+      }
       const next = applyTeamTaskStatus(before, status, duplicateOfId, ctx);
       if (next.duplicateOfId != null && (await store.getTask(next.duplicateOfId)) == null) {
         throw new TaskError(404, 'המשימה המקורית לא נמצאה');
@@ -176,9 +204,18 @@ export async function runTeamTaskOperation(
     case 'teamTask.addUpdate': {
       const before = await loadTask(store, requireId(payload['id'], 'id'));
       const text = typeof payload['text'] === 'string' ? payload['text'] : '';
-      const next = appendTeamTaskUpdate(before, text, ctx);
+      const subtaskId = optionalId(payload['subtaskId'], 'subtaskId');
+      const next = appendTeamTaskUpdate(before, text, ctx, subtaskId);
       await store.writeTask(next);
-      return {entityId: next.id, before, after: next, details: {text: next.updates[0]?.text}};
+      const log = subtaskId == null
+        ? next.updates
+        : next.subtasks.find((subtask) => subtask.id === subtaskId)?.updates ?? [];
+      return {
+        entityId: next.id,
+        before,
+        after: next,
+        details: subtaskId == null ? {text: log[0]?.text} : {text: log[0]?.text, subtaskId},
+      };
     }
     default:
       throw new TaskError(400, `Unsupported operation: ${operation}`);
