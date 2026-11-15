@@ -48,7 +48,7 @@ import type {
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
 import {applyEventItemCatalogueMutation, normalizeEventItemChoices} from './event_items';
-import {applyTaskTopicMutation} from './task_topics';
+import {applyTaskTopicMutation, isLinkedToTopic} from './task_topics';
 import {TeamTaskStore, runTeamTaskOperation} from './team_task_ops';
 import {TeamTaskDoc, teamTaskAuditDetails} from './team_tasks';
 import {
@@ -6678,10 +6678,26 @@ async function executeMutation(
       const change = applyTaskTopicMutation(
         topics, operation, payload, new Date().toISOString(), taskActorFrom(actor),
       );
-      await listsRef.set({TaskTopics: change.items}, {merge: true});
+      // A topic deleted for good comes off its tasks (they move to "ללא
+      // שיוך"), in the same batch as the list.
+      const unlinked: string[] = [];
+      const batch = db.batch();
+      batch.set(listsRef, {TaskTopics: change.items}, {merge: true});
+      if (operation === 'taskTopic.permanentlyDelete') {
+        const linked = await db.collection(collections.teamTasks)
+          .where('link.id', '==', change.entityId)
+          .get();
+        for (const doc of linked.docs) {
+          if (!isLinkedToTopic(doc.data(), change.entityId)) continue;
+          unlinked.push(doc.id);
+          batch.update(doc.ref, {link: null, updatedAt: Timestamp.now()});
+        }
+      }
+      await batch.commit();
       await writeAuditLog(db, collections, actor, operation, 'taskTopic', change.entityId, {
         count: change.items.length,
         name: change.after?.['name'] ?? change.before?.['name'],
+        ...(unlinked.length > 0 ? {unlinkedTaskIds: unlinked} : {}),
       }, {
         before: change.before,
         after: change.after,

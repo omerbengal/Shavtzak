@@ -75,4 +75,7 @@ class FakeTeamTaskRepository extends Fake implements TeamTaskRepository {
 
   @override
   Future<void> restoreTopic(String id) => _record('restoreTopic:$id');
+
+  @override
+  Future<void> deleteTopic(String id) => _record('deleteTopic:$id');
 }

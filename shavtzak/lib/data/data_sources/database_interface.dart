@@ -636,4 +636,7 @@ abstract class DatabaseInterface {
   Future<void> archiveTaskTopic(String id);
 
   Future<void> restoreTaskTopic(String id);
+
+  /// Deletes a topic for good; the backend takes it off the tasks that use it.
+  Future<void> permanentlyDeleteTaskTopic(String id);
 }

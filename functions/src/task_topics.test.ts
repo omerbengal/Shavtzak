@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {TaskActor, TaskError} from './tasks';
-import {applyTaskTopicMutation} from './task_topics';
+import {applyTaskTopicMutation, isLinkedToTopic} from './task_topics';
 
 const manager: TaskActor = {memberId: 'm', name: 'מנהל', isAdmin: false, canManageTasks: true};
 const member: TaskActor = {memberId: 'x', name: 'חבר', isAdmin: false, canManageTasks: false};
@@ -37,4 +37,12 @@ test('a non-manager cannot add a topic', () => {
     () => applyTaskTopicMutation([], 'taskTopic.insert', {topic: {id: 'p1', name: 'א'}}, NOW, member),
     (e: unknown) => e instanceof TaskError && e.status === 403,
   );
+});
+
+test('isLinkedToTopic matches only a topic link with that id', () => {
+  assert.equal(isLinkedToTopic({link: {type: 'topic', id: 'p1'}}, 'p1'), true);
+  assert.equal(isLinkedToTopic({link: {type: 'topic', id: 'p2'}}, 'p1'), false);
+  assert.equal(isLinkedToTopic({link: {type: 'category', id: 'p1'}}, 'p1'), false);
+  assert.equal(isLinkedToTopic({link: null}, 'p1'), false);
+  assert.equal(isLinkedToTopic({}, 'p1'), false);
 });

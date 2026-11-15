@@ -76,6 +76,8 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
               ? _repository.archiveTopic(event.id)
               : _repository.restoreTopic(event.id),
         ));
+    on<DeleteTaskTopic>((event, emit) =>
+        _send(event.completion, () => _repository.deleteTopic(event.id)));
     on<UpdateTeamTask>(_onUpdate);
     on<SetTeamTaskStatus>(_onStatus);
     on<ToggleTeamSubtask>(_onToggle);
@@ -144,7 +146,11 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       all: all,
       mine: mine,
       allGroups: groupTeamTasks(applyTeamTaskFilter(all, _filter, eventCategoryById), now),
-      mineGroups: groupTeamTasks(applyTeamTaskFilter(mine, _filter, eventCategoryById), now),
+      // "המשימות שלי" has no owner filter: they are all the viewer's.
+      mineGroups: groupTeamTasks(
+        applyTeamTaskFilter(mine, _filter.copyWith(ownerId: () => null), eventCategoryById),
+        now,
+      ),
       filter: _filter,
       canManage: canManageTeamTasks(viewer),
       events: board.events,

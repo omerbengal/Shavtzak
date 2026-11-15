@@ -81,3 +81,15 @@ export function applyTaskTopicMutation(
       throw new TaskError(400, `Unknown operation ${operation}`);
   }
 }
+
+/**
+ * Whether a stored team task belongs to the topic [topicId]. A topic deleted
+ * for good takes itself off these tasks (Omer, round 3): they move to
+ * "ללא שיוך" instead of pointing at a topic that is gone.
+ */
+export function isLinkedToTopic(raw: Record<string, unknown>, topicId: string): boolean {
+  const link = raw['link'];
+  if (link == null || typeof link !== 'object') return false;
+  const record = link as Record<string, unknown>;
+  return record['type'] === 'topic' && record['id'] === topicId;
+}

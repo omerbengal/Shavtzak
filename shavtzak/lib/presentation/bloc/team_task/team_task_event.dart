@@ -136,6 +136,17 @@ class ArchiveTaskTopic extends TeamTaskEvent {
   List<Object?> get props => [id, archive];
 }
 
+/// Deletes a topic for good; its tasks move to "ללא שיוך".
+class DeleteTaskTopic extends TeamTaskEvent {
+  final String id;
+  final CrudActionCompleter? completion;
+
+  const DeleteTaskTopic(this.id, {this.completion});
+
+  @override
+  List<Object?> get props => [id];
+}
+
 class _BoardArrived extends TeamTaskEvent {
   final TeamTaskBoard board;
 

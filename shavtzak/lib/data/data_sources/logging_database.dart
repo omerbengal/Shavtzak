@@ -1522,6 +1522,10 @@ class LoggingDatabase implements DatabaseInterface {
   Future<void> restoreTaskTopic(String id) =>
       _topicWrite('restoreTaskTopic', id, () => _inner.restoreTaskTopic(id));
 
+  @override
+  Future<void> permanentlyDeleteTaskTopic(String id) => _topicWrite(
+      'permanentlyDeleteTaskTopic', id, () => _inner.permanentlyDeleteTaskTopic(id));
+
   // ===== Tasks =====
 
   @override

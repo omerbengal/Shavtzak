@@ -5,13 +5,16 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../domain/entities/task_topic.dart';
+import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
 import '../../../widgets/rtl_arrow_keys.dart';
 import '../../task/task_style.dart';
+import '../../task/widgets/confirm_delete_dialog.dart';
 
-/// "ניהול נושאים": add, rename, archive and restore the topics a team task
-/// can belong to, like "ניהול קטגוריות". An archived topic stays on its tasks
-/// and is no longer offered for new ones.
+/// "ניהול נושאים": add, rename, archive, restore and delete the topics a team
+/// task can belong to, like "ניהול קטגוריות". An archived topic stays on its
+/// tasks and is no longer offered for new ones; a deleted one comes off its
+/// tasks (they move to "ללא שיוך"), which the confirm lists by title.
 Future<void> showTopicManagementDialog(BuildContext context) {
   Logger.action('open:topicManagement');
   return showDialog<void>(
@@ -124,6 +127,34 @@ class _TopicManagementDialogState extends State<TopicManagementDialog> {
     await _run((c) => UpdateTaskTopic(topic.copyWith(name: trimmed), completion: c));
   }
 
+  Future<void> _delete(TaskTopic topic, List<String> taskTitles) async {
+    Logger.action('tap:deleteTaskTopic', {'id': topic.id, 'tasks': taskTitles.length});
+    final bloc = context.read<TeamTaskBloc>();
+    await showConfirmDeleteDialog(
+      context,
+      title: 'מחיקת הנושא "${topic.name}"',
+      message: taskTitles.isEmpty
+          ? 'אין משימות עם הנושא הזה.'
+          : 'המשימות האלה יעברו ל"ללא שיוך":',
+      items: taskTitles,
+      keyPrefix: 'topic-delete',
+      onDelete: () {
+        final completion = CrudActionCompleter();
+        bloc.add(DeleteTaskTopic(topic.id, completion: completion));
+        return completion.future;
+      },
+    );
+  }
+
+  /// The titles of the tasks that belong to [topicId].
+  static List<String> _tasksOf(TeamTaskState state, String topicId) {
+    if (state is! TeamTasksLoaded) return const [];
+    return [
+      for (final task in state.all)
+        if (task.link?.type == TaskLinkType.topic && task.link?.id == topicId) task.title,
+    ]..sort();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<TeamTaskBloc>().state;
@@ -213,6 +244,16 @@ class _TopicManagementDialogState extends State<TopicManagementDialog> {
                                         archive: !topic.isArchived,
                                         completion: c,
                                       )),
+                                ),
+                                IconButton(
+                                  key: Key('topic-delete-${topic.id}'),
+                                  tooltip: 'מחיקה',
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                    color: TaskStyle.delete,
+                                  ),
+                                  onPressed: () => _delete(topic, _tasksOf(state, topic.id)),
                                 ),
                               ],
                             ),

@@ -121,4 +121,6 @@ class TeamTaskRepository {
   Future<void> archiveTopic(String id) => _database.archiveTaskTopic(id);
 
   Future<void> restoreTopic(String id) => _database.restoreTaskTopic(id);
+
+  Future<void> deleteTopic(String id) => _database.permanentlyDeleteTaskTopic(id);
 }

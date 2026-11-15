@@ -2740,6 +2740,11 @@ class FirestoreDatabase implements DatabaseInterface {
     await _invokeMutation('taskTopic.restore', payload: {'topicId': id});
   }
 
+  @override
+  Future<void> permanentlyDeleteTaskTopic(String id) async {
+    await _invokeMutation('taskTopic.permanentlyDelete', payload: {'topicId': id});
+  }
+
   // ========== Tasks ==========
 
   @override
