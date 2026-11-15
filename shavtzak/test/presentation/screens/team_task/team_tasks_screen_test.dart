@@ -532,4 +532,48 @@ void main() {
       );
     });
   });
+
+  group('round 6', () {
+    final theirs =
+        buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2']).copyWith(owners: [yossi]);
+
+    testWidgets('the status chip stays open while several statuses are ticked', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      await tester.tap(find.byKey(const Key('team-filter-status')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-status-open')).first);
+      await tester.pumpAndSettle();
+      // Still open: the next status is right there.
+      expect(find.byKey(const Key('team-filter-status-done')), findsWidgets);
+      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+      await tester.tap(find.byKey(const Key('team-filter-status-open')).first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-filter-status-done')), findsWidgets);
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+    });
+
+    testWidgets('TEMP: a manager sees "המשימות שלי" as another member', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
+      // Only in "המשימות שלי".
+      expect(find.byKey(const Key('team-tasks-view-as')), findsNothing);
+      await tester.tap(find.text('המשימות שלי'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-tasks-view-as')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-tasks-view-as-m2')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-tasks-view-as-banner')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-row-b')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+      await tester.tap(find.byKey(const Key('team-tasks-view-as-clear')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-tasks-view-as-banner')), findsNothing);
+      expect(find.byKey(const Key('team-task-row-b')), findsNothing);
+    });
+
+    testWidgets('TEMP: a member who is not a manager has no view-as button', (tester) async {
+      await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      expect(find.byKey(const Key('team-tasks-view-as')), findsNothing);
+    });
+  });
 }

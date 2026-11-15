@@ -40,9 +40,19 @@ class TeamTasksScreen extends StatefulWidget {
   State<TeamTasksScreen> createState() => _TeamTasksScreenState();
 }
 
+// TEMP (round 6, remove before the merge): lets a task manager see
+// "המשימות שלי" as another member sees it, to judge the screen on real data
+// (the דו יומי screen's "תצוגה בתור", there in debug runs only). Remove this
+// flag, [_TeamTasksScreenState._viewAsId] and everything under "view as".
+const bool kTempTeamTasksViewAs = true;
+
 class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// Whether a manager looks at every task ("כל המשימות") or at their own.
   bool _showAll = true;
+
+  /// TEMP ([kTempTeamTasksViewAs]): whose "המשימות שלי" a manager looks at;
+  /// null is their own.
+  String? _viewAsId;
 
   void _subscribe(TeamMember user) {
     context.read<TeamTaskBloc>().add(TeamTasksSubscribe(user));
@@ -106,6 +116,14 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                         )
                       : const MemberSettingsButton(),
                   actions: [
+                    // TEMP: see [kTempTeamTasksViewAs].
+                    if (kTempTeamTasksViewAs && canManage && !_showAll && state is TeamTasksLoaded)
+                      IconButton(
+                        key: const Key('team-tasks-view-as'),
+                        tooltip: 'תצוגה בתור חבר צוות אחר',
+                        icon: Icon(_viewAsId == null ? Icons.people_outline : Icons.people),
+                        onPressed: () => _pickViewer(state, user),
+                      ),
                     if (editing)
                       PopupMenuButton<String>(
                         key: const Key('team-tasks-menu'),
@@ -133,7 +151,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                         label: const Text('משימה חדשה'),
                       )
                     : null,
-                body: _withBanner(_body(state, canManage)),
+                body: _withBanner(_body(state, canManage, user)),
               );
               return scaffold;
             },
@@ -143,7 +161,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     );
   }
 
-  Widget _body(TeamTaskState state, bool canManage) {
+  Widget _body(TeamTaskState state, bool canManage, TeamMember user) {
     if (state is TeamTasksError) {
       return Center(child: Text(state.message));
     }
@@ -151,24 +169,114 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     final now = DateTime.now();
-    Widget list(List<TeamTaskGroup> groups, {required bool all}) => Column(
+    Widget list(List<TeamTaskGroup> groups, {required bool all, String? viewerId}) => Column(
           children: [
             TeamTaskFilterBar(state: state, showOwner: all),
             const Divider(height: 1),
             Expanded(
-              child: _GroupedList(groups: groups, state: state, now: now, editing: all),
+              child: _GroupedList(
+                groups: groups,
+                state: state,
+                now: now,
+                editing: all,
+                viewerId: viewerId ?? state.viewer.id,
+              ),
             ),
           ],
         );
     if (!canManage) return list(state.mineGroups, all: false);
+    final viewAsId = kTempTeamTasksViewAs ? _viewAsId : null;
     return Column(
       children: [
         _tabs(),
+        if (!_showAll && viewAsId != null) _viewAsBanner(state, viewAsId, user),
         Expanded(
-          child: _showAll ? list(state.allGroups, all: true) : list(state.mineGroups, all: false),
+          child: _showAll
+              ? list(state.allGroups, all: true)
+              : viewAsId == null
+                  ? list(state.mineGroups, all: false)
+                  : list(_mineGroupsOf(state, viewAsId, now), all: false, viewerId: viewAsId),
         ),
       ],
     );
+  }
+
+  // ---- TEMP: view as another member ([kTempTeamTasksViewAs]) ----
+
+  /// "המשימות שלי" of [memberId], built as the bloc builds the viewer's.
+  static List<TeamTaskGroup> _mineGroupsOf(TeamTasksLoaded state, String memberId, DateTime now) {
+    final eventCategoryById = {for (final e in state.events) e.id: e.categoryId};
+    return groupTeamTasks(
+      applyTeamTaskFilter(
+        myTeamTaskRows(state.all, memberId),
+        state.filter.copyWith(ownerId: () => null),
+        eventCategoryById,
+      ),
+      now,
+    );
+  }
+
+  Widget _viewAsBanner(TeamTasksLoaded state, String viewAsId, TeamMember user) {
+    final name =
+        state.members.where((m) => m.id == viewAsId).firstOrNull?.name ?? unknownMemberLabel;
+    return Material(
+      color: TaskStyle.soonLight,
+      child: InkWell(
+        key: const Key('team-tasks-view-as-banner'),
+        onTap: () => _pickViewer(state, user),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 4, 2),
+          child: Row(
+            children: [
+              const Icon(Icons.visibility_outlined, size: 18),
+              const SizedBox(width: 6),
+              Expanded(child: Text('תצוגה בתור: $name (זמני, לבדיקה)')),
+              IconButton(
+                key: const Key('team-tasks-view-as-clear'),
+                tooltip: 'חזרה למשימות שלי',
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => setState(() => _viewAsId = null),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickViewer(TeamTasksLoaded state, TeamMember user) async {
+    Logger.action('tap:teamTasksViewAs');
+    // Everyone who owns a task (or a subtask), and the viewer.
+    final owners = {user.id, for (final task in state.all) ...task.ownerIds};
+    final people = state.members.where((m) => owners.contains(m.id)).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SimpleDialog(
+          title: const Text('תצוגה בתור'),
+          children: [
+            for (final member in people)
+              SimpleDialogOption(
+                key: Key('team-tasks-view-as-${member.id}'),
+                onPressed: () => Navigator.of(context).pop(member.id),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: MemberNameText(name: member.name, permanent: member.isPermanent),
+                    ),
+                    if (member.id == (_viewAsId ?? user.id))
+                      const Icon(Icons.check, size: 18),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => _viewAsId = chosen == user.id ? null : chosen);
   }
 
   /// The דו יומי event screen's switch, with its colours.
@@ -221,7 +329,11 @@ class _GroupedList extends StatefulWidget {
     required this.state,
     required this.now,
     required this.editing,
+    required this.viewerId,
   });
+
+  /// Whose rows these are (TEMP: another member's while viewing as them).
+  final String viewerId;
 
   final List<TeamTaskGroup> groups;
   final TeamTasksLoaded state;
@@ -280,7 +392,7 @@ class _GroupedListState extends State<_GroupedList> {
       rows.add(TeamTaskRow(
         task: task,
         now: widget.now,
-        viewerId: state.viewer.id,
+        viewerId: widget.viewerId,
         expanded: open,
         onToggleSubtasks: widget.editing && task.subtasks.isNotEmpty
             ? () => setState(() {
@@ -312,7 +424,7 @@ class _GroupedListState extends State<_GroupedList> {
                   TeamTaskRow(
                     task: TeamTask.subtaskView(task, subtask),
                     now: widget.now,
-                    viewerId: state.viewer.id,
+                    viewerId: widget.viewerId,
                     nested: true,
                     onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.editing),
                   ),

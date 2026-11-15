@@ -196,19 +196,31 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   List<Widget> _chips() {
     final filter = _filter;
     return [
-      PopupMenuButton<TeamTaskStatus>(
-        key: const Key('team-filter-status'),
-        tooltip: 'סינון לפי סטטוס',
-        onSelected: _toggleStatus,
-        itemBuilder: (context) => [
+      // A MenuAnchor rather than a PopupMenuButton: ticking a status keeps
+      // the menu open, so several are set in one go (Omer, round 6).
+      MenuAnchor(
+        menuChildren: [
           for (final status in TeamTaskStatus.values)
-            CheckedPopupMenuItem(
-              value: status,
-              checked: filter.statuses.contains(status),
+            CheckboxMenuButton(
+              key: Key('team-filter-status-${status.name}'),
+              value: filter.statuses.contains(status),
+              closeOnActivate: false,
+              onChanged: (_) => _toggleStatus(status),
               child: Text(status.hebrewLabel),
             ),
         ],
-        child: _FilterChipLook(label: _statusLabel, active: filter.statusesChanged),
+        builder: (context, controller, _) => Tooltip(
+          message: 'סינון לפי סטטוס',
+          child: InkWell(
+            key: const Key('team-filter-status'),
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              Logger.action('tap:teamTasksStatusChip');
+              controller.isOpen ? controller.close() : controller.open();
+            },
+            child: _FilterChipLook(label: _statusLabel, active: filter.statusesChanged),
+          ),
+        ),
       ),
       if (widget.showOwner) ...[
         const SizedBox(width: 6),
