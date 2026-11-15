@@ -80,6 +80,11 @@ async function requireLinkExists(store: TeamTaskStore, next: TeamTaskDoc): Promi
   }
 }
 
+function sameLink(a: TeamTaskDoc['link'], b: TeamTaskDoc['link']): boolean {
+  if (a == null || b == null) return a === b;
+  return a.type === b.type && a.id === b.id;
+}
+
 /** Every owner the write adds (task or subtask) must be an active member. */
 async function requireNewOwnersActive(
   store: TeamTaskStore,
@@ -124,7 +129,9 @@ export async function runTeamTaskOperation(
       const input = requireTaskObject(payload['task']);
       const before = await loadTask(store, requireId(input['id'], 'task.id'));
       const next = applyTeamTaskEdit(before, input, ctx);
-      await requireLinkExists(store, next);
+      // Only a new link is checked: a task whose event was deleted since must
+      // stay editable ("nothing is lost").
+      if (!sameLink(before.link, next.link)) await requireLinkExists(store, next);
       await requireNewOwnersActive(store, before, next);
       await store.writeTask(next);
       return {entityId: next.id, before, after: next, details: {}};

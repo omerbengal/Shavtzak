@@ -175,4 +175,33 @@ void main() {
     }
     expect(repository.calls, ['insert:שלי', 'update:a', 'log:a:עדכון', 'delete:a']);
   });
+
+  test('after a stream error the same viewer subscribes again', () async {
+    bloc.add(TeamTasksSubscribe(dana));
+    await pumpEventQueue();
+    repository.controller.addError(Exception('permission-denied'));
+    await bloc.stream.firstWhere((s) => s is TeamTasksError).timeout(const Duration(seconds: 2));
+    bloc.add(TeamTasksSubscribe(dana));
+    await pumpEventQueue();
+    expect(repository.viewers, hasLength(2));
+    repository.controller.add(TeamTaskBoard(tasks: [mine]));
+    final state = await loaded((s) => s.all.isNotEmpty);
+    expect(state.mine.single.id, 'a');
+  });
+
+  test('a change to the viewer that keeps id and rights does not re-subscribe', () async {
+    bloc.add(TeamTasksSubscribe(dana));
+    await pumpEventQueue();
+    repository.controller.add(TeamTaskBoard(tasks: [mine]));
+    await loaded((s) => s.all.isNotEmpty);
+    final renamed = buildMember(id: 'm1', name: 'דנה כהן');
+    bloc.add(TeamTasksSubscribe(renamed));
+    final state = await loaded((s) => s.viewer.name == 'דנה כהן');
+    expect(repository.viewers, hasLength(1));
+    expect(state.all.single.id, 'a');
+    // Gaining "ניהול משימות" is a new query.
+    bloc.add(TeamTasksSubscribe(buildMember(id: 'm1', canManageTasks: true)));
+    await pumpEventQueue();
+    expect(repository.viewers, hasLength(2));
+  });
 }

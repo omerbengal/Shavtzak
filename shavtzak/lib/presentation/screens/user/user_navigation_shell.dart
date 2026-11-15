@@ -196,15 +196,18 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
           return const SizedBox.shrink();
         }
         final user = state.user;
-        final currentIndex = widget.navigationShell.currentIndex;
+        // The bloc decides "owns a visible task"; the current tab is read on
+        // every build, outside the selector (a selector is re-run only when
+        // the bloc emits, so a navigation to the tab would go unseen).
         return BlocSelector<TeamTaskBloc, TeamTaskState, bool>(
-          selector: (taskState) => memberShowsTeamTasksTab(
+          selector: (taskState) =>
+              memberShowsTeamTasksTab(user, taskState, currentIndex: -1),
+          builder: (context, ownsVisibleTask) => _buildBar(
+            context,
             user,
-            taskState,
-            currentIndex: currentIndex,
+            ownsVisibleTask ||
+                widget.navigationShell.currentIndex == kTeamTasksTab,
           ),
-          builder: (context, withTeamTasks) =>
-              _buildBar(context, user, withTeamTasks),
         );
       },
     );

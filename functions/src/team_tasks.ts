@@ -388,7 +388,11 @@ export function applyTeamTaskEdit(
     })),
     updatedAt: ctx.now,
   };
-  return finish(withAutoStatus(task, next, ctx));
+  // The status follows the subtasks only when the set of subtasks changed; an
+  // edit of anything else keeps a status someone chose by hand.
+  const sameSet = task.subtasks.length === next.subtasks.length &&
+    next.subtasks.every((subtask) => doneById.has(subtask.id));
+  return finish(sameSet ? next : withAutoStatus(task, next, ctx));
 }
 
 export function parseTeamTaskStatus(value: unknown): TeamTaskStatus {

@@ -115,3 +115,15 @@ test('writes go to test_teamTasks in the test environment', () => {
   assert.equal(getCollections('test').teamTasks, 'test_teamTasks');
   assert.equal(getCollections('production').teamTasks, 'teamTasks');
 });
+
+test('update keeps a link to a deleted event', async () => {
+  const store = new MemoryStore();
+  await insert(store);
+  store.events.delete('e1');
+  const result = await runTeamTaskOperation(store, 'teamTask.update',
+    {task: task({title: 'תיקון כתיב'})}, manager, now);
+  assert.equal(result.after?.title, 'תיקון כתיב');
+  // A new link to a missing event is still refused.
+  await assert.rejects(runTeamTaskOperation(store, 'teamTask.update',
+    {task: task({link: {type: 'event', id: 'nope'}})}, manager, now), status(404));
+});

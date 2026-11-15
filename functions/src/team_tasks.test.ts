@@ -248,3 +248,18 @@ test('teamTaskFromStored tolerates missing fields', () => {
   assert.equal(task.link, null);
   assert.equal(task.deadline, null);
 });
+
+test('an edit that keeps the subtasks keeps a status set by hand', () => {
+  let task = withSubtasks();
+  task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
+  task = applyTeamTaskStatus(task, 'done', null, {now, actor: ownerA});
+  const edited = applyTeamTaskEdit(task, input({
+    title: 'אולם חדש',
+    subtasks: [
+      {id: 's1', title: 'מחיר', assigneeId: 'a', contacts: []},
+      {id: 's2', title: 'חוזה מעודכן', assigneeId: 'b', contacts: []},
+    ],
+  }), {now: later, actor: manager});
+  assert.equal(edited.status, 'done');
+  assert.deepEqual(edited.completedAt, now);
+});

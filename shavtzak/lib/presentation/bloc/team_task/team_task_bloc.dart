@@ -81,15 +81,34 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
   }
 
   Future<void> _onSubscribe(TeamTasksSubscribe event, Emitter<TeamTaskState> emit) async {
-    if (_viewer == event.viewer && _subscription != null) return;
+    final viewer = event.viewer;
+    final current = _viewer;
+    // The query depends only on who the viewer is and whether they manage
+    // tasks; any other change to their document (a constraint, a rename) keeps
+    // the live subscription and its unconfirmed ticks.
+    if (_subscription != null &&
+        current != null &&
+        current.id == viewer.id &&
+        canManageTeamTasks(current) == canManageTeamTasks(viewer)) {
+      _viewer = viewer;
+      _emitLoaded(emit);
+      return;
+    }
     await _subscription?.cancel();
-    _viewer = event.viewer;
+    _viewer = viewer;
     _board = null;
     _pending.clear();
-    _subscription = _repository.watchBoardFor(event.viewer).listen(
-          (board) => add(_BoardArrived(board)),
-          onError: (Object error) => add(const _BoardFailed('טעינת המשימות נכשלה')),
-        );
+    _subscription = _repository.watchBoardFor(viewer).listen(
+      (board) => add(_BoardArrived(board)),
+      onError: (Object error) {
+        // A dead stream (sign-out, a refused query) must not block the next
+        // subscribe: drop it so the next TeamTasksSubscribe opens a new one.
+        final dead = _subscription;
+        _subscription = null;
+        unawaited(dead?.cancel());
+        add(const _BoardFailed('טעינת המשימות נכשלה'));
+      },
+    );
   }
 
   void _onBoard(_BoardArrived event, Emitter<TeamTaskState> emit) {
