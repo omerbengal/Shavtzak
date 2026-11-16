@@ -1,25 +1,14 @@
-// TEMP DIAGNOSTIC (preview only, removed before merge).
-// - A small badge at the top-left, always: the page's build tag, the tag of
-//   the service worker that answers (the one that will handle a notification
-//   tap), and whether that worker's Cache Storage is the page's. "sw: none"
-//   = an older sw.js is still the active one.
-// - After a tap on a notification (within 10 minutes), a box at the bottom
-//   shows what sw.js and push.js saw and where the address went. Tapping the
-//   badge opens the box any time.
-// Shown only off GitHub Pages (the preview's *.web.app).
+// TEMP DIAGNOSTIC (preview only, removed before merge): after a tap on a
+// notification, a box at the bottom of the screen shows what sw.js and
+// push.js saw and where the address went, so one screenshot says where the
+// task got lost. Shown only off GitHub Pages (the preview's *.web.app) and
+// only within 10 minutes of a tap.
 (function () {
   'use strict';
   if (/github\.io$/.test(location.hostname)) return;
 
-  const PAGE_TAG = 'diag-3';
+  const PAGE_TAG = 'diag-2';
   const bootAt = Date.now();
-  // All state first: add() below renders at once.
-  const sw = {tag: '?', cache: '?', reg: '?'};
-  let swLog = [];
-  let badge = null;
-  let box = null;
-  let closed = false;
-  let forced = false;
   const pageDiag = (window.shavtzakPushDiag = window.shavtzakPushDiag || []);
   const add = (entry) => {
     pageDiag.push(Object.assign({t: Date.now()}, entry));
@@ -41,67 +30,7 @@
   [2000, 5000, 10000].forEach((ms) =>
     setTimeout(() => add({ev: 'at' + ms / 1000 + 's', hash: location.hash}), ms));
 
-  // ------------------------------------------------------------ worker check
-  let nonce = 0;
-  async function pingWorker() {
-    if (!('serviceWorker' in navigator)) { sw.tag = 'unsupported'; renderBadge(); return; }
-    try {
-      const reg = await navigator.serviceWorker.getRegistration();
-      if (!reg) { sw.reg = 'noReg'; sw.tag = 'none'; renderBadge(); return; }
-      sw.reg = [reg.active ? 'A' : '-', reg.waiting ? 'W' : '-', reg.installing ? 'I' : '-'].join('');
-      const target = reg.active;
-      if (!target) { sw.tag = 'noActive'; renderBadge(); return; }
-      const mine = ++nonce;
-      sw.tag = 'asking';
-      renderBadge();
-      target.postMessage({type: 'shavtzak-diag-ping', nonce: mine});
-      setTimeout(async () => {
-        if (sw.tag === 'asking') sw.tag = 'none (old sw.js)';
-        try {
-          const cache = await caches.open('shavtzak-push-diag');
-          const hit = await cache.match(location.origin + '/__diag-ping');
-          const data = hit ? await hit.json() : null;
-          sw.cache = data && data.nonce === mine ? 'shared' : (data ? 'stale' : 'empty');
-        } catch (e) {
-          sw.cache = 'err';
-        }
-        renderBadge();
-      }, 1500);
-    } catch (e) {
-      sw.tag = 'err ' + e;
-      renderBadge();
-    }
-  }
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      const data = event.data || {};
-      if (data.type === 'shavtzak-diag-pong') {
-        sw.tag = data.tag;
-        renderBadge();
-      } else {
-        setTimeout(refresh, 300);
-      }
-    });
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      add({ev: 'controllerchange'});
-      setTimeout(pingWorker, 500);
-    });
-  }
-
-  function renderBadge() {
-    if (!document.body) return;
-    if (!badge) {
-      badge = document.createElement('div');
-      badge.style.cssText = 'position:fixed;left:4px;top:4px;z-index:2147483647;' +
-        'background:rgba(0,0,0,.8);color:#0f0;font:10px/1.3 monospace;padding:2px 5px;' +
-        'border-radius:4px;direction:ltr;pointer-events:auto;';
-      badge.addEventListener('click', () => { forced = true; closed = false; refresh(); });
-      document.body.appendChild(badge);
-    }
-    badge.textContent = 'page ' + PAGE_TAG + ' | sw ' + sw.tag + ' | cache ' + sw.cache + ' | ' + sw.reg;
-  }
-
-  // ------------------------------------------------------------ tap log box
+  let swLog = [];
   async function readSw() {
     try {
       const cache = await caches.open('shavtzak-push-diag');
@@ -112,6 +41,8 @@
     }
   }
 
+  let box = null;
+  let closed = false;
   const time = (t) => new Date(t).toTimeString().slice(0, 8) + '.' + String(t % 1000).padStart(3, '0');
   const line = (e) => {
     const rest = Object.assign({}, e);
@@ -120,10 +51,8 @@
   };
 
   function render() {
-    renderBadge();
     const lastClick = swLog.filter((e) => e.ev === 'click').pop();
-    const recent = lastClick && Date.now() - lastClick.t <= 10 * 60 * 1000;
-    if (closed || !(recent || forced)) return;
+    if (closed || !lastClick || Date.now() - lastClick.t > 10 * 60 * 1000) return;
     if (!document.body) return;
     if (!box) {
       box = document.createElement('div');
@@ -131,13 +60,12 @@
         'overflow:auto;z-index:2147483647;background:rgba(0,0,0,.88);color:#0f0;' +
         'font:10px/1.35 monospace;padding:6px;border-radius:6px;direction:ltr;' +
         'text-align:left;white-space:pre-wrap;word-break:break-all;';
-      box.addEventListener('click', () => { closed = true; forced = false; box.remove(); box = null; });
+      box.addEventListener('click', () => { closed = true; box.remove(); });
       document.body.appendChild(box);
     }
-    const shown = recent ? swLog.filter((e) => e.t >= lastClick.t - 1000) : swLog.slice(-10);
+    const sw = swLog.filter((e) => e.t >= lastClick.t - 1000);
     box.textContent = 'PUSH DIAG (tap to close) boot ' + time(bootAt) + '\n' +
-      'sw ' + sw.tag + ' cache ' + sw.cache + ' reg ' + sw.reg + '\n' +
-      '-- sw.js --\n' + shown.map(line).join('\n') + '\n' +
+      '-- sw.js --\n' + sw.map(line).join('\n') + '\n' +
       '-- page --\n' + pageDiag.map(line).join('\n') + '\n' +
       'now ' + location.hash;
   }
@@ -148,7 +76,6 @@
     render();
   }
   refresh();
-  pingWorker();
   // Keep reading for a while: the tap may land after the page started.
   let n = 0;
   const timer = setInterval(() => {
@@ -156,10 +83,9 @@
     if (++n >= 30) clearInterval(timer);
   }, 1000);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      setTimeout(refresh, 300);
-      setTimeout(pingWorker, 300);
-    }
+    if (document.visibilityState === 'visible') setTimeout(refresh, 300);
   });
-  window.addEventListener('flutter-first-frame', () => setTimeout(pingWorker, 3000));
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', () => setTimeout(refresh, 300));
+  }
 })();
