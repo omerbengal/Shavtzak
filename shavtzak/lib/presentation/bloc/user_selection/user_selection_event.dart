@@ -102,6 +102,19 @@ class UpdateVehicleInfo extends UserSelectionEvent {
 }
 
 /// Update user's email address
+/// Save the signed-in member's own order of the admin home cards. The new
+/// order reaches [UserAuthenticated] through the team stream; the screen
+/// shows it meanwhile.
+class UpdateHomeCardOrder extends UserSelectionEvent {
+  final List<String> order;
+  final CrudActionCompleter? completion;
+
+  const UpdateHomeCardOrder(this.order, {this.completion});
+
+  @override
+  List<Object?> get props => [order];
+}
+
 class UpdateEmail extends UserSelectionEvent {
   final String? email;
   final CrudActionCompleter? completion;

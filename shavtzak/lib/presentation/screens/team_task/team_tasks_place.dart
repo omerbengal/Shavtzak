@@ -22,3 +22,8 @@ String? teamTasksRedirect(String strippedRoute, TeamMember user) {
   if (!user.isAdmin && under(teamTasksPath)) return '/user/assignments';
   return null;
 }
+
+/// Who gets the team-task notifications ("שובצת למשימה"): whoever can open
+/// this screen, today an admin ([teamTasksRedirect]). The backend's twin is
+/// `canReceiveTaskPush` in functions/src/push.ts: change both together.
+bool canGetTeamTaskNotifications(TeamMember user) => user.isAdmin;

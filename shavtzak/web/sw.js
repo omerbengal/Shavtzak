@@ -145,3 +145,71 @@ async function cdnFirst(request) {
   return response;
 }
 
+
+// ---------------------------------------------------------------------------
+// Web Push ("שובצת למשימה"; the API sends it, functions/src/push.ts). Works
+// with or without a manifest, so a branch preview gets it too.
+//
+// Every push shows a notification: Safari takes the permission back after a
+// few pushes that showed none.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {
+    data = {body: event.data ? event.data.text() : ''};
+  }
+  const title = data.title || 'שבצק';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    tag: data.tag || undefined,
+    icon: BASE + 'icons/Icon-192.png',
+    badge: BASE + 'icons/Icon-192.png',
+    dir: 'rtl',
+    lang: 'he',
+    data: {path: data.path || ''},
+  }));
+});
+
+// Where a notification tap asked to go, for the page to take (web/push.js,
+// same names there). iPhone, home-screen app closed: WebKit starts the app at
+// its start page and ignores the URL given to openWindow (WebKit bug 263687),
+// so the task was lost and the app opened home; a message posted to a window
+// that is still starting can be lost too. The page takes this on start and
+// whenever it comes to the front, once, and only if it is recent.
+const PENDING_OPEN_CACHE = 'shavtzak-pending-open';
+const PENDING_OPEN_KEY = self.location.origin + '/__shavtzak-pending-open';
+
+async function rememberOpen(path) {
+  try {
+    const cache = await caches.open(PENDING_OPEN_CACHE);
+    await cache.put(PENDING_OPEN_KEY, new Response(
+      JSON.stringify({path, at: Date.now()}),
+      {headers: {'Content-Type': 'application/json'}}));
+  } catch (_) {
+    // Best effort: the URL and the message below still try.
+  }
+}
+
+// A tap opens the task: an open window of the app is brought forward and told
+// where to go (web/push.js moves its hash route); with none, a new one opens
+// there. Both also find it in [rememberOpen].
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const path = (event.notification.data && event.notification.data.path) || '';
+  event.waitUntil((async () => {
+    if (path) await rememberOpen(path);
+    const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    const app = windows.find((client) => client.url.startsWith(BASE));
+    if (app) {
+      app.postMessage({type: 'shavtzak-open', path});
+      try {
+        await app.focus();
+      } catch (_) {
+        // Some browsers refuse focus(); the page still moves.
+      }
+      return;
+    }
+    await self.clients.openWindow(BASE + (path ? '#' + path : ''));
+  })());
+});

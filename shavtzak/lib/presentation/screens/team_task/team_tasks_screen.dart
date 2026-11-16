@@ -45,7 +45,11 @@ import 'widgets/topic_management_dialog.dart';
 void resetTeamTasksBlitzWarmup() => _TeamTasksScreenState._blitzWarmed = false;
 
 class TeamTasksScreen extends StatefulWidget {
-  const TeamTasksScreen({super.key});
+  const TeamTasksScreen({super.key, this.openTaskId});
+
+  /// A task to open once the list is loaded: `?task=<id>`, the link a
+  /// "שובצת למשימה" notification opens (web/sw.js).
+  final String? openTaskId;
 
   @override
   State<TeamTasksScreen> createState() => _TeamTasksScreenState();
@@ -89,6 +93,45 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     setState(() => _flash = touched);
     await Future<void>.delayed(const Duration(milliseconds: 2400));
     if (mounted && round == _flashRound) setState(() => _flash = const {});
+  }
+
+  /// [TeamTasksScreen.openTaskId] not handled yet.
+  String? _pendingOpen;
+
+  @override
+  void didUpdateWidget(TeamTasksScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.openTaskId != oldWidget.openTaskId && widget.openTaskId != null) {
+      _pendingOpen = widget.openTaskId;
+    }
+  }
+
+  /// Opens [_pendingOpen] once the tasks are there, as a tap on its row
+  /// would; a task that is gone says so.
+  void _openPendingTask(TeamTaskState state, bool canManage) {
+    final id = _pendingOpen;
+    if (id == null || state is! TeamTasksLoaded) return;
+    _pendingOpen = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Logger.action('open:teamTaskFromLink', {'found': state.taskById(id) != null});
+      if (state.taskById(id) == null) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('המשימה לא נמצאה')),
+        );
+        return;
+      }
+      // A task of the viewer's own (a "שובצת למשימה" notification) opens
+      // over "המשימות שלי", so closing it lands there (Omer, 17/11/2026).
+      if (canManage && _showAll && state.mine.any((task) => task.id == id)) {
+        setState(() => _showAll = false);
+      }
+      if (_splitting(context)) {
+        _openPanel(id);
+      } else {
+        showTeamTaskSheet(context, id, manage: canManage && _showAll);
+      }
+    });
   }
 
   void _openPanel(String taskId) {
@@ -177,6 +220,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   @override
   void initState() {
     super.initState();
+    _pendingOpen = widget.openTaskId;
     final auth = context.read<UserSelectionBloc>().state;
     if (auth is UserAuthenticated) _subscribe(auth.user);
     _warmTimer = Timer(_warmupDelay, () {
@@ -225,6 +269,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
           return BlocBuilder<TeamTaskBloc, TeamTaskState>(
             builder: (context, state) {
               final canManage = canManageTeamTasks(user);
+              _openPendingTask(state, canManage);
               // A manager edits only in "כל המשימות"; in "המשימות שלי" they are
               // a member like any other (Omer, round 3).
               final editing = canManage && _showAll;

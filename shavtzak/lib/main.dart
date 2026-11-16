@@ -68,6 +68,8 @@ import 'core/router/app_router.dart';
 
 // Theme
 import 'core/theme/app_theme.dart';
+import 'core/services/push_notification_service.dart';
+import 'presentation/screens/team_task/team_tasks_place.dart';
 
 // Debug
 import 'core/debug/logging_bloc_observer.dart';
@@ -586,6 +588,14 @@ class MyApp extends StatelessWidget {
                       },
                       listener: (context, state) {
                         if (state is UserAuthenticated) {
+                          // Notifications: re-subscribe quietly when this
+                          // browser already allows them (the in-app refresh
+                          // drops the subscription) and move the device to
+                          // the member now signed in.
+                          PushNotificationService.instance.syncSilently(
+                            canReceive:
+                                canGetTeamTaskNotifications(state.user),
+                          );
                           teamBloc.add(const LoadTeamMembers());
                           roleBloc.add(const LoadRoles());
                           categoryBloc.add(const LoadCategories());

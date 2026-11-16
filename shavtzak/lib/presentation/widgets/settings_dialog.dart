@@ -7,6 +7,8 @@ import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../data/repositories/user_selection_repository.dart';
 import '../../core/debug/logger.dart';
+import '../screens/team_task/team_tasks_place.dart';
+import 'push_settings_section.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
 import 'passcode_setup_dialog.dart';
@@ -1132,6 +1134,16 @@ class _SettingsDialogState extends State<SettingsDialog> {
                         },
                       ),
                     ),
+                  ),
+                  // Notifications on this device (whoever may get them).
+                  BlocBuilder<UserSelectionBloc, UserSelectionState>(
+                    buildWhen: (a, b) =>
+                        (a is UserAuthenticated && canGetTeamTaskNotifications(a.user)) !=
+                        (b is UserAuthenticated && canGetTeamTaskNotifications(b.user)),
+                    builder: (context, state) =>
+                        state is UserAuthenticated && canGetTeamTaskNotifications(state.user)
+                            ? const PushSettingsSection()
+                            : const SizedBox.shrink(),
                   ),
                 ],
               ),
