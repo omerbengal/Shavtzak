@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Conditional imports for web-specific functionality
+import 'core/app_binding.dart';
 import 'core/web/web_stub.dart' if (dart.library.js) 'core/web/web_helper.dart';
 
 // Data layer
@@ -91,7 +92,8 @@ Future<void> main() async {
     AppRouter.capturedInitialHash = WebHelper.getWindowLocationHash();
   }
 
-  WidgetsFlutterBinding.ensureInitialized();
+  // Our binding, so the animations play with "reduce motion" on too.
+  AppBinding.ensureInitialized();
   Bloc.observer = LoggingBlocObserver();
 
   // Show loading screen immediately (the HTML splash covers it until the

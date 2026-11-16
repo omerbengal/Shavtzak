@@ -54,10 +54,11 @@ const String pendingEventLabel = 'אירוע שעוד לא נוצר';
 /// [eventsOnly]: only the app's real events, no segments ("קישור לאירוע
 /// בשבצק" of a placeholder), one event.
 ///
-/// Otherwise several events can be picked (16/11/2026): the box beside each
-/// event marks it, and "שיוך ל-N אירועים" confirms; a tap on an event's name
-/// with nothing marked picks that one alone, as before. [initialEventIds] =
-/// the events marked when it opens (a task linked to several).
+/// Otherwise several events can be picked (16/11/2026): a tap on an event,
+/// on its box or on its name alike, marks it, and nothing is chosen until
+/// "שיוך לאירוע" / "שיוך ל-N אירועים" (Omer, 16/11/2026: one way for both).
+/// A category, a topic or a placeholder is still picked by a tap.
+/// [initialEventIds] = the events marked when it opens.
 Future<TaskLinkChoice?> showTaskLinkPicker(
   BuildContext context, {
   TaskLink? initial,
@@ -125,7 +126,11 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
 
   /// The events marked for a task of several events, in the order marked.
   late final List<String> _marked = [
-    if (widget.initialEventIds.length > 1) ...widget.initialEventIds,
+    if (widget.multiEvents)
+      if (widget.initialEventIds.isNotEmpty)
+        ...widget.initialEventIds
+      else if (widget.initial?.type == TaskLinkType.event)
+        widget.initial!.id,
   ];
 
   void _toggleMarked(String id) {
@@ -381,12 +386,14 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
                                 ? _marked.contains(option.id)
                                 : null,
                             onMark: () => _toggleMarked(option.id),
-                            onTap: multi && _marked.isNotEmpty
-                                ? (option.type == TaskLinkType.event
-                                    ? () => _toggleMarked(option.id)
-                                    : null)
-                                : () => Navigator.of(context)
-                                    .pop(TaskLinkChoice(TaskLink(option.type, option.id))),
+                            // An event of a task's link is marked, never
+                            // picked at once: the button saves (16/11/2026).
+                            onTap: multi && option.type == TaskLinkType.event
+                                ? () => _toggleMarked(option.id)
+                                : (multi && _marked.isNotEmpty
+                                    ? null
+                                    : () => Navigator.of(context).pop(
+                                        TaskLinkChoice(TaskLink(option.type, option.id)))),
                           ),
                       ],
                     ),

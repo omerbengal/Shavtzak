@@ -234,6 +234,35 @@ void main() {
     expect(saved.linkedEventIds, ['e1', 'e2']);
   });
 
+  testWidgets('a tap on an event name marks it like its box; only the button saves',
+      (tester) async {
+    final first = buildEvent(id: 'e1', name: 'ראשון', startDate: DateTime(2099, 1, 10));
+    await pumpTeamTasks(tester,
+        user: manager,
+        board: TeamTaskBoard(tasks: const [], events: [first], members: [dana, manager]),
+        size: const Size(1200, 1000));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('new-team-task-link')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ראשון'));
+    await tester.pumpAndSettle();
+    // Still open, the event marked, nothing chosen yet.
+    expect(find.byKey(const Key('task-link-search')), findsOneWidget);
+    expect(
+        tester.widget<Checkbox>(find.byKey(const Key('task-link-option-e1-mark'))).value, isTrue);
+    expect(find.text('שיוך לאירוע'), findsOneWidget);
+    await tester.tap(find.text('ראשון'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('task-link-confirm-events')), findsNothing);
+    await tester.tap(find.text('ראשון'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('task-link-confirm-events')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('task-link-search')), findsNothing);
+    expect(find.text('ראשון'), findsOneWidget);
+  });
+
   testWidgets('a new task without subtasks picks its owners in the form', (tester) async {
     final harness = await pumpTeamTasks(tester,
         user: manager, board: board(const []), size: const Size(1200, 1000));

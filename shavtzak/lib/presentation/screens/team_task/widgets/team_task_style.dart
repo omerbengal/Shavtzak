@@ -25,19 +25,30 @@ abstract final class TeamTaskStyle {
         TeamTaskStatus.duplicate => TaskStyle.chip,
       };
 
-  /// "גבוהה" in orange, "נמוכה" in grey (16/11/2026); "רגילה" is not shown
-  /// on a row.
+  /// Each urgency has its sign (Omer, 16/11/2026): "גבוהה" a red up arrow,
+  /// "רגילה" a grey dash, "נמוכה" a light-blue down arrow. "רגילה" is not
+  /// shown on a row.
+  static IconData urgencyIcon(TeamTaskUrgency urgency) => switch (urgency) {
+        TeamTaskUrgency.high => Icons.arrow_upward,
+        TeamTaskUrgency.normal => Icons.remove,
+        TeamTaskUrgency.low => Icons.arrow_downward,
+      };
+
   static Color urgencyColor(TeamTaskUrgency urgency) => switch (urgency) {
-        TeamTaskUrgency.high => TaskStyle.soonDark,
-        TeamTaskUrgency.normal => TaskStyle.neutralText,
-        TeamTaskUrgency.low => TaskStyle.neutralText,
+        TeamTaskUrgency.high => TaskStyle.lateDark,
+        TeamTaskUrgency.normal => TaskStyle.faintText,
+        TeamTaskUrgency.low => urgencyLowBlue,
       };
 
   static Color urgencyFill(TeamTaskUrgency urgency) => switch (urgency) {
-        TeamTaskUrgency.high => TaskStyle.soonLight,
+        TeamTaskUrgency.high => TaskStyle.lateLight,
         TeamTaskUrgency.normal => TaskStyle.chip,
-        TeamTaskUrgency.low => TaskStyle.chip,
+        TeamTaskUrgency.low => const Color(0xFFE1F5FE),
       };
+
+  /// "נמוכה"'s light blue (Material lightBlue 600: light, still readable on
+  /// white).
+  static const Color urgencyLowBlue = Color(0xFF039BE5);
 
   static const double maxListWidth = TaskStyle.readableWidth;
 
@@ -64,9 +75,10 @@ abstract final class TeamTaskStyle {
   static const double splitListMinWidth = 340;
   static const double splitListShare = 0.42;
 
-  /// How long the list and the panel take to slide (round 7: smooth).
-  static const Duration splitDuration = Duration(milliseconds: 320);
-  static const Curve splitCurve = Curves.easeInOutCubic;
+  /// How long the list and the panel take to slide, both ways (Omer,
+  /// 16/11/2026: a light 500 ms move).
+  static const Duration splitDuration = Duration(milliseconds: 500);
+  static const Curve splitCurve = Curves.easeInOut;
 }
 
 /// `d.M`, the way the team writes a date ("15.11").
@@ -142,14 +154,15 @@ class TeamTaskUrgencyChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (high)
-            Icon(Icons.priority_high,
-                size: dense ? 13 : 15, color: TeamTaskStyle.urgencyColor(urgency)),
+          TeamTaskUrgencyIcon(urgency: urgency, size: dense ? 13 : 15),
+          const SizedBox(width: 2),
           Text(
             'דחיפות ${urgency.hebrewLabel}',
             style: TextStyle(
               fontSize: dense ? TaskStyle.rowMetaSize : 13,
-              color: TeamTaskStyle.urgencyColor(urgency),
+              color: urgency == TeamTaskUrgency.normal
+                  ? TaskStyle.neutralText
+                  : TeamTaskStyle.urgencyColor(urgency),
               fontWeight: high ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
@@ -159,8 +172,27 @@ class TeamTaskUrgencyChip extends StatelessWidget {
   }
 }
 
+/// The urgency's sign alone: a red up arrow, a grey dash or a light-blue
+/// down arrow.
+class TeamTaskUrgencyIcon extends StatelessWidget {
+  const TeamTaskUrgencyIcon({super.key, required this.urgency, this.size = 16, this.color});
+
+  final TeamTaskUrgency urgency;
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => Icon(
+        TeamTaskStyle.urgencyIcon(urgency),
+        key: Key('urgency-icon-${urgency.key}'),
+        size: size,
+        color: color ?? TeamTaskStyle.urgencyColor(urgency),
+      );
+}
+
 /// The urgency's three choices in one row (the form and the task screen),
-/// in the app's segmented-switch colours; "גבוהה" in its orange.
+/// in the app's segmented-switch colours, each with its sign; "גבוהה" in
+/// its red.
 class TeamTaskUrgencyPicker extends StatelessWidget {
   const TeamTaskUrgencyPicker({
     super.key,
@@ -182,7 +214,7 @@ class TeamTaskUrgencyPicker extends StatelessWidget {
         showSelectedIcon: false,
         style: SegmentedButton.styleFrom(
           selectedBackgroundColor: value == TeamTaskUrgency.high
-              ? TaskStyle.soonDark
+              ? TaskStyle.lateDark
               : AppTheme.primaryDark,
           selectedForegroundColor: Colors.white,
           visualDensity: VisualDensity.compact,
@@ -191,6 +223,12 @@ class TeamTaskUrgencyPicker extends StatelessWidget {
           for (final urgency in TeamTaskUrgency.values)
             ButtonSegment(
               value: urgency,
+              icon: TeamTaskUrgencyIcon(
+                urgency: urgency,
+                size: 16,
+                // On the selected (dark) segment the sign turns white.
+                color: urgency == value ? Colors.white : null,
+              ),
               label: Text(urgency.hebrewLabel, key: Key('team-task-urgency-${urgency.key}')),
             ),
         ],

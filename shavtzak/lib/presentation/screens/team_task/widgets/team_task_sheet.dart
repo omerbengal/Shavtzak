@@ -200,7 +200,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                 _section('סטטוס', _statusValue(state, task, manage || owner)),
                 _section('דחיפות', _urgencyValue(task, manage)),
                 _section('דד ליין', _deadlineValue(state, task, manage, late)),
-                _section('תיאור', _descriptionValue(task, manage)),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
                 _section('אנשי קשר', _contactsValue(task, manage)),
                 _section(
@@ -212,19 +211,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                     canEditAll: manage,
                   ),
                 ),
-                if (manage) ...[
-                  const SizedBox(height: 16),
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton.icon(
-                      key: const Key('team-task-delete'),
-                      style: TextButton.styleFrom(foregroundColor: TaskStyle.delete),
-                      onPressed: () => _delete(task),
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('מחיקת המשימה'),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -233,6 +219,9 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     );
   }
 
+  /// The title, the description right under it (Omer, 16/11/2026: above the
+  /// line that divides them from the other fields), and on the end the
+  /// manager's red 🗑 next to ✕.
   Widget _header(TeamTask task, bool manage) {
     final title = Text(
       task.title,
@@ -241,6 +230,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
@@ -262,9 +252,21 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                         onCommit: (value) => _edit(task.copyWith(title: value.trim())),
                       )
                     : Padding(padding: const EdgeInsets.all(8), child: title),
+                if (manage || task.description.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: manage ? 0 : 8),
+                    child: _descriptionValue(task, manage),
+                  ),
               ],
             ),
           ),
+          if (manage)
+            IconButton(
+              key: const Key('team-task-delete'),
+              tooltip: 'מחיקת המשימה',
+              icon: const Icon(Icons.delete_outline, color: TaskStyle.delete),
+              onPressed: () => _delete(task),
+            ),
           IconButton(
             key: const Key('team-task-close'),
             tooltip: 'סגירה',

@@ -129,6 +129,25 @@ void main() {
     expect(harness.repository.calls, ['delete:t']);
   });
 
+  testWidgets('the header: the description under the title, a red 🗑 beside ✕',
+      (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board([hall]));
+    await openTask(tester, 't');
+    final delete = tester.getRect(find.byKey(const Key('team-task-delete')));
+    final close = tester.getRect(find.byKey(const Key('team-task-close')));
+    expect((delete.center.dy - close.center.dy).abs(), lessThan(2));
+    expect((delete.center.dx - close.center.dx).abs(), lessThan(60));
+    final icon = tester.widget<Icon>(find.descendant(
+        of: find.byKey(const Key('team-task-delete')), matching: find.byType(Icon)));
+    expect(icon.color, Colors.red);
+    final title = tester.getRect(find.byKey(const Key('team-task-edit-title')));
+    final description = tester.getRect(find.byKey(const Key('team-task-edit-description')));
+    final divider = tester.getRect(find.descendant(
+        of: find.byKey(const Key('team-task-panel')), matching: find.byType(Divider)).first);
+    expect(description.top, greaterThanOrEqualTo(title.bottom - 1));
+    expect(description.bottom, lessThanOrEqualTo(divider.top + 1));
+  });
+
   testWidgets('a delete closes the sheet, also when the list updates first', (tester) async {
     final harness = await pumpTeamTasks(tester, user: manager, board: board([hall]));
     await openTask(tester, 't');

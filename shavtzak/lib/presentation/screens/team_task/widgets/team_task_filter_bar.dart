@@ -130,7 +130,14 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
             value: _filter.urgencies.contains(urgency),
             closeOnActivate: false,
             onChanged: (_) => _toggleUrgency(urgency),
-            child: Text(urgency.hebrewLabel),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TeamTaskUrgencyIcon(urgency: urgency, size: 16),
+                const SizedBox(width: 6),
+                Text(urgency.hebrewLabel),
+              ],
+            ),
           ),
       ];
 
