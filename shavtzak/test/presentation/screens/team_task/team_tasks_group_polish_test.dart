@@ -104,22 +104,40 @@ void main() {
     }
   });
 
-  testWidgets('own tasks, then a separator, then the tasks of several events', (tester) async {
+  testWidgets('a line above the own tasks, then a line above the tasks of several events',
+      (tester) async {
     await pumpTeamTasks(tester, user: manager, board: board([several, own]));
-    final separator = find.byKey(const Key('team-task-several-separator-category:c1'));
-    expect(separator, findsOneWidget);
-    expect(find.descendant(of: separator, matching: find.text('משויכות לכמה אירועים')),
+    final ownLine = find.byKey(const Key('team-task-own-separator-category:c1'));
+    final severalLine = find.byKey(const Key('team-task-several-separator-category:c1'));
+    expect(ownLine, findsOneWidget);
+    expect(severalLine, findsOneWidget);
+    expect(find.descendant(of: ownLine, matching: find.text('משויכות לקטגוריה')), findsOneWidget);
+    expect(find.descendant(of: severalLine, matching: find.text('משויכות לכמה אירועים')),
         findsOneWidget);
-    final ownTop = tester.getRect(find.byKey(const Key('team-task-row-own'))).top;
-    final sepTop = tester.getRect(separator).top;
-    final severalTop = tester.getRect(find.byKey(const Key('team-task-row-several'))).top;
-    expect(ownTop, lessThan(sepTop));
-    expect(sepTop, lessThan(severalTop));
+    double top(Finder f) => tester.getRect(f).top;
+    final ownTop = top(find.byKey(const Key('team-task-row-own')));
+    final severalTop = top(find.byKey(const Key('team-task-row-several')));
+    expect(top(ownLine), lessThan(ownTop));
+    expect(ownTop, lessThan(top(severalLine)));
+    expect(top(severalLine), lessThan(severalTop));
   });
 
-  testWidgets('no separator when the card has only one of the two lists', (tester) async {
+  testWidgets('each list keeps its line when it is the only one', (tester) async {
     await pumpTeamTasks(tester, user: manager, board: board([several]));
     expect(find.byKey(const Key('team-task-row-several')), findsOneWidget);
+    expect(find.byKey(const Key('team-task-several-separator-category:c1')), findsOneWidget);
+    expect(find.byKey(const Key('team-task-own-separator-category:c1')), findsNothing);
+  });
+
+  testWidgets('own tasks alone still get their line', (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board([own]));
+    expect(find.byKey(const Key('team-task-own-separator-category:c1')), findsOneWidget);
     expect(find.byKey(const Key('team-task-several-separator-category:c1')), findsNothing);
+  });
+
+  testWidgets('a card of event sections only has no list lines (each event has its header)',
+      (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board([onOther]));
+    expect(find.textContaining('משויכות ל'), findsNothing);
   });
 }

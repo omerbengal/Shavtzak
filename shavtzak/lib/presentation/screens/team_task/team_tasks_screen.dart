@@ -727,23 +727,26 @@ class _GroupedListState extends State<_GroupedList> {
     return start == end ? start : '$start-$end';
   }
 
-  /// Between a category's own tasks and its tasks of several events (Omer,
-  /// 16/11/2026): a thin line in the category's colour with a small title.
-  Widget _severalSeparator(TeamTaskGroup group, int? colorValue) {
+  /// A labelled list inside a category's card (Omer, 16/11/2026): a thin line
+  /// in the category's colour with a small title, above the category's own
+  /// tasks ("משויכות לקטגוריה") and above its tasks of several events
+  /// ("משויכות לכמה אירועים"). Each list that is there gets its line, so
+  /// every list is always labelled.
+  Widget _listSeparator(Key key, String label, int? colorValue, {double top = 10}) {
     final line = Expanded(
       child: Container(height: 1.5, color: TeamTaskStyle.categorySeparator(colorValue)),
     );
     return Padding(
-      key: Key('team-task-several-separator-${group.key}'),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      key: key,
+      padding: EdgeInsets.fromLTRB(12, top, 12, 6),
       child: Row(
         children: [
           line,
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
-              'משויכות לכמה אירועים',
-              style: TextStyle(
+              label,
+              style: const TextStyle(
                 fontSize: TaskStyle.rowMetaSize,
                 color: TaskStyle.neutralText,
                 fontWeight: FontWeight.w600,
@@ -758,17 +761,32 @@ class _GroupedListState extends State<_GroupedList> {
 
   Widget _card(BuildContext context, TeamTaskGroup group, TeamTasksLoaded state) {
     // A category's card takes the category's colour (Omer, 16/11/2026).
-    final colorValue = group.type == TaskLinkType.category
+    final isCategory = group.type == TaskLinkType.category;
+    final colorValue = isCategory
         ? state.categories.where((c) => c.id == group.link?.id).firstOrNull?.colorValue
         : null;
     final rows = <Widget>[];
-    for (final task in group.tasks) {
-      if (rows.isNotEmpty) rows.add(_rowDivider);
+    // A category's own tasks: a labelled list of their own.
+    if (isCategory && group.tasks.isNotEmpty) {
+      rows.add(_listSeparator(
+        Key('team-task-own-separator-${group.key}'),
+        'משויכות לקטגוריה',
+        colorValue,
+        top: 8,
+      ));
+    }
+    for (final (i, task) in group.tasks.indexed) {
+      if (i > 0) rows.add(_rowDivider);
       rows.add(_row(task));
     }
-    // The tasks of several events: a list of their own, after a separator.
-    if (group.severalEventTasks.isNotEmpty && rows.isNotEmpty) {
-      rows.add(_severalSeparator(group, colorValue));
+    // The tasks of several events: a list of their own, after its line.
+    if (group.severalEventTasks.isNotEmpty) {
+      rows.add(_listSeparator(
+        Key('team-task-several-separator-${group.key}'),
+        'משויכות לכמה אירועים',
+        colorValue,
+        top: rows.isEmpty ? 8 : 10,
+      ));
     }
     for (final (i, task) in group.severalEventTasks.indexed) {
       if (i > 0) rows.add(_rowDivider);
