@@ -61,11 +61,11 @@ const List<String> spotlightQuickUpdates = [
 /// Sizes and timings of the Spotlight screen (round 2: "זה קטן").
 abstract final class SpotlightStyle {
   /// The card column's width on a wide window.
-  static const double maxWidth = 680;
+  static const double maxWidth = 760;
 
   /// From this width the screen grows a little more ([scale]).
   static const double wideFrom = 720;
-  static const double wideScale = 1.12;
+  static const double wideScale = 1.2;
 
   static const double titleSize = 24;
   static const double metaSize = 15;
