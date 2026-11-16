@@ -84,6 +84,7 @@ import {
   taskAuditDetails,
   taskFromStored,
 } from './tasks';
+import {parseHomeCardOrder} from './home_card_order';
 import {
   StageDoc,
   applyStageEdit,
@@ -3922,6 +3923,24 @@ async function executeMutation(
         before: existing,
         after: next,
       });
+      return {ok: true};
+    }
+
+    case 'teamMember.setHomeCardOrder': {
+      // The member's own order of the admin home cards. Only this field is
+      // written, so it never races a full teamMember.update, which leaves it
+      // alone (teamMemberDocFromJson does not carry it).
+      const memberId = requireString(payload['memberId'], 'memberId');
+      if (actor.memberId !== memberId) {
+        throw new HttpError(403, 'Only the member can order their own cards');
+      }
+      const order = parseHomeCardOrder(payload['order']);
+      const docRef = db.collection(collections.teamMembers).doc(memberId);
+      const existingDoc = await docRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+      await docRef.update({homeCardOrder: order});
       return {ok: true};
     }
 

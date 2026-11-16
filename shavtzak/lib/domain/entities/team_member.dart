@@ -338,6 +338,12 @@ class TeamMember extends Equatable {
   final List<String>
       availableEventIds; // List of event IDs this member is available for (non-permanent only)
 
+  /// The member's own order of the cards on the admin home ("/admin"), by
+  /// card id (`HomeCardIds`). Empty = the default order. Unknown ids are
+  /// ignored and cards missing from it follow in the default order
+  /// (`orderHomeCards`).
+  final List<String> homeCardOrder;
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -363,6 +369,7 @@ class TeamMember extends Equatable {
     this.canManageTasks = false,
     this.vehicleInfo,
     this.availableEventIds = const [],
+    this.homeCardOrder = const [],
   });
 
   /// Check if team member is available on a given date
@@ -553,6 +560,7 @@ class TeamMember extends Equatable {
     VehicleInfo? vehicleInfo,
     bool clearVehicleInfo = false,
     List<String>? availableEventIds,
+    List<String>? homeCardOrder,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -584,6 +592,7 @@ class TeamMember extends Equatable {
       canManageTasks: canManageTasks ?? this.canManageTasks,
       vehicleInfo: clearVehicleInfo ? null : (vehicleInfo ?? this.vehicleInfo),
       availableEventIds: availableEventIds ?? this.availableEventIds,
+      homeCardOrder: homeCardOrder ?? this.homeCardOrder,
     );
   }
 
@@ -613,6 +622,7 @@ class TeamMember extends Equatable {
         canManageTasks,
         vehicleInfo,
         availableEventIds,
+        homeCardOrder,
       ];
 
   @override

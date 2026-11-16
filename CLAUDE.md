@@ -83,7 +83,7 @@ Real-time updates use `emit.forEach` with Firestore streams for live data synchr
 **Backend-Agnostic Design**: `DatabaseInterface` abstract class defines all database operations. Currently implemented with Firestore (`FirestoreDatabase`), but can be swapped for Supabase, local SQLite, etc.
 
 **Collections**:
-- `teamMembers` - Team member records
+- `teamMembers` - Team member records. `homeCardOrder` = the member's own order of the admin home cards (ids in `HomeCardIds`, `core/utils/home_card_order.dart`), written only by `teamMember.setHomeCardOrder` (the member themself; `teamMember.update` never carries it). The home shows the saved ids it knows first, then the cards missing from it in the default order
 - `events` - Event records. `items: [{itemId, showInEventExport, showInCalendarExport}]` = "מה יש באירוע": ids into the managed list `utilities/Lists` → `EventItems` (`{id, name, emoji|null, sortOrder, isArchived}`, managed in "ניהול מה יש באירוע" on the events screen like the categories, backend `eventItem.*`, `EventItemBloc`). The switches pick the event picture / the calendar picture; the member's card shows every item. An archived item stays on its events; a deleted one is skipped. An `event.update` without the `items` key keeps the stored items (old builds)
 - `assignments` - Assignment records (junction table with foreign keys). `watchAssignmentsByEvent` holds a cache-only first answer until the server confirms (≤ 1.5 s, `holdCacheUntilServer`): a member's cache holds mostly their own assignments, so that first answer flashed "only you"
 - `tasks` - Task records for the דו יומי task screens (subtasks embedded as an array; `stageId` + optional `assemblyTime`)
@@ -192,6 +192,9 @@ Root (GoRouter)
 ├── /whoami (WhoamiScreen) - User selection with search
 │
 ├── /admin (AdminChoiceScreen) - Landing page for admins
+│   │   (cards one under the other on a phone; from 900 px wide two rows, `homeCardColumns`.
+│   │    A long press + drag, finger or mouse, reorders them live: `ReorderableHomeCards`,
+│   │    saved per member on the server, `TeamMember.homeCardOrder`)
 │   ├── Choice 1: Personal area (/user/assignments)
 │   ├── Choice 3: דו יומי (/du-yomi, own screen, non-admins redirected to the tab)
 │   └── Choice 2: Management interface (SwipeablePageView)

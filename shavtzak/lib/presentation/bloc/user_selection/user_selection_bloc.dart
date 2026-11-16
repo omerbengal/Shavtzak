@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -40,6 +41,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<UpdateBirthday>(_onUpdateBirthday);
     on<UpdateVehicleInfo>(_onUpdateVehicleInfo);
     on<UpdateEmail>(_onUpdateEmail);
+    on<UpdateHomeCardOrder>(_onUpdateHomeCardOrder);
     on<_AuthenticatedUserUpdated>(_onAuthenticatedUserUpdated);
 
     if (preAuthenticatedUser != null) {
@@ -175,7 +177,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         next.phoneNumber != current.phoneNumber ||
         next.email != current.email ||
         next.birthday != current.birthday ||
-        next.vehicleInfo != current.vehicleInfo;
+        next.vehicleInfo != current.vehicleInfo ||
+        !listEquals(next.homeCardOrder, current.homeCardOrder);
   }
 
   /// Check if user is already cached and authenticate them
@@ -384,6 +387,27 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
       }
     } else {
       _completeActionFailure(event.completion, 'אין משתמש מחובר');
+    }
+  }
+
+  /// Save the member's own order of the admin home cards.
+  Future<void> _onUpdateHomeCardOrder(
+    UpdateHomeCardOrder event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! UserAuthenticated) {
+      _completeActionFailure(event.completion, 'אין משתמש מחובר');
+      return;
+    }
+    try {
+      await _userSelectionRepository.setHomeCardOrder(
+        currentState.user.id,
+        event.order,
+      );
+      _completeActionSuccess(event.completion);
+    } catch (e) {
+      _completeActionFailure(event.completion, 'שמירת סדר הכרטיסים נכשלה');
     }
   }
 

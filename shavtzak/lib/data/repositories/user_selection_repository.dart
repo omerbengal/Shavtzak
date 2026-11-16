@@ -291,6 +291,19 @@ class UserSelectionRepository {
     }
   }
 
+  /// Save [memberId]'s own order of the admin home cards (card ids). Only
+  /// that field is written (`teamMember.setHomeCardOrder`).
+  Future<void> setHomeCardOrder(String memberId, List<String> order) async {
+    try {
+      await _backendApiService.mutate(
+        'teamMember.setHomeCardOrder',
+        payload: {'memberId': memberId, 'order': order},
+      );
+    } catch (e) {
+      throw UserSelectionException('Failed to save the home card order: $e');
+    }
+  }
+
   /// Clear passcode for a team member
   /// Uses field-specific update to prevent race conditions with concurrent edits
   Future<void> clearTeamMemberPasscode(String uniqueKey) async {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +16,8 @@ import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../bloc/calendar_sync/calendar_sync_state.dart';
 import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/home_card_order.dart';
 import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../../core/services/app_version_service.dart';
@@ -27,6 +30,7 @@ import '../../widgets/assignment_export_dialog.dart';
 import '../../widgets/shamap_export_dialog.dart';
 import '../team_task/team_tasks_place.dart';
 import '../../widgets/settings_dialog.dart';
+import 'widgets/reorderable_home_cards.dart';
 import '../../widgets/constraints_examining_dialog.dart';
 
 /// Choice screen - allows users to choose between available areas
@@ -41,6 +45,9 @@ class AdminChoiceScreen extends StatefulWidget {
 
 class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
   bool _hasRequestedAdminCalendarStartupCheck = false;
+
+  /// The order just dropped, shown until the server's copy matches it.
+  List<String>? _droppedOrder;
   bool _hasAutoOpenedCalendarReconnectDialog = false;
 
   @override
@@ -270,32 +277,70 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                 final showShamapExportCard = state.user.canAccessShamapExport;
                 final showConstraintsExaminingCard =
                     state.user.canAccessConstraintsExamining;
-                final cardCount = 1 +
-                    (showManagementCard ? 1 : 0) +
-                    (showSummaryCard ? 1 : 0) +
-                    (showShamapExportCard ? 1 : 0) +
-                    (showConstraintsExaminingCard ? 1 : 0);
+                // The cards this member sees, in the default order.
+                final shown = <String>[
+                  HomeCardIds.personal,
+                  if (showManagementCard) ...[
+                    HomeCardIds.management,
+                    HomeCardIds.duYomi,
+                    HomeCardIds.teamTasks,
+                  ],
+                  if (showSummaryCard) HomeCardIds.summary,
+                  if (showShamapExportCard) HomeCardIds.shamapExport,
+                  if (showConstraintsExaminingCard)
+                    HomeCardIds.constraintsExamining,
+                ];
+                final saved = state.user.homeCardOrder;
+                // The order just dropped stays on screen until the stream
+                // brings the same order back from the server.
+                final dropped = _droppedOrder;
+                if (dropped != null &&
+                    listEquals(orderHomeCards(shown, saved),
+                        orderHomeCards(shown, dropped))) {
+                  _droppedOrder = null;
+                }
+                final base = orderHomeCards(shown, _droppedOrder ?? saved);
+                final cardCount = base.length;
 
                 return LayoutBuilder(
                   builder: (context, constraints) {
-                    final envPrefix = EnvironmentService.instance.routePrefix;
                     final screenWidth = constraints.maxWidth;
                     final screenHeight = constraints.maxHeight;
+                    final columns = homeCardColumns(
+                      width: screenWidth,
+                      count: cardCount,
+                    );
 
                     // Responsive card width
-                    final cardWidth =
-                        screenWidth > 400 ? 350.0 : screenWidth * 0.85;
+                    final cardWidth = columns > 1
+                        ? homeCardWidthFor(width: screenWidth, columns: columns)
+                        : (screenWidth > 400 ? 350.0 : screenWidth * 0.85);
 
                     // Determine if we need compact mode based on available height
-                    final isCompact = cardCount > 2 && screenHeight < 600;
-                    final cardSpacing =
-                        isCompact ? 8.0 : (cardCount > 2 ? 12.0 : 16.0);
+                    final isCompact =
+                        columns == 1 && cardCount > 2 && screenHeight < 600;
+                    final cardSpacing = columns > 1
+                        ? homeCardGap
+                        : (isCompact ? 8.0 : (cardCount > 2 ? 12.0 : 16.0));
+
+                    final cards = ReorderableHomeCards(
+                      order: base,
+                      columns: columns,
+                      spacing: cardSpacing,
+                      cardBuilder: (context, id) => _homeCard(
+                        context,
+                        id,
+                        width: cardWidth,
+                        isCompact: isCompact,
+                      ),
+                      onReorder: _saveHomeCardOrder,
+                    );
 
                     return Center(
                       child: SingleChildScrollView(
                         child: Padding(
                           padding: EdgeInsets.symmetric(
-                            horizontal: 24,
+                            horizontal: homeCardsSidePadding,
                             vertical: isCompact ? 16 : 24,
                           ),
                           child: Column(
@@ -317,148 +362,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                 ),
                               ),
                               SizedBox(height: isCompact ? 16 : 32),
-
-                              // Personal Area Card (always shown)
-                              _buildChoiceCard(
-                                width: cardWidth,
-                                icon: Icons.person,
-                                iconColor: Colors.blue,
-                                title: 'איזור אישי',
-                                subtitle: 'צפה בשיבוצים ובקשות מגבלות',
-                                isCompact: isCompact,
-                                onTap: () {
-                                  Logger.action('tap:personalArea');
-                                  context.go('$envPrefix/user/assignments');
-                                },
-                              ),
-
-                              SizedBox(height: cardSpacing),
-
-                              // Management Card (admin only)
-                              if (showManagementCard) ...[
-                                BlocBuilder<TeamBloc, TeamState>(
-                                  builder: (context, teamState) {
-                                    final pendingCount =
-                                        _countPendingConstraints(teamState);
-                                    return _buildChoiceCard(
-                                      width: cardWidth,
-                                      icon: Icons.admin_panel_settings,
-                                      iconColor: Colors.green,
-                                      title: 'ניהול שבצק',
-                                      subtitle: 'ניהול צוות, אירועים ושיבוצים',
-                                      isCompact: isCompact,
-                                      onTap: () {
-                                        Logger.action('tap:management');
-                                        context.go(
-                                            '$envPrefix/admin/team-members');
-                                      },
-                                      badgeCount: pendingCount,
-                                    );
-                                  },
-                                ),
-                                SizedBox(height: cardSpacing),
-                                _buildChoiceCard(
-                                  width: cardWidth,
-                                  icon: Icons.event_note,
-                                  iconColor: Colors.indigo,
-                                  title: 'דו יומי',
-                                  subtitle: 'שלבים ומשימות של הדו יומי',
-                                  isCompact: isCompact,
-                                  onTap: () {
-                                    Logger.action('tap:duYomi');
-                                    context.go('$envPrefix/du-yomi');
-                                  },
-                                ),
-                                SizedBox(height: cardSpacing),
-                                _buildChoiceCard(
-                                  key: const Key('admin-card-team-tasks'),
-                                  width: cardWidth,
-                                  icon: Icons.task_alt,
-                                  iconColor: Colors.teal,
-                                  title: 'משימות',
-                                  subtitle: 'משימות הצוות לפי אירוע, קטגוריה ונושא',
-                                  isCompact: isCompact,
-                                  onTap: () {
-                                    Logger.action('tap:teamTasks');
-                                    context.go(teamTasksRoute);
-                                  },
-                                ),
-                                SizedBox(height: cardSpacing),
-                              ],
-
-                              // Summary/Manager Screen Card
-                              if (showSummaryCard)
-                                _buildChoiceCard(
-                                  width: cardWidth,
-                                  icon: Icons.dashboard,
-                                  iconColor: Colors.purple,
-                                  title: 'מסך מנהלים',
-                                  subtitle: 'צפה בסיכום כללי',
-                                  isCompact: isCompact,
-                                  onTap: () {
-                                    Logger.action('tap:summary');
-                                    context.go('$envPrefix/summary');
-                                  },
-                                ),
-
-                              // Shamap export card
-                              if (showShamapExportCard) ...[
-                                if (showSummaryCard)
-                                  SizedBox(height: cardSpacing),
-                                _buildChoiceCard(
-                                  width: cardWidth,
-                                  icon: Icons.content_paste,
-                                  iconColor: Colors.teal,
-                                  title: 'ייצוא שמפים',
-                                  subtitle: 'העתקת פרטי שמ"פ ללוח',
-                                  isCompact: isCompact,
-                                  onTap: () {
-                                    Logger.action('open:shamapExportDialog');
-                                    showDialog(
-                                      context: context,
-                                      builder: (context) =>
-                                          const Directionality(
-                                        textDirection: TextDirection.rtl,
-                                        child: ShamapExportDialog(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-
-                              // Constraints examining card
-                              if (showConstraintsExaminingCard) ...[
-                                if (showShamapExportCard || showSummaryCard)
-                                  SizedBox(height: cardSpacing),
-                                BlocBuilder<TeamBloc, TeamState>(
-                                  builder: (context, teamState) {
-                                    final pendingCount =
-                                        _countPendingConstraints(teamState);
-                                    return _buildChoiceCard(
-                                      width: cardWidth,
-                                      icon: Icons.fact_check,
-                                      iconColor: Colors.deepOrange,
-                                      title: 'בחינת מגבלות',
-                                      subtitle:
-                                          'צפייה ועדכון סטטוס מגבלות צוות',
-                                      isCompact: isCompact,
-                                      onTap: () {
-                                        Logger.action(
-                                            'open:constraintsExaminingDialog');
-                                        showDialog(
-                                          context: context,
-                                          builder: (context) =>
-                                              const Directionality(
-                                            textDirection: TextDirection.rtl,
-                                            child: ConstraintsExaminingDialog(),
-                                          ),
-                                        );
-                                      },
-                                      badgeCount: pendingCount,
-                                    );
-                                  },
-                                ),
-                              ],
+                              cards,
                             ],
                           ),
                         ),
@@ -472,6 +376,152 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
         ),
       ),
     );
+  }
+
+  /// One home card by its id ([HomeCardIds]).
+  Widget _homeCard(
+    BuildContext context,
+    String id, {
+    required double width,
+    required bool isCompact,
+  }) {
+    final envPrefix = EnvironmentService.instance.routePrefix;
+    switch (id) {
+      case HomeCardIds.management:
+        return BlocBuilder<TeamBloc, TeamState>(
+          builder: (context, teamState) {
+            final pendingCount = _countPendingConstraints(teamState);
+            return _buildChoiceCard(
+              width: width,
+              icon: Icons.admin_panel_settings,
+              iconColor: Colors.green,
+              title: 'ניהול שבצק',
+              subtitle: 'ניהול צוות, אירועים ושיבוצים',
+              isCompact: isCompact,
+              onTap: () {
+                Logger.action('tap:management');
+                context.go('$envPrefix/admin/team-members');
+              },
+              badgeCount: pendingCount,
+            );
+          },
+        );
+      case HomeCardIds.duYomi:
+        return _buildChoiceCard(
+          width: width,
+          icon: Icons.event_note,
+          iconColor: Colors.indigo,
+          title: 'דו יומי',
+          subtitle: 'שלבים ומשימות של הדו יומי',
+          isCompact: isCompact,
+          onTap: () {
+            Logger.action('tap:duYomi');
+            context.go('$envPrefix/du-yomi');
+          },
+        );
+      case HomeCardIds.teamTasks:
+        return _buildChoiceCard(
+          key: const Key('admin-card-team-tasks'),
+          width: width,
+          icon: Icons.task_alt,
+          iconColor: Colors.teal,
+          title: 'משימות',
+          subtitle: 'משימות הצוות לפי אירוע, קטגוריה ונושא',
+          isCompact: isCompact,
+          onTap: () {
+            Logger.action('tap:teamTasks');
+            context.go(teamTasksRoute);
+          },
+        );
+      case HomeCardIds.summary:
+        return _buildChoiceCard(
+          width: width,
+          icon: Icons.dashboard,
+          iconColor: Colors.purple,
+          title: 'מסך מנהלים',
+          subtitle: 'צפה בסיכום כללי',
+          isCompact: isCompact,
+          onTap: () {
+            Logger.action('tap:summary');
+            context.go('$envPrefix/summary');
+          },
+        );
+      case HomeCardIds.shamapExport:
+        return _buildChoiceCard(
+          width: width,
+          icon: Icons.content_paste,
+          iconColor: Colors.teal,
+          title: 'ייצוא שמפים',
+          subtitle: 'העתקת פרטי שמ"פ ללוח',
+          isCompact: isCompact,
+          onTap: () {
+            Logger.action('open:shamapExportDialog');
+            showDialog(
+              context: context,
+              builder: (context) => const Directionality(
+                textDirection: TextDirection.rtl,
+                child: ShamapExportDialog(),
+              ),
+            );
+          },
+        );
+      case HomeCardIds.constraintsExamining:
+        return BlocBuilder<TeamBloc, TeamState>(
+          builder: (context, teamState) {
+            final pendingCount = _countPendingConstraints(teamState);
+            return _buildChoiceCard(
+              width: width,
+              icon: Icons.fact_check,
+              iconColor: Colors.deepOrange,
+              title: 'בחינת מגבלות',
+              subtitle: 'צפייה ועדכון סטטוס מגבלות צוות',
+              isCompact: isCompact,
+              onTap: () {
+                Logger.action('open:constraintsExaminingDialog');
+                showDialog(
+                  context: context,
+                  builder: (context) => const Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: ConstraintsExaminingDialog(),
+                  ),
+                );
+              },
+              badgeCount: pendingCount,
+            );
+          },
+        );
+      case HomeCardIds.personal:
+      default:
+        return _buildChoiceCard(
+          width: width,
+          icon: Icons.person,
+          iconColor: Colors.blue,
+          title: 'איזור אישי',
+          subtitle: 'צפה בשיבוצים ובקשות מגבלות',
+          isCompact: isCompact,
+          onTap: () {
+            Logger.action('tap:personalArea');
+            context.go('$envPrefix/user/assignments');
+          },
+        );
+    }
+  }
+
+  /// Save the member's new card order on the server; it stays on screen
+  /// meanwhile, and goes back with a message if the save fails.
+  void _saveHomeCardOrder(List<String> next) {
+    setState(() => _droppedOrder = next);
+    final completion = CrudActionCompleter();
+    context
+        .read<UserSelectionBloc>()
+        .add(UpdateHomeCardOrder(next, completion: completion));
+    completion.future.then((result) {
+      if (!mounted || result.isSuccess) return;
+      setState(() => _droppedOrder = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('לא הצלחנו לשמור את סדר הכרטיסים')),
+      );
+    });
   }
 
   /// Count total pending constraints across all team members

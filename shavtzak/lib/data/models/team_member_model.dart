@@ -63,6 +63,9 @@ class TeamMemberModel {
   final List<String>
       availableEventIds; // List of event IDs this member is available for
 
+  // The member's own order of the admin home cards (card ids)
+  final List<String> homeCardOrder;
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -88,6 +91,7 @@ class TeamMemberModel {
     this.canManageTasks = false,
     this.vehicleInfo,
     this.availableEventIds = const [],
+    this.homeCardOrder = const [],
   });
 
   /// Generate a UUID for team members
@@ -126,6 +130,7 @@ class TeamMemberModel {
           ? VehicleInfoModel.fromEntity(entity.vehicleInfo!)
           : null,
       availableEventIds: List<String>.from(entity.availableEventIds),
+      homeCardOrder: List<String>.from(entity.homeCardOrder),
     );
   }
 
@@ -156,6 +161,7 @@ class TeamMemberModel {
       canManageTasks: canManageTasks,
       vehicleInfo: vehicleInfo?.toEntity(),
       availableEventIds: List<String>.from(availableEventIds),
+      homeCardOrder: List<String>.from(homeCardOrder),
     );
   }
 
@@ -251,6 +257,7 @@ class TeamMemberModel {
       canManageTasks: canManageTasks,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
+      homeCardOrder: _homeCardOrderFrom(data['homeCardOrder']),
     );
 
     return model;
@@ -282,6 +289,7 @@ class TeamMemberModel {
       'canManageTasks': canManageTasks,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
+      'homeCardOrder': homeCardOrder,
     };
   }
 
@@ -372,6 +380,7 @@ class TeamMemberModel {
       canManageTasks: canManageTasks,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
+      homeCardOrder: _homeCardOrderFrom(json['homeCardOrder']),
     );
   }
 
@@ -402,8 +411,19 @@ class TeamMemberModel {
       'canManageTasks': canManageTasks,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
+      'homeCardOrder': homeCardOrder,
     };
   }
+}
+
+/// A stored home-card order; anything that is not a list of strings reads as
+/// none (the default order).
+List<String> _homeCardOrderFrom(Object? value) {
+  if (value is! List) return const [];
+  return [
+    for (final id in value)
+      if (id is String) id
+  ];
 }
 
 /// Data model for VehicleInfo
