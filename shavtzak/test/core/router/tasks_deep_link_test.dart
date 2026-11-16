@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/router/app_router.dart';
+import 'package:shavtzak/presentation/screens/team_task/team_tasks_place.dart';
+
+import '../../support/task_fixtures.dart';
 
 void main() {
   group('AppRouter.pendingTasksLinkFor', () {
@@ -190,6 +193,77 @@ void main() {
       AppRouter.debugSetPendingDeepLink('/tasks');
       AppRouter.clearPendingDeepLinkIfArrived('/whoami');
       expect(AppRouter.postAuthDestination('/admin'), '/tasks');
+    });
+  });
+
+  // A tap on a "שובצת למשימה" notification while the iPhone app is closed
+  // starts the app at #/team-tasks?task=<id>. Auth is still loading then, so
+  // the link must survive "מי את/ה?" like the checklist's (bug 17/11/2026:
+  // Omer landed on /admin).
+  group('team task link from a notification', () {
+    tearDown(() => AppRouter.debugSetPendingDeepLink(null));
+
+    test('is kept with its task, in both environments', () {
+      expect(AppRouter.pendingTasksLinkFor('#/team-tasks?task=0f4c1cef-ab12'),
+          '/team-tasks?task=0f4c1cef-ab12');
+      expect(AppRouter.pendingTasksLinkFor('#/test/team-tasks?task=t1'),
+          '/test/team-tasks?task=t1');
+      expect(AppRouter.pendingTasksLinkFor('#/team-tasks'), '/team-tasks');
+      expect(AppRouter.pendingTasksLinkFor('#/team-tasks/?task=t1'),
+          '/team-tasks?task=t1');
+    });
+
+    test('keeps only a plain task id, nothing else from the query', () {
+      expect(AppRouter.pendingTasksLinkFor('#/team-tasks?task=t1&x=2'),
+          '/team-tasks?task=t1');
+      expect(AppRouter.pendingTasksLinkFor('#/team-tasks?x=2'), '/team-tasks');
+      expect(
+          AppRouter.pendingTasksLinkFor(
+              '#/team-tasks?task=https%3A%2F%2Fevil.example'),
+          '/team-tasks');
+      expect(AppRouter.pendingTasksLinkFor('#/team-tasks?task=%E0%A4%A'),
+          '/team-tasks');
+      expect(AppRouter.pendingTasksLinkFor('#/team-tasks/x'), isNull);
+    });
+
+    test('cold start with auth loading: "מי את/ה?" carries it, then an admin '
+        'lands on the task', () {
+      for (final env in ['', '/test']) {
+        // router(): the hash push.js put in place before Flutter started.
+        AppRouter.debugSetPendingDeepLink(
+            AppRouter.pendingTasksLinkFor('#$env/team-tasks?task=0f4c'));
+        // Auth still loading: the redirect sends the visitor to sign-in.
+        final whoami = AppRouter.whoamiRoute(env);
+        expect(AppRouter.pendingTasksLinkFor('#$whoami'),
+            '$env/team-tasks?task=0f4c', reason: whoami);
+        // Signed in on "מי את/ה?": the admin goes to the task, not /admin.
+        final dest = AppRouter.postAuthDestination('$env/admin');
+        expect(dest, '$env/team-tasks?task=0f4c');
+        final uri = Uri.parse(dest);
+        expect(uri.queryParameters['task'], '0f4c');
+        final stripped =
+            env.isEmpty ? uri.path : uri.path.substring(env.length);
+        expect(teamTasksRedirect(stripped, buildMember(isAdmin: true)), isNull);
+      }
+    });
+
+    test('a member who is not an admin still ends at home', () {
+      AppRouter.debugSetPendingDeepLink('/team-tasks?task=t1');
+      final dest = AppRouter.postAuthDestination('/user/assignments');
+      expect(teamTasksRedirect(Uri.parse(dest).path, buildMember()),
+          '/user/assignments');
+    });
+
+    test('a signed-out visit (app already open) is remembered with its task',
+        () {
+      AppRouter.rememberTasksLink('/team-tasks?task=t9');
+      expect(AppRouter.postAuthDestination('/admin'), '/team-tasks?task=t9');
+    });
+
+    test('arriving on the task clears it, matched by path and query', () {
+      AppRouter.debugSetPendingDeepLink('/team-tasks?task=t1');
+      AppRouter.clearPendingDeepLinkIfArrived('/team-tasks?task=t1');
+      expect(AppRouter.postAuthDestination('/admin'), '/admin');
     });
   });
 }

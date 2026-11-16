@@ -45,7 +45,8 @@ class AppRouter {
 
   /// The link the app was opened on, kept until the member is signed in:
   /// the checklist (`/tasks`) or a דו יומי event's tasks screen
-  /// (`/du-yomi/<eventId>`, also the members' `/user/du-yomi/<eventId>`).
+  /// (`/du-yomi/<eventId>`, also the members' `/user/du-yomi/<eventId>`),
+  /// or a team task a notification opens (`/team-tasks?task=<id>`).
   ///
   /// The checklist is reachable only by link, and an event's link is sent to
   /// the team. Without this, a member who follows the link while signed out
@@ -84,10 +85,42 @@ class AppRouter {
         // A broken %-escape ("Truncated URI").
         return null;
       }
-      return next != null && _tasksLink.hasMatch(next) ? next : null;
+      return next == null ? null : _linkAt(next);
     }
-    return _tasksLink.hasMatch(path) ? path : null;
+    return _linkAt(query.isEmpty ? path : '$path?$query');
   }
+
+  /// [route] as a link worth keeping, or null: the path of a [_tasksLink],
+  /// or a [_teamTasksLink] with only its `task` (a plain id) kept.
+  static String? _linkAt(String route) {
+    var path = route;
+    var query = '';
+    final queryStart = route.indexOf('?');
+    if (queryStart >= 0) {
+      query = route.substring(queryStart + 1);
+      path = route.substring(0, queryStart);
+    }
+    if (path.length > 1 && path.endsWith('/')) {
+      path = path.substring(0, path.length - 1);
+    }
+    if (_tasksLink.hasMatch(path)) return path;
+    if (!_teamTasksLink.hasMatch(path)) return null;
+    String? task;
+    try {
+      task = Uri.splitQueryString(query)['task'];
+    } on FormatException {
+      task = null;
+    } on ArgumentError {
+      task = null;
+    }
+    if (task == null || !_taskId.hasMatch(task)) return path;
+    return '$path?task=$task';
+  }
+
+  // The team tasks screen, where a "שובצת למשימה" notification opens a task
+  // (`?task=<id>`), in either environment.
+  static final RegExp _teamTasksLink = RegExp(r'^(/test)?/team-tasks$');
+  static final RegExp _taskId = RegExp(r'^[A-Za-z0-9_-]{1,64}$');
 
   static final RegExp _whoamiPath = RegExp(r'^(/test)?/whoami$');
 
@@ -126,7 +159,8 @@ class AppRouter {
   /// Drop the pending link once the member is on it, so a later
   /// sign-out and sign-in goes home as usual.
   static void clearPendingDeepLinkIfArrived(String route) {
-    if (route == _pendingDeepLink) _pendingDeepLink = null;
+    final pending = _pendingDeepLink;
+    if (pending != null && _linkAt(route) == pending) _pendingDeepLink = null;
   }
 
   /// A signed-in member's home, without the environment prefix.
@@ -435,11 +469,11 @@ class AppRouter {
         // Handle authentication redirects
         if (currentState is UserSignedOut) {
           if (!strippedRoute.startsWith('/whoami')) {
-            rememberTasksLink(currentRoute);
+            rememberTasksLink(state.uri.toString());
             return whoamiRoute(envPrefix);
           }
         } else if (currentState is UserAuthenticated) {
-          clearPendingDeepLinkIfArrived(currentRoute);
+          clearPendingDeepLinkIfArrived(state.uri.toString());
           // The team tasks screen is the admins' only; the former members'
           // tab leads an admin to it and anyone else home.
           final teamTasksTarget =
@@ -486,7 +520,7 @@ class AppRouter {
               'unauthenticated, redirecting to whoami from "$currentRoute"',
               name: 'AppRouter',
             );
-            rememberTasksLink(currentRoute);
+            rememberTasksLink(state.uri.toString());
             return whoamiRoute(envPrefix);
           }
         }
