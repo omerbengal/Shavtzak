@@ -91,12 +91,55 @@
     },
   };
 
+  // Where a notification tap asked to go (sw.js leaves it, same names there):
+  // taken once, and only when recent, so a later start goes home as usual.
+  const PENDING_OPEN_CACHE = 'shavtzak-pending-open';
+  const PENDING_OPEN_KEY = location.origin + '/__shavtzak-pending-open';
+  const PENDING_OPEN_MAX_AGE_MS = 2 * 60 * 1000;
+
+  async function takePendingOpen() {
+    try {
+      if (typeof caches === 'undefined') return null;
+      const cache = await caches.open(PENDING_OPEN_CACHE);
+      const hit = await cache.match(PENDING_OPEN_KEY);
+      if (!hit) return null;
+      await cache.delete(PENDING_OPEN_KEY);
+      const data = await hit.json();
+      const age = Date.now() - (data && data.at);
+      if (!data || typeof data.path !== 'string' || !data.path.startsWith('/')) return null;
+      if (!(age >= 0 && age <= PENDING_OPEN_MAX_AGE_MS)) return null;
+      return data.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // A running app follows a hash change (Flutter listens to it).
+  function goTo(path) {
+    if (window.location.hash !== '#' + path) window.location.hash = '#' + path;
+  }
+
+  // On start, before Flutter reads the address (index.html waits for this):
+  // the iPhone started the app at its start page instead of at the task.
+  // replaceState, so "back" does not return to the start page.
+  window.shavtzakPendingOpen = takePendingOpen().then((path) => {
+    if (path) history.replaceState(history.state, '', '#' + path);
+  });
+
+  // Back to the front after a tap whose message never arrived.
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    const path = await takePendingOpen();
+    if (path) goTo(path);
+  });
+
   // A tap on a notification while the app is open (sw.js): go to the task.
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', (event) => {
+    navigator.serviceWorker.addEventListener('message', async (event) => {
       const data = event.data || {};
       if (data.type === 'shavtzak-open' && typeof data.path === 'string' && data.path) {
-        window.location.hash = '#' + data.path;
+        await takePendingOpen(); // handled here; do not replay it later
+        goTo(data.path);
       }
     });
   }
