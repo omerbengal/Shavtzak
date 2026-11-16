@@ -7,20 +7,20 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/team_task_rules.dart';
+import '../../../core/utils/team_task_spotlight.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/team_task.dart';
 import '../../bloc/team_task/team_task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
-import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../task/task_style.dart';
-import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
 import 'widgets/team_task_filter_bar.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
 import 'widgets/team_task_split_view.dart';
+import 'widgets/team_task_spotlight.dart';
 import 'widgets/team_task_style.dart';
 import 'widgets/team_task_update_log.dart';
 import 'widgets/topic_management_dialog.dart';
@@ -33,9 +33,7 @@ import 'widgets/topic_management_dialog.dart';
 /// manager opening on every task. A member who is not a manager sees only
 /// their own tasks, with no tabs.
 class TeamTasksScreen extends StatefulWidget {
-  const TeamTasksScreen({super.key, required this.place});
-
-  final TeamTasksPlace place;
+  const TeamTasksScreen({super.key});
 
   @override
   State<TeamTasksScreen> createState() => _TeamTasksScreenState();
@@ -52,6 +50,34 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// The link cards folded to their header (round 7), by group key; kept
   /// while the screen is open, across both tabs.
   final Set<String> _collapsed = {};
+
+  /// The rows a "זרקור" pass just changed: they flash green for a moment on
+  /// the way back to the list; [_flashRound] restarts the flash.
+  Set<String> _flash = const {};
+  int _flashRound = 0;
+
+  /// "זרקור" over [rows] (their tasks still to be done, the quietest
+  /// first); [title] = what the pass covers (a long-pressed card).
+  Future<void> _spotlight(List<TeamTask> rows, {String? title}) async {
+    final queue = spotlightQueue(rows);
+    Logger.action('tap:spotlightOpen', {'count': queue.length, 'scoped': title != null});
+    if (queue.isEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('אין כאן משימות פתוחות')),
+      );
+      return;
+    }
+    final touched = await showTeamTaskSpotlight(
+      context,
+      taskIds: [for (final task in queue) task.id],
+      title: title,
+    );
+    if (!mounted || touched.isEmpty) return;
+    final round = ++_flashRound;
+    setState(() => _flash = touched);
+    await Future<void>.delayed(const Duration(milliseconds: 2400));
+    if (mounted && round == _flashRound) setState(() => _flash = const {});
+  }
 
   void _openPanel(String taskId) {
     Logger.action('tap:teamTaskPanelOpen');
@@ -109,8 +135,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     context.go('${EnvironmentService.instance.routePrefix}${AppRouter.homeFor(user)}');
   }
 
-  Widget _withBanner(Widget child) =>
-      widget.place == TeamTasksPlace.standalone ? TestEnvironmentIndicator(child: child) : child;
+  Widget _withBanner(Widget child) => TestEnvironmentIndicator(child: child);
 
   Future<void> _newTask() async {
     Logger.action('tap:newTeamTask');
@@ -146,14 +171,12 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                 appBar: AppBar(
                   title: const Text('משימות'),
                   automaticallyImplyLeading: false,
-                  leading: widget.place == TeamTasksPlace.standalone
-                      ? IconButton(
-                          key: const Key('team-tasks-home'),
-                          tooltip: 'חזרה לדף הבית',
-                          icon: const Icon(Icons.home_outlined),
-                          onPressed: () => _goHome(user),
-                        )
-                      : const MemberSettingsButton(),
+                  leading: IconButton(
+                    key: const Key('team-tasks-home'),
+                    tooltip: 'חזרה לדף הבית',
+                    icon: const Icon(Icons.home_outlined),
+                    onPressed: () => _goHome(user),
+                  ),
                   actions: [
                     if (state is TeamTasksLoaded) _foldAllButton(_shownGroups(state, canManage)),
                     if (editing)
@@ -172,7 +195,6 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                           ),
                         ],
                       ),
-                    if (widget.place == TeamTasksPlace.tab) MemberBarActions(user: user),
                   ],
                 ),
                 // The panel opens on the left, where the button sits in RTL:
@@ -211,6 +233,11 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       final column = Column(
         children: [
           TeamTaskFilterBar(state: state, showOwner: all),
+          if (!all)
+            _SpotlightBar(
+              count: spotlightQueue(groups.expand((g) => g.tasks)).length,
+              onStart: () => _spotlight([for (final g in groups) ...g.tasks]),
+            ),
           const Divider(height: 1),
           Expanded(
             child: _GroupedList(
@@ -222,6 +249,10 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
               collapsed: _collapsed,
               onToggleGroup: _toggleGroup,
               selectedId: split ? _panelTaskId : null,
+              flash: _flash,
+              flashRound: _flashRound,
+              onSpotlightGroup:
+                  all ? null : (group) => _spotlight(group.tasks, title: group.label),
             ),
           ),
         ],
@@ -324,7 +355,18 @@ class _GroupedList extends StatefulWidget {
     required this.collapsed,
     required this.onToggleGroup,
     this.selectedId,
+    this.flash = const {},
+    this.flashRound = 0,
+    this.onSpotlightGroup,
   });
+
+  /// The rows a "זרקור" pass just changed, flashing green.
+  final Set<String> flash;
+  final int flashRound;
+
+  /// "המשימות שלי": a long press on a card's header opens "זרקור" over
+  /// that card's tasks only.
+  final ValueChanged<TeamTaskGroup>? onSpotlightGroup;
 
   /// The cards folded to their header (round 7), by group key.
   final Set<String> collapsed;
@@ -392,7 +434,7 @@ class _GroupedListState extends State<_GroupedList> {
           ? visibleSubtasks(task, state.filter, now: widget.now)
           : const <TeamSubtask>[];
       final open = widget.editing && task.subtasks.isNotEmpty && _isOpen(task, shown);
-      rows.add(TeamTaskRow(
+      rows.add(_flashed(task.id, TeamTaskRow(
         task: task,
         now: widget.now,
         viewerId: widget.viewerId,
@@ -408,7 +450,7 @@ class _GroupedListState extends State<_GroupedList> {
         canChangeStatus: !widget.editing,
         onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
         onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
-      ));
+      )));
       if (open && shown.isNotEmpty) {
         rows.add(Padding(
           key: Key('team-task-subtasks-${task.id}'),
@@ -473,6 +515,9 @@ class _GroupedListState extends State<_GroupedList> {
                 key: Key('team-task-group-${group.key}'),
                 hoverColor: TeamTaskStyle.rowHover,
                 onTap: () => widget.onToggleGroup(group.key),
+                onLongPress: widget.onSpotlightGroup == null
+                    ? null
+                    : () => widget.onSpotlightGroup!(group),
                 child: Padding(
                   padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 6, 8),
                   child: Row(
@@ -519,10 +564,79 @@ class _GroupedListState extends State<_GroupedList> {
     );
   }
 
+  /// [row] with a green flash that fades when [id] was just changed in a
+  /// "זרקור" pass.
+  Widget _flashed(String id, Widget row) {
+    if (!widget.flash.contains(id)) return row;
+    return TweenAnimationBuilder<double>(
+      key: Key('team-task-flash-$id-${widget.flashRound}'),
+      tween: Tween(begin: 1, end: 0),
+      duration: const Duration(milliseconds: 2200),
+      curve: const Interval(0.3, 1, curve: Curves.easeOut),
+      builder: (context, value, child) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: Color.lerp(Colors.transparent, TaskStyle.doneLight, value),
+        ),
+        child: child,
+      ),
+      child: row,
+    );
+  }
+
   static String _groupKind(TaskLinkType? type) => switch (type) {
         TaskLinkType.event => 'אירוע · ',
         TaskLinkType.category => 'קטגוריה · ',
         TaskLinkType.topic => 'נושא · ',
         null => '',
       };
+}
+
+/// Above the list of "המשימות שלי": how many tasks are still to be done and
+/// the "זרקור" button that goes through them one by one.
+class _SpotlightBar extends StatelessWidget {
+  const _SpotlightBar({required this.count, required this.onStart});
+
+  final int count;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count == 0) return const SizedBox.shrink();
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 2, 12, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  count == 1 ? 'משימה אחת פתוחה' : '$count משימות פתוחות',
+                  key: const Key('spotlight-bar-count'),
+                  style: const TextStyle(
+                    fontSize: TaskStyle.rowMetaSize,
+                    color: TaskStyle.neutralText,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                key: const Key('spotlight-start'),
+                onPressed: onStart,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: TaskStyle.mine,
+                  backgroundColor: TaskStyle.currentLight,
+                  side: const BorderSide(color: TaskStyle.mine),
+                  shape: const StadiumBorder(),
+                  visualDensity: VisualDensity.compact,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                icon: const Icon(Icons.bolt, size: 18),
+                label: const Text('זרקור'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

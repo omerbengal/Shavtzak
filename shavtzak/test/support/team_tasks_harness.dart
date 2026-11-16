@@ -9,7 +9,6 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/team_task/team_task_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_state.dart';
-import 'package:shavtzak/presentation/screens/team_task/team_tasks_place.dart';
 import 'package:shavtzak/presentation/screens/team_task/team_tasks_screen.dart';
 
 import 'fake_task_repository.dart' show MockUserSelectionBloc;
@@ -38,7 +37,6 @@ Future<TeamTasksHarness> pumpTeamTasks(
   required TeamTaskBoard board,
   Size size = teamPhoneSize,
   DateTime Function()? clock,
-  TeamTasksPlace place = TeamTasksPlace.standalone,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -64,7 +62,7 @@ Future<TeamTasksHarness> pumpTeamTasks(
       BlocProvider<TeamTaskBloc>.value(value: bloc),
       BlocProvider<UserSelectionBloc>.value(value: userBloc),
     ],
-    child: MaterialApp(home: TeamTasksScreen(place: place)),
+    child: MaterialApp(home: const TeamTasksScreen()),
   ));
   await tester.pump();
   final harness = TeamTasksHarness(repository, bloc);
