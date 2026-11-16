@@ -215,16 +215,40 @@ void main() {
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
   });
 
-  testWidgets('a sent update lands in the log before the card moves on', (tester) async {
+  testWidgets('a sent update flies from the field up to the log before the card moves on',
+      (tester) async {
     await open(tester);
     await tester.tap(find.byKey(const Key('spotlight-update')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('spotlight-update-field')), 'דיברתי עם הספק');
     await tester.ensureVisible(find.byKey(const Key('spotlight-send')));
     await tester.pumpAndSettle();
+    final fieldTop =
+        tester.getRect(find.byKey(const Key('spotlight-update-field'))).top;
     await tester.tap(find.byKey(const Key('spotlight-send')));
     await tester.pump();
+    await tester.pump();
+    // Mid-air: one box carries the text, between the field and the log; the
+    // row in the log keeps its place empty until it lands.
+    await tester.pump(const Duration(milliseconds: 260));
+    final flight = find.byKey(const Key('spotlight-update-flight'));
+    expect(flight, findsOneWidget);
+    expect(find.descendant(of: flight, matching: find.text('דיברתי עם הספק')), findsOneWidget);
+    final rowRect = tester.getRect(find.byKey(const Key('spotlight-log-echo')));
+    final midTop = tester.getRect(flight).top;
+    expect(midTop, lessThan(fieldTop));
+    expect(midTop, greaterThan(rowRect.top));
+    final hidden = tester.widget<Opacity>(find
+        .ancestor(
+            of: find.descendant(
+                of: find.byKey(const Key('spotlight-log-echo')),
+                matching: find.text('דיברתי עם הספק')),
+            matching: find.byType(Opacity))
+        .first);
+    expect(hidden.opacity, 0);
+    // Landed: the box is gone, the row is in place, the card still waits.
     await tester.pump(const Duration(milliseconds: 300));
+    expect(flight, findsNothing);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
     expect(
         find.descendant(
@@ -245,7 +269,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('spotlight-send')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1300));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 800));
     expect(find.byKey(const Key('spotlight-summary')), findsOneWidget);
     expect(find.byKey(const Key('spotlight-confetti')), findsOneWidget);
     await tester.pumpAndSettle();
