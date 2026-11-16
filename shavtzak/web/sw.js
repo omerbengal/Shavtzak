@@ -160,6 +160,7 @@ self.addEventListener('push', (event) => {
     data = {body: event.data ? event.data.text() : ''};
   }
   const title = data.title || 'שבצק';
+  diag({ev: 'push', path: data.path || ''});
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || '',
     tag: data.tag || undefined,
@@ -182,7 +183,7 @@ const PENDING_OPEN_KEY = self.location.origin + '/__shavtzak-pending-open';
 
 // TEMP DIAGNOSTIC (preview only, removed before merge): what the tap did,
 // read and shown by web/push_debug.js.
-const DIAG_TAG = 'diag-2';
+const DIAG_TAG = 'diag-3';
 async function diag(entry) {
   try {
     const cache = await caches.open('shavtzak-push-diag');
@@ -194,6 +195,21 @@ async function diag(entry) {
       {headers: {'Content-Type': 'application/json'}}));
   } catch (_) {}
 }
+
+// TEMP DIAGNOSTIC: the page asks which worker runs (push_debug.js badge); the
+// answer also proves the worker's Cache Storage is the page's.
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type !== 'shavtzak-diag-ping') return;
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open('shavtzak-push-diag');
+      await cache.put(self.location.origin + '/__diag-ping', new Response(
+        JSON.stringify({tag: DIAG_TAG, at: Date.now(), nonce: data.nonce})));
+    } catch (_) {}
+    if (event.source) event.source.postMessage({type: 'shavtzak-diag-pong', tag: DIAG_TAG, nonce: data.nonce});
+  })());
+});
 
 async function rememberOpen(path) {
   try {

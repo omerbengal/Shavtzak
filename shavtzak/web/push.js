@@ -147,6 +147,7 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', async (event) => {
       const data = event.data || {};
+      if (data.type === 'shavtzak-diag-pong') return;
       diag({ev: 'message', type: data.type, path: data.path});
       if (data.type === 'shavtzak-open' && typeof data.path === 'string' && data.path) {
         await takePendingOpen('message'); // handled here; do not replay it later
