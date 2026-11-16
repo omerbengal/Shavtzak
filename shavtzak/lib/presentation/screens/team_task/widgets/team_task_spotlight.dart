@@ -23,7 +23,7 @@ import 'team_task_style.dart';
 /// after the last card a summary closes the pass.
 ///
 /// Round 2 (Omer, 16/11/2026): everything centred and bigger, and animated -
-/// the next card rises in, "לא עכשיו" bounces the card off to the side,
+/// the next card fades in, "לא עכשיו" bounces the card off to the side,
 /// "סיימתי" throws confetti, a sent update lands in the log before the card
 /// moves on, and the summary counts up (with confetti when nothing was left
 /// for later).
@@ -80,7 +80,7 @@ abstract final class SpotlightStyle {
   static const double logMin = 130;
   static const double logMax = 340;
 
-  static const Duration enter = Duration(milliseconds: 650);
+  static const Duration enter = Duration(milliseconds: 300);
   static const Duration fling = Duration(milliseconds: 560);
   static const Duration done = Duration(milliseconds: 520);
 
@@ -167,7 +167,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     Navigator.of(context).pop(_tally.touched);
   }
 
-  /// The next card rises in (or the summary, after the last one).
+  /// The next card fades in (or the summary, after the last one).
   void _next() {
     setState(() {
       _index++;
@@ -326,9 +326,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     messenger?.showSnackBar(SnackBar(
       key: const Key('spotlight-undo-bar'),
       duration: const Duration(seconds: 4),
-      content: Text(status == TeamTaskStatus.done
-          ? 'סומנה כבוצעה'
-          : 'סומנה כ"${status.hebrewLabel}"'),
+      content:
+          Text(status == TeamTaskStatus.done ? 'סומנה כבוצעה' : 'סומנה כ"${status.hebrewLabel}"'),
       action: SnackBarAction(
         key: const Key('spotlight-undo'),
         label: 'ביטול',
@@ -453,7 +452,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                       child: FadeTransition(opacity: animation, child: child),
                     ),
                     child: Text(
-                      '${_index + 1} מתוך $_total',
+                      '${_index + 1}/$_total',
                       key: const Key('spotlight-counter'),
                       style: TextStyle(
                         fontSize: 17 * s,
@@ -532,12 +531,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     return AnimatedBuilder(
       animation: _motion,
       builder: (context, _) {
-        // In: rises from below, a little small, and settles with a bounce.
-        final inT = Curves.easeOutCubic.transform(const Interval(0, 0.7).transform(_enter.value));
-        final inScale = 0.9 + 0.1 * Curves.easeOutBack.transform(const Interval(0, 0.7).transform(_enter.value));
+        // In: a plain fade (Omer, msg 3911: no rise / scale on entry).
+        final inT = Curves.easeOut.transform(_enter.value);
         final e = _exit.value;
-        var dx = 0.0, dy = 0.0, angle = 0.0, scale = inScale, opacity = inT;
-        var lowerOpacity = Curves.easeOut.transform(const Interval(0.25, 1).transform(_enter.value));
+        var dx = 0.0, dy = 0.0, angle = 0.0, scale = 1.0, opacity = inT;
+        var lowerOpacity = inT;
         double check = 0;
         switch (_exitKind) {
           case _Exit.skip:
@@ -558,8 +556,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             opacity *= 1 - out;
             lowerOpacity *= 1 - const Interval(0, 0.3).transform(e);
           case _Exit.update:
-            final out = Curves.easeInCubic
-                .transform(Interval(SpotlightStyle.updateHold, 1).transform(e));
+            final out =
+                Curves.easeInCubic.transform(Interval(SpotlightStyle.updateHold, 1).transform(e));
             dy = -0.2 * out;
             opacity *= 1 - out;
             lowerOpacity *= 1 - const Interval(0, 0.3).transform(e);
@@ -574,39 +572,35 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               opacity: opacity.clamp(0.0, 1.0),
               child: FractionalTranslation(
                 translation: Offset(dx, dy),
-                child: Transform.translate(
-                  offset: Offset(0, 70 * (1 - inT)),
-                  child: Transform.rotate(
-                    angle: angle,
-                    child: Transform.scale(
-                      scale: scale,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          card,
-                          if (check > 0)
-                            Transform.scale(
-                              scale: check,
-                              child: Container(
-                                key: const Key('spotlight-done-check'),
-                                width: 96 * s,
-                                height: 96 * s,
-                                decoration: const BoxDecoration(
-                                  color: TaskStyle.done,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                        color: Color(0x552E7D32),
-                                        blurRadius: 24,
-                                        offset: Offset(0, 8)),
-                                  ],
-                                ),
-                                child: Icon(Icons.check_rounded,
-                                    color: Colors.white, size: 60 * s),
+                child: Transform.rotate(
+                  angle: angle,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        card,
+                        if (check > 0)
+                          Transform.scale(
+                            scale: check,
+                            child: Container(
+                              key: const Key('spotlight-done-check'),
+                              width: 96 * s,
+                              height: 96 * s,
+                              decoration: const BoxDecoration(
+                                color: TaskStyle.done,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: Color(0x552E7D32),
+                                      blurRadius: 24,
+                                      offset: Offset(0, 8)),
+                                ],
                               ),
+                              child: Icon(Icons.check_rounded, color: Colors.white, size: 60 * s),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -616,7 +610,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             Opacity(
               opacity: lowerOpacity.clamp(0.0, 1.0),
               child: Transform.translate(
-                offset: Offset(0, 24 * (1 - lowerOpacity)),
+                offset: Offset(0, _leaving ? 24 * (1 - lowerOpacity) : 0),
                 child: IgnorePointer(ignoring: _leaving, child: lower),
               ),
             ),
@@ -761,8 +755,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   }
 
   /// Every update of [task], newest first, as a timeline that scrolls inside
-  /// the card (round 2: "כל העדכונים, לא רק האחרון"). They come in one after
-  /// the other with the card; a new one (just sent) lands with a highlight.
+  /// the card (round 2: "כל העדכונים, לא רק האחרון"). A new one (just sent)
+  /// flies up into place with a highlight.
   Widget _log(TeamTask task, double s, double maxHeight) {
     final fresh = [
       for (final entry in task.updates)
@@ -782,17 +776,15 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           last: task.updates.isEmpty,
         ),
       for (var i = 0; i < task.updates.length; i++)
-        _staggered(
-          i,
-          _logRow(
-            key: Key('spotlight-log-${task.updates[i].id}'),
-            text: task.updates[i].text,
-            stamp: '${task.updates[i].byName ?? unknownMemberLabel} · ${logStamp(task.updates[i].at)}',
-            s: s,
-            fresh: fresh.contains(task.updates[i].id),
-            first: i == 0 && echo == null,
-            last: i == task.updates.length - 1,
-          ),
+        _logRow(
+          key: Key('spotlight-log-${task.updates[i].id}'),
+          text: task.updates[i].text,
+          stamp:
+              '${task.updates[i].byName ?? unknownMemberLabel} · ${logStamp(task.updates[i].at)}',
+          s: s,
+          fresh: fresh.contains(task.updates[i].id),
+          first: i == 0 && echo == null,
+          last: i == task.updates.length - 1,
         ),
     ];
     return Container(
@@ -819,7 +811,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             Padding(
               padding: EdgeInsets.only(bottom: 8 * s),
               child: Text('אין עדכון עדיין',
-                  style: TextStyle(fontSize: SpotlightStyle.bodySize * s, color: TaskStyle.faintText)),
+                  style:
+                      TextStyle(fontSize: SpotlightStyle.bodySize * s, color: TaskStyle.faintText)),
             )
           else
             ConstrainedBox(
@@ -836,23 +829,6 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             ),
         ],
       ),
-    );
-  }
-
-  /// Entry [i] comes in after the card, one after the other.
-  Widget _staggered(int i, Widget child) {
-    final start = math.min(0.3 + i * 0.07, 0.75);
-    final interval = Interval(start, math.min(start + 0.3, 1));
-    return AnimatedBuilder(
-      animation: _enter,
-      builder: (context, child) {
-        final t = Curves.easeOutCubic.transform(interval.transform(_enter.value));
-        return Opacity(
-          opacity: t,
-          child: Transform.translate(offset: Offset(0, 16 * (1 - t)), child: child),
-        );
-      },
-      child: child,
     );
   }
 
@@ -923,9 +899,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         final t = _exitKind == _Exit.update
             ? Curves.easeOutBack.transform(const Interval(0, 0.35).transform(_exit.value))
             : 1.0;
-        final glow = _exitKind == _Exit.update
-            ? 1 - const Interval(0.3, 0.9).transform(_exit.value)
-            : 0.0;
+        final glow =
+            _exitKind == _Exit.update ? 1 - const Interval(0.3, 0.9).transform(_exit.value) : 0.0;
         return Transform.translate(
           offset: Offset(0, 90 * (1 - t)),
           child: Opacity(
@@ -967,7 +942,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           foregroundColor: foreground,
           disabledBackgroundColor: background.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          textStyle: TextStyle(fontSize: SpotlightStyle.buttonFont * s, fontWeight: FontWeight.w800),
+          textStyle:
+              TextStyle(fontSize: SpotlightStyle.buttonFont * s, fontWeight: FontWeight.w800),
         ),
         onPressed: _busy || _leaving ? null : onPressed,
         child: Row(
@@ -1226,8 +1202,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 key: const Key('spotlight-finish'),
                 style: FilledButton.styleFrom(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                  textStyle:
-                      TextStyle(fontSize: SpotlightStyle.buttonFont * s, fontWeight: FontWeight.w800),
+                  textStyle: TextStyle(
+                      fontSize: SpotlightStyle.buttonFont * s, fontWeight: FontWeight.w800),
                 ),
                 onPressed: () {
                   Logger.action('tap:spotlightFinish');
@@ -1291,8 +1267,8 @@ class _MorphStatusChip extends StatelessWidget {
       ),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
-        transitionBuilder: (child, animation) =>
-            ScaleTransition(scale: animation, child: FadeTransition(opacity: animation, child: child)),
+        transitionBuilder: (child, animation) => ScaleTransition(
+            scale: animation, child: FadeTransition(opacity: animation, child: child)),
         child: Text(
           status.hebrewLabel,
           key: ValueKey(status),

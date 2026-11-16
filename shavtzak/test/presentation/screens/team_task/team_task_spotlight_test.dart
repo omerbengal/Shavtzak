@@ -62,7 +62,7 @@ void main() {
   testWidgets('goes through the open tasks, the quietest first', (tester) async {
     await open(tester);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
-    expect(find.text('1 מתוך 3'), findsOneWidget);
+    expect(find.text('1/3'), findsOneWidget);
     expect(
         find.descendant(
             of: find.byKey(const Key('spotlight-quiet-c')), matching: find.text('אין עדכון עדיין')),
@@ -81,11 +81,11 @@ void main() {
     await tester.tap(find.byKey(const Key('spotlight-done')));
     await tester.pumpAndSettle();
     expect(harness.repository.calls, ['status:c:done']);
-    expect(find.text('2 מתוך 3'), findsOneWidget);
+    expect(find.text('2/3'), findsOneWidget);
     await tester.tap(find.byKey(const Key('spotlight-undo')));
     await tester.pumpAndSettle();
     expect(harness.repository.calls, ['status:c:done', 'status:c:open']);
-    expect(find.text('1 מתוך 3'), findsOneWidget);
+    expect(find.text('1/3'), findsOneWidget);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
   });
 
@@ -143,7 +143,7 @@ void main() {
     await tester.longPress(find.byKey(const Key('team-task-group-topic:p1')));
     await tester.pumpAndSettle();
     expect(find.textContaining('זרקור · '), findsOneWidget);
-    expect(find.text('1 מתוך 2'), findsOneWidget);
+    expect(find.text('1/2'), findsOneWidget);
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
   });
   testWidgets('a card shows every update of the task, newest first', (tester) async {
@@ -176,7 +176,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('spotlight-card-c')), findsNothing);
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
-    expect(find.text('2 מתוך 3'), findsOneWidget);
+    expect(find.text('2/3'), findsOneWidget);
   });
 
   testWidgets('"סיימתי" throws confetti and shows a check; it is gone once settled',
