@@ -107,7 +107,19 @@ abstract final class SpotlightStyle {
 
   /// A sent update flies from the text field up to its place at the top of
   /// the log (Omer, msg 3969: "ממש יגיע משורת הטקסט למטה - ישר למעלה").
-  static const Duration flight = Duration(milliseconds: 520);
+  /// On its way it jumps toward the viewer: it grows to [flightScale] by
+  /// [flightPeak] of the time, with a shadow that spreads as if it left the
+  /// screen, then slams back down to its own size on its row (Omer, msg 4043:
+  /// "יקפוץ ויתקרב למסך ... ינחת במקום שלו ב'בום!'").
+  static const Duration flight = Duration(milliseconds: 640);
+  static const double flightPeak = 0.5;
+  static const double flightScale = 1.32;
+
+  /// The "בום" after it lands: the row squashes and springs back, the
+  /// updates under it shake and a puff of dust bursts from its bottom corners.
+  static const Duration impact = Duration(milliseconds: 440);
+  static const double shakeOffset = 5;
+  static const int dustPieces = 22;
 
   /// After it lands: it glows a moment, then the card goes.
   static const Duration update = Duration(milliseconds: 760);
@@ -185,8 +197,16 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       AnimationController(vsync: this, duration: SpotlightStyle.logIn);
   late final AnimationController _flight =
       AnimationController(vsync: this, duration: SpotlightStyle.flight);
+  late final AnimationController _impact =
+      AnimationController(vsync: this, duration: SpotlightStyle.impact);
   late final Listenable _motion = Listenable.merge([_enter, _exit, _flight]);
+  late final Listenable _landingMotion = Listenable.merge([_exit, _impact]);
   List<_ConfettiPiece> _pieces = const [];
+
+  /// The dust of the last landing and where it landed (the row's box in the
+  /// body's coordinates). Empty when nothing has landed.
+  List<_DustPiece> _dust = const [];
+  Rect? _dustAt;
   final math.Random _random = math.Random();
 
   final TextEditingController _update = TextEditingController();
@@ -211,6 +231,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     _logIn.dispose();
     _exit.dispose();
     _flight.dispose();
+    _impact.dispose();
     _logScroll.dispose();
     _cardPicture.dispose();
     _confetti.dispose();
@@ -235,10 +256,13 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       _landed = false;
       _exitKind = _Exit.none;
       _update.clear();
+      _dust = const [];
+      _dustAt = null;
     });
     _cardPicture.allowSnapshotting = false;
     _exit.value = 0;
     _flight.value = 0;
+    _impact.value = 0;
     _enter.forward(from: 0);
     _logIn.forward(from: 0);
     if (_finished && _tally.skipped.isEmpty && _total > 0) _celebrate();
@@ -356,31 +380,41 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     if (_logScroll.hasClients && _logScroll.offset > 0) _logScroll.jumpTo(0);
     // It lands when the flight ends, even while the server still holds the
     // save; the card moves on only once the save is confirmed.
+    // The card waits for the "בום" too (shake and dust), not only the flight.
     final flown = (from == null
             ? Future<void>.value()
             : _flight.forward(from: 0).orCancel.catchError((_) {}))
-        .then((_) {
+        .then<void>((_) async {
       if (!mounted || _exitKind != _Exit.update || _echo != text) return;
+      final landedAt = from == null ? null : _landingRect();
       setState(() {
         _landed = true;
         _flightFrom = null;
+        _dustAt = landedAt;
+        _dust = landedAt == null ? const [] : _throwDust();
       });
+      if (landedAt == null) return;
+      HapticFeedback.mediumImpact();
+      await _impact.forward(from: 0).orCancel.catchError((_) {});
     });
     final result = await _await(completion);
     if (!mounted) return;
     if (!result.isSuccess) {
       // Back to the field with the text, as if it never left.
       _flight.value = 0;
+      _impact.value = 0;
       setState(() {
         _echo = null;
         _exitKind = _Exit.none;
         _flightFrom = null;
         _landed = false;
+        _dust = const [];
+        _dustAt = null;
         _update.text = text;
       });
       return _failed(result);
     }
-    HapticFeedback.lightImpact();
+    // No buzz here: the landing's own "בום" buzz is the one felt.
     await flown;
     if (!mounted || _exitKind != _Exit.update) return;
     setState(() => _tally = _tally.update(task.id));
@@ -517,7 +551,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               ],
             ),
             if (_flightFrom != null)
-              Positioned.fill(child: IgnorePointer(child: _flightLayer(s))),
+              Positioned.fill(child: IgnorePointer(child: RepaintBoundary(child: _flightLayer(s)))),
+            Positioned.fill(child: _dustLayer()),
             Positioned.fill(child: _confettiLayer()),
             // On the web the emoji come from a fallback font downloaded the
             // first time one is laid out: lay them all out, unseen, when the
@@ -580,6 +615,57 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// The landed row's box in the body's coordinates, or null when it is not
+  /// laid out.
+  Rect? _landingRect() {
+    final body = _bodyKey.currentContext?.findRenderObject();
+    final target = _landingKey.currentContext?.findRenderObject();
+    if (body is! RenderBox || target is! RenderBox || !target.attached || !target.hasSize) {
+      return null;
+    }
+    return (target.localToGlobal(Offset.zero) & target.size)
+        .shift(-body.localToGlobal(Offset.zero));
+  }
+
+  /// A puff of dust: half from each bottom corner of the landed row, thrown
+  /// out sideways and a little up.
+  List<_DustPiece> _throwDust() {
+    const colors = [Color(0xFFB9AE9C), Color(0xFFCFC6B6), Color(0xFF9E9A93), Color(0xFFDDD5C7)];
+    return [
+      for (var i = 0; i < SpotlightStyle.dustPieces; i++)
+        _DustPiece(
+          left: i.isEven,
+          // Mostly sideways, between flat and 35 degrees up.
+          angle: _random.nextDouble() * 0.6,
+          speed: 90 + _random.nextDouble() * 170,
+          size: 2.5 + _random.nextDouble() * 4,
+          color: colors[_random.nextInt(colors.length)],
+          rise: 10 + _random.nextDouble() * 22,
+        ),
+    ];
+  }
+
+  /// The dust of the landing: one painter over the screen, only while the
+  /// "בום" plays.
+  Widget _dustLayer() {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _impact,
+        builder: (context, _) {
+          final at = _dustAt;
+          if (!_impact.isAnimating || _dust.isEmpty || at == null) return const SizedBox.shrink();
+          return RepaintBoundary(
+            child: CustomPaint(
+              key: const Key('spotlight-update-dust'),
+              painter: _DustPainter(_dust, at, _impact.value),
+              size: Size.infinite,
+            ),
+          );
+        },
       ),
     );
   }
@@ -898,6 +984,13 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     ];
     final echo = fresh.isEmpty ? _echo : null;
     final count = task.updates.length + (echo == null ? 0 : 1);
+    // The rows down to the one a sent update lands on stay still; the ones
+    // under it shake when it lands, as one layer.
+    final still = echo != null
+        ? 1
+        : fresh.isEmpty
+            ? 0
+            : task.updates.indexWhere((u) => u.id == fresh.first) + 1;
     final rows = <Widget>[
       if (echo != null)
         _logRow(
@@ -963,13 +1056,45 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                   controller: _logScroll,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: rows,
+                    children: [
+                      ...rows.take(still),
+                      _shaken(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: rows.skip(still).toList(),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
         ],
       ),
+    );
+  }
+
+  /// The updates under a landed one jolt down and shake side to side, the
+  /// shake dying out over the "בום" ([SpotlightStyle.impact]).
+  Widget _shaken(Widget child) {
+    return AnimatedBuilder(
+      key: const ValueKey('spotlight-log-shaken'),
+      animation: _impact,
+      builder: (context, child) {
+        final t = _impact.value;
+        if (t == 0 || t == 1) return child!;
+        final decay = math.pow(1 - t, 2).toDouble();
+        const a = SpotlightStyle.shakeOffset;
+        return Transform.translate(
+          key: const Key('spotlight-log-shake'),
+          offset: Offset(
+            a * decay * math.sin(t * math.pi * 7),
+            a * 0.8 * decay * math.sin(t * math.pi * 5).abs(),
+          ),
+          child: child,
+        );
+      },
+      child: child,
     );
   }
 
@@ -1056,11 +1181,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     // lands on this row's box, [_flightLayer]); once there it glows a moment.
     return AnimatedBuilder(
       key: key,
-      animation: _exit,
+      animation: _landingMotion,
       builder: (context, child) {
         final sent = _exitKind == _Exit.update;
         final glow = sent && _landed ? 1 - const Interval(0.1, 0.8).transform(_exit.value) : 0.0;
-        return Opacity(
+        final box = Opacity(
           opacity: sent && !_landed ? 0 : 1,
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -1072,9 +1197,27 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             child: child,
           ),
         );
+        // "בום": squashed flat by the landing, then a spring back.
+        final squash = landing && sent && _landed ? _squash(_impact.value) : 0.0;
+        if (squash == 0) return box;
+        return Transform(
+          key: const Key('spotlight-log-squash'),
+          alignment: Alignment.bottomCenter,
+          transform: Matrix4.diagonal3Values(1 + 0.05 * squash, 1 - 0.1 * squash, 1),
+          child: box,
+        );
       },
       child: landing ? KeyedSubtree(key: _landingKey, child: row) : row,
     );
+  }
+
+  /// How squashed the landed row is at [t] of the "בום": flat at once, then
+  /// back with a small overshoot (negative = a little taller), done by 60%.
+  static double _squash(double t) {
+    if (t <= 0 || t >= 0.6) return 0;
+    if (t < 0.08) return Curves.easeOut.transform(t / 0.08);
+    final back = (t - 0.08) / 0.52;
+    return math.cos(back * math.pi * 1.5) * (1 - back);
   }
 
   /// The sent update on its way from the field (bottom) to its row at the
@@ -1100,7 +1243,14 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         final to = (target.localToGlobal(Offset.zero) & target.size).shift(-origin);
         final t = Curves.easeInOutCubic.transform(_flight.value);
         final rect = Rect.lerp(from.shift(-origin), to, t)!;
-        final lift = math.sin(math.pi * t);
+        // Up toward the viewer, then slammed down: it eases out to its
+        // biggest by [SpotlightStyle.flightPeak], then falls back faster and
+        // faster onto its row.
+        final p = _flight.value;
+        const peak = SpotlightStyle.flightPeak;
+        final lift = p < peak
+            ? Curves.easeOutCubic.transform(p / peak)
+            : 1 - Curves.easeInCubic.transform((p - peak) / (1 - peak));
         final padding = EdgeInsetsDirectional.lerp(
           const EdgeInsetsDirectional.fromSTEB(12, 14, 12, 14),
           EdgeInsetsDirectional.fromSTEB(28 * s, 4 * s, 0, 10 * s),
@@ -1112,7 +1262,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               rect: rect,
               child: RepaintBoundary(
                 child: Transform.scale(
-                  scale: 1 + 0.04 * lift,
+                  scale: 1 + (SpotlightStyle.flightScale - 1) * lift,
                   child: Container(
                     key: const Key('spotlight-update-flight'),
                     clipBehavior: Clip.antiAlias,
@@ -1123,10 +1273,12 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                       ),
                       borderRadius: BorderRadius.circular(14 - 4 * t),
                       boxShadow: [
+                        // A fixed blur (no blur animation): only its strength
+                        // and its drop grow as the box comes off the screen.
                         BoxShadow(
-                          color: Color.fromRGBO(10, 30, 60, 0.22 * lift),
-                          blurRadius: 22 * lift,
-                          offset: Offset(0, 8 * lift),
+                          color: Color.fromRGBO(10, 30, 60, 0.28 * lift),
+                          blurRadius: 24,
+                          offset: Offset(0, 4 + 18 * lift),
                         ),
                       ],
                     ),
@@ -1673,4 +1825,59 @@ class _RenderShadowRoom extends RenderProxyBox {
       hitTest: (result, transformed) => child.hitTest(result, position: transformed),
     );
   }
+}
+
+/// One grain of the landing's dust: from the [left] or right bottom corner,
+/// thrown outward at [angle] (radians above flat) with [speed] (px/s).
+class _DustPiece {
+  const _DustPiece({
+    required this.left,
+    required this.angle,
+    required this.speed,
+    required this.size,
+    required this.color,
+    required this.rise,
+  });
+
+  final bool left;
+  final double angle;
+  final double speed;
+  final double size;
+  final Color color;
+
+  /// How far it floats up as it settles (px).
+  final double rise;
+}
+
+/// The puff of dust from the landed row's bottom corners ([at]): the grains
+/// slow down in the air, grow a little and fade out.
+class _DustPainter extends CustomPainter {
+  _DustPainter(this.pieces, this.at, this.t);
+
+  final List<_DustPiece> pieces;
+  final Rect at;
+  final double t;
+
+  static const double _seconds = 0.44;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final time = t * _seconds;
+    final drag = (1 - math.exp(-time * 7)) / 7;
+    final fade = 1 - Curves.easeIn.transform(t);
+    final paint = Paint();
+    for (final piece in pieces) {
+      final side = piece.left ? -1.0 : 1.0;
+      final corner = piece.left ? at.bottomLeft : at.bottomRight;
+      final travel = piece.speed * drag;
+      final position = corner +
+          Offset(side * (6 + math.cos(piece.angle) * travel),
+              -math.sin(piece.angle) * travel - piece.rise * t);
+      paint.color = piece.color.withValues(alpha: 0.85 * fade);
+      canvas.drawCircle(position, piece.size * (0.7 + 0.6 * t), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DustPainter old) => old.t != t || old.pieces != pieces || old.at != at;
 }

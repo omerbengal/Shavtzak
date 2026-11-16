@@ -257,16 +257,33 @@ void main() {
             matching: find.byType(Opacity))
         .first);
     expect(hidden.opacity, 0);
+    // Near the top of its jump it comes toward the viewer: well over its size.
+    final jump = tester.widget<Transform>(
+        find.ancestor(of: flight, matching: find.byType(Transform)).first);
+    expect(jump.transform.getMaxScaleOnAxis(), greaterThan(1.25));
     // Landed: the box is gone, the row is in place, the card still waits.
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 420));
     expect(flight, findsNothing);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
     expect(
         find.descendant(
             of: find.byKey(const Key('spotlight-updates-c')), matching: find.text('דיברתי עם הספק')),
         findsOneWidget);
+    // "בום": the row squashes, the log under it shakes, dust flies.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('spotlight-log-squash')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-log-shake')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-update-dust')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
+    // All settled and cleared before the card moves on.
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('spotlight-log-squash')), findsNothing);
+    expect(find.byKey(const Key('spotlight-log-shake')), findsNothing);
+    expect(find.byKey(const Key('spotlight-update-dust')), findsNothing);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-update-dust')), findsNothing);
   });
 
   testWidgets(
@@ -306,9 +323,16 @@ void main() {
             matching: find.byType(Opacity))
         .first);
     expect(hidden.opacity, 0);
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 460));
     // Landed, but the card stays until the save is confirmed.
     expect(flight, findsNothing);
+    expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
+    // The "בום" plays out while the server still holds the save.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('spotlight-update-dust')), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byKey(const Key('spotlight-update-dust')), findsNothing);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
     server.complete();
     harness.repository.gate = null;
@@ -345,8 +369,10 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('spotlight-send')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pump(const Duration(milliseconds: 800));
+    // Flight, "בום" and the card's way out, frame by frame.
+    for (var i = 0; i < 24; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     expect(find.byKey(const Key('spotlight-summary')), findsOneWidget);
     expect(find.byKey(const Key('spotlight-confetti')), findsOneWidget);
     await tester.pumpAndSettle();
