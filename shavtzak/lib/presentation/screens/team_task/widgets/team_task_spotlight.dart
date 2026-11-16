@@ -15,7 +15,7 @@ import '../../task/task_style.dart';
 import 'team_task_actions.dart';
 import 'team_task_style.dart';
 
-/// "זרקור" (Spotlight, Omer 16/11/2026): a quick pass over the viewer's tasks
+/// "בליץ" (Spotlight, Omer 16/11/2026): a quick pass over the viewer's tasks
 /// in "המשימות שלי", one card at a time, the quietest first
 /// ([spotlightQueue]). Each card shows where the task belongs, how long it
 /// has been quiet and its whole update log, with four big actions: a short
@@ -49,6 +49,10 @@ Future<Set<String>> showTeamTaskSpotlight(
   );
   return touched ?? const {};
 }
+
+/// Every emoji the screen shows (the chips and the summary), laid out
+/// offstage on open so the web's emoji font is fetched before it is needed.
+const String _emojiWarmup = '👍⏳🧱🏁🎉👏';
 
 /// The short updates one tap away (the "עדכון קצר" chips of the design).
 const List<String> spotlightQuickUpdates = [
@@ -373,7 +377,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
-    final label = widget.title == null ? 'זרקור' : 'זרקור · ${widget.title}';
+    final label = widget.title == null ? 'בליץ' : 'בליץ · ${widget.title}';
     final s = _scale(context);
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -381,12 +385,12 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         key: const Key('spotlight-screen'),
         backgroundColor: const Color(0xFFF4F6FA),
         appBar: AppBar(
+          // The app's own header (blue, white title and icon), as on every
+          // other screen: the light bar left the theme's white title unreadable.
           automaticallyImplyLeading: false,
-          backgroundColor: const Color(0xFFF4F6FA),
-          surfaceTintColor: Colors.transparent,
           leading: IconButton(
             key: const Key('spotlight-close'),
-            tooltip: 'יציאה מהזרקור',
+            tooltip: 'יציאה מהבליץ',
             icon: const Icon(Icons.close),
             onPressed: _leave,
           ),
@@ -423,6 +427,10 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               ],
             ),
             Positioned.fill(child: _confettiLayer()),
+            // On the web the emoji come from a fallback font downloaded the
+            // first time one is laid out: lay them all out, unseen, when the
+            // screen opens, so the chips and the summary do not stall on it.
+            const Offstage(child: Text(_emojiWarmup)),
           ],
         ),
       ),
@@ -540,8 +548,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   }
 
   Widget _page(TeamTask task, double s, double logHeight) {
-    final card = _card(task, s, logHeight);
-    final lower = _composing ? _composer(task, s) : _actions(task, s);
+    // Their own layers: the card's move / fade / turn only composites the
+    // cached picture instead of repainting the card (its blurred shadow, the
+    // timeline) on every frame.
+    final card = RepaintBoundary(child: _card(task, s, logHeight));
+    final lower = RepaintBoundary(child: _composing ? _composer(task, s) : _actions(task, s));
     return AnimatedBuilder(
       animation: _motion,
       builder: (context, _) {

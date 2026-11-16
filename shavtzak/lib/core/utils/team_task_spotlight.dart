@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../domain/entities/team_task.dart';
 import 'israel_calendar.dart';
 
-/// Pure rules of "זרקור" (Spotlight), the quick pass over the viewer's tasks
+/// Pure rules of "בליץ" (Spotlight), the quick pass over the viewer's tasks
 /// in "המשימות שלי": one task at a time, the quietest first, with quick
 /// actions. Most tasks have no deadline (production, 16/11/2026: 68 of 76
 /// open ones), so the order comes from the update log, never the deadline.

@@ -51,12 +51,12 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// while the screen is open, across both tabs.
   final Set<String> _collapsed = {};
 
-  /// The rows a "זרקור" pass just changed: they flash green for a moment on
+  /// The rows a "בליץ" pass just changed: they flash green for a moment on
   /// the way back to the list; [_flashRound] restarts the flash.
   Set<String> _flash = const {};
   int _flashRound = 0;
 
-  /// "זרקור" over [rows] (their tasks still to be done, the quietest
+  /// "בליץ" over [rows] (their tasks still to be done, the quietest
   /// first); [title] = what the pass covers (a long-pressed card).
   Future<void> _spotlight(List<TeamTask> rows, {String? title}) async {
     final queue = spotlightQueue(rows);
@@ -360,11 +360,11 @@ class _GroupedList extends StatefulWidget {
     this.onSpotlightGroup,
   });
 
-  /// The rows a "זרקור" pass just changed, flashing green.
+  /// The rows a "בליץ" pass just changed, flashing green.
   final Set<String> flash;
   final int flashRound;
 
-  /// "המשימות שלי": a long press on a card's header opens "זרקור" over
+  /// "המשימות שלי": a long press on a card's header opens "בליץ" over
   /// that card's tasks only.
   final ValueChanged<TeamTaskGroup>? onSpotlightGroup;
 
@@ -565,7 +565,7 @@ class _GroupedListState extends State<_GroupedList> {
   }
 
   /// [row] with a green flash that fades when [id] was just changed in a
-  /// "זרקור" pass.
+  /// "בליץ" pass.
   Widget _flashed(String id, Widget row) {
     if (!widget.flash.contains(id)) return row;
     return TweenAnimationBuilder<double>(
@@ -592,7 +592,7 @@ class _GroupedListState extends State<_GroupedList> {
 }
 
 /// Above the list of "המשימות שלי": how many tasks are still to be done and
-/// the "זרקור" button that goes through them one by one.
+/// the "בליץ" button that goes through them one by one.
 class _SpotlightBar extends StatelessWidget {
   const _SpotlightBar({required this.count, required this.onStart});
 
@@ -631,7 +631,7 @@ class _SpotlightBar extends StatelessWidget {
                   textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 icon: const Icon(Icons.bolt, size: 18),
-                label: const Text('זרקור'),
+                label: const Text('בליץ'),
               ),
             ],
           ),

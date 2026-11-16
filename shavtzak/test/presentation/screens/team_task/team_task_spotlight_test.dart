@@ -144,7 +144,7 @@ void main() {
     await pumpTeamTasks(tester, user: dana, board: board([recent, quiet, never]));
     await tester.longPress(find.byKey(const Key('team-task-group-topic:p1')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('זרקור · '), findsOneWidget);
+    expect(find.textContaining('בליץ · '), findsOneWidget);
     expect(find.text('1/2'), findsOneWidget);
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
   });
