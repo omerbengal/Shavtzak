@@ -81,6 +81,14 @@ abstract final class SpotlightStyle {
   static const double logMax = 340;
 
   static const Duration enter = Duration(milliseconds: 300);
+
+  /// The card's updates come in one after the other (Omer, msg 3913):
+  /// [logStepMs] apart, each over [logEntryMs], at most [logMaxSteps] steps,
+  /// so the whole effect stays under half a second however long the log.
+  static const int logStepMs = 50;
+  static const int logEntryMs = 250;
+  static const int logMaxSteps = 4;
+  static const Duration logIn = Duration(milliseconds: logStepMs * logMaxSteps + logEntryMs);
   static const Duration fling = Duration(milliseconds: 560);
   static const Duration done = Duration(milliseconds: 520);
 
@@ -132,6 +140,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   late final AnimationController _exit = AnimationController(vsync: this);
   late final AnimationController _confetti =
       AnimationController(vsync: this, duration: SpotlightStyle.confetti);
+  late final AnimationController _logIn =
+      AnimationController(vsync: this, duration: SpotlightStyle.logIn);
   late final Listenable _motion = Listenable.merge([_enter, _exit]);
   List<_ConfettiPiece> _pieces = const [];
   final math.Random _random = math.Random();
@@ -149,11 +159,13 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   void initState() {
     super.initState();
     _enter.forward();
+    _logIn.forward();
   }
 
   @override
   void dispose() {
     _enter.dispose();
+    _logIn.dispose();
     _exit.dispose();
     _confetti.dispose();
     _update.dispose();
@@ -178,6 +190,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     });
     _exit.value = 0;
     _enter.forward(from: 0);
+    _logIn.forward(from: 0);
     if (_finished && _tally.skipped.isEmpty && _total > 0) _celebrate();
   }
 
@@ -347,6 +360,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           });
           _exit.value = 0;
           _enter.forward(from: 0);
+          _logIn.forward(from: 0);
         },
       ),
     ));
@@ -776,15 +790,18 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           last: task.updates.isEmpty,
         ),
       for (var i = 0; i < task.updates.length; i++)
-        _logRow(
-          key: Key('spotlight-log-${task.updates[i].id}'),
-          text: task.updates[i].text,
-          stamp:
-              '${task.updates[i].byName ?? unknownMemberLabel} · ${logStamp(task.updates[i].at)}',
-          s: s,
-          fresh: fresh.contains(task.updates[i].id),
-          first: i == 0 && echo == null,
-          last: i == task.updates.length - 1,
+        _staggered(
+          i,
+          _logRow(
+            key: Key('spotlight-log-${task.updates[i].id}'),
+            text: task.updates[i].text,
+            stamp:
+                '${task.updates[i].byName ?? unknownMemberLabel} · ${logStamp(task.updates[i].at)}',
+            s: s,
+            fresh: fresh.contains(task.updates[i].id),
+            first: i == 0 && echo == null,
+            last: i == task.updates.length - 1,
+          ),
         ),
     ];
     return Container(
@@ -829,6 +846,24 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             ),
         ],
       ),
+    );
+  }
+
+  /// Entry [i] slides up and fades in after the one above it.
+  Widget _staggered(int i, Widget child) {
+    const total = SpotlightStyle.logStepMs * SpotlightStyle.logMaxSteps + SpotlightStyle.logEntryMs;
+    final begin = math.min(i, SpotlightStyle.logMaxSteps) * SpotlightStyle.logStepMs / total;
+    final interval = Interval(begin, begin + SpotlightStyle.logEntryMs / total);
+    return AnimatedBuilder(
+      animation: _logIn,
+      builder: (context, child) {
+        final t = Curves.easeOutCubic.transform(interval.transform(_logIn.value));
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(offset: Offset(0, 14 * (1 - t)), child: child),
+        );
+      },
+      child: child,
     );
   }
 
@@ -1185,7 +1220,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 SizedBox(width: 10 * s),
                 _stat('עודכנו', updatedOnly, TaskStyle.mine, TaskStyle.currentLight, s, 1),
                 SizedBox(width: 10 * s),
-                _stat('נדחו', _tally.skipped.length, TaskStyle.neutralText, TaskStyle.chip, s, 2),
+                _stat('לפעם אחרת', _tally.skipped.length, TaskStyle.neutralText, TaskStyle.chip, s,
+                    2),
               ],
             ),
             SizedBox(height: 14 * s),

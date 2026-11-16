@@ -119,7 +119,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('spotlight-summary')), findsOneWidget);
     expect(find.text('עברת על 3 משימות'), findsOneWidget);
-    expect(find.text('אחת נסגרה · אחת עודכנה · אחת נדחתה'), findsOneWidget);
+    expect(find.text('אחת נסגרה · אחת עודכנה · אחת לפעם אחרת'), findsOneWidget);
+    expect(find.text('לפעם אחרת'), findsOneWidget);
+    expect(find.text('נדחו'), findsNothing);
     await tester.tap(find.byKey(const Key('spotlight-finish')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 800));
@@ -162,6 +164,27 @@ void main() {
     final top = tester.getTopLeft(find.byKey(const Key('spotlight-log-9'))).dy;
     final bottom = tester.getTopLeft(find.byKey(const Key('spotlight-log-7'))).dy;
     expect(top, lessThan(bottom));
+  });
+
+  testWidgets('the updates come in one after the other, all in under half a second',
+      (tester) async {
+    final busy = task('e', 'הרבה עדכונים', updates: [
+      for (var i = 0; i < 8; i++) entry('u$i', DateTime.utc(2026, 11, 10 - i)),
+    ]);
+    await pumpTeamTasks(tester, user: dana, board: board([busy]));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    double opacityOf(String id) => tester
+        .widget<Opacity>(find
+            .ancestor(of: find.byKey(Key('spotlight-log-$id')), matching: find.byType(Opacity))
+            .first)
+        .opacity;
+    expect(opacityOf('u0'), greaterThan(opacityOf('u3')));
+    await tester.pump(const Duration(milliseconds: 400));
+    for (final id in ['u0', 'u3', 'u7']) {
+      expect(opacityOf(id), 1.0);
+    }
   });
 
   testWidgets('"לא עכשיו" flings the card off to the side before the next comes in',

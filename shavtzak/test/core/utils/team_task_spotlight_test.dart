@@ -54,9 +54,9 @@ void main() {
   test('the tally counts an updated-then-closed task once, as closed', () {
     var tally = const SpotlightTally();
     tally = tally.update('a').close('a').update('b').skip('c').close('d');
-    expect(tally.summary, '2 נסגרו · אחת עודכנה · אחת נדחתה');
+    expect(tally.summary, '2 נסגרו · אחת עודכנה · אחת לפעם אחרת');
     expect(tally.touched, {'a', 'b', 'd'});
-    expect(tally.reopen('d').summary, 'אחת נסגרה · אחת עודכנה · אחת נדחתה');
+    expect(tally.reopen('d').summary, 'אחת נסגרה · אחת עודכנה · אחת לפעם אחרת');
     expect(const SpotlightTally().summary, 'לא שינית כלום');
   });
 }

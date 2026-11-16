@@ -76,14 +76,14 @@ class SpotlightTally extends Equatable {
   /// Every task the pass changed: the list flashes them on the way back.
   Set<String> get touched => {...closed, ...updated};
 
-  /// "2 נסגרו · 2 עודכנו · 1 נדחתה": an updated task that was then closed
+  /// "2 נסגרו · 2 עודכנו · אחת לפעם אחרת": an updated task that was then closed
   /// counts once, as closed. Empty parts are left out.
   String get summary {
     final updatedOnly = updated.difference(closed).length;
     final parts = [
       if (closed.isNotEmpty) closed.length == 1 ? 'אחת נסגרה' : '${closed.length} נסגרו',
       if (updatedOnly > 0) updatedOnly == 1 ? 'אחת עודכנה' : '$updatedOnly עודכנו',
-      if (skipped.isNotEmpty) skipped.length == 1 ? 'אחת נדחתה' : '${skipped.length} נדחו',
+      if (skipped.isNotEmpty) skipped.length == 1 ? 'אחת לפעם אחרת' : '${skipped.length} לפעם אחרת',
     ];
     return parts.isEmpty ? 'לא שינית כלום' : parts.join(' · ');
   }
