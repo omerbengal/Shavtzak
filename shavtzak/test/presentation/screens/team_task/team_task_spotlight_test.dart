@@ -62,7 +62,7 @@ void main() {
   testWidgets('goes through the open tasks, the quietest first', (tester) async {
     await open(tester);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
-    expect(find.text('1 מתוך 3'), findsOneWidget);
+    expect(find.text('1/3'), findsOneWidget);
     expect(
         find.descendant(
             of: find.byKey(const Key('spotlight-quiet-c')), matching: find.text('אין עדכון עדיין')),
@@ -81,11 +81,11 @@ void main() {
     await tester.tap(find.byKey(const Key('spotlight-done')));
     await tester.pumpAndSettle();
     expect(harness.repository.calls, ['status:c:done']);
-    expect(find.text('2 מתוך 3'), findsOneWidget);
+    expect(find.text('2/3'), findsOneWidget);
     await tester.tap(find.byKey(const Key('spotlight-undo')));
     await tester.pumpAndSettle();
     expect(harness.repository.calls, ['status:c:done', 'status:c:open']);
-    expect(find.text('1 מתוך 3'), findsOneWidget);
+    expect(find.text('1/3'), findsOneWidget);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
   });
 
@@ -119,7 +119,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('spotlight-summary')), findsOneWidget);
     expect(find.text('עברת על 3 משימות'), findsOneWidget);
-    expect(find.text('אחת נסגרה · אחת עודכנה · אחת נדחתה'), findsOneWidget);
+    expect(find.text('אחת נסגרה · אחת עודכנה · אחת לפעם אחרת'), findsOneWidget);
+    expect(find.text('לפעם אחרת'), findsOneWidget);
+    expect(find.text('נדחו'), findsNothing);
     await tester.tap(find.byKey(const Key('spotlight-finish')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 800));
@@ -143,7 +145,111 @@ void main() {
     await tester.longPress(find.byKey(const Key('team-task-group-topic:p1')));
     await tester.pumpAndSettle();
     expect(find.textContaining('זרקור · '), findsOneWidget);
-    expect(find.text('1 מתוך 2'), findsOneWidget);
+    expect(find.text('1/2'), findsOneWidget);
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+  });
+  testWidgets('a card shows every update of the task, newest first', (tester) async {
+    final busy = task('e', 'הרבה עדכונים', updates: [
+      entry('9', DateTime.utc(2026, 11, 2)),
+      entry('8', DateTime.utc(2026, 11, 1)),
+      entry('7', DateTime.utc(2026, 10, 30)),
+    ]);
+    await pumpTeamTasks(tester, user: dana, board: board([busy]));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pumpAndSettle();
+    expect(find.text('עדכונים (3)'), findsOneWidget);
+    for (final id in ['9', '8', '7']) {
+      expect(find.byKey(Key('spotlight-log-$id')), findsOneWidget);
+    }
+    final top = tester.getTopLeft(find.byKey(const Key('spotlight-log-9'))).dy;
+    final bottom = tester.getTopLeft(find.byKey(const Key('spotlight-log-7'))).dy;
+    expect(top, lessThan(bottom));
+  });
+
+  testWidgets('the updates come in one after the other, all in under half a second',
+      (tester) async {
+    final busy = task('e', 'הרבה עדכונים', updates: [
+      for (var i = 0; i < 8; i++) entry('u$i', DateTime.utc(2026, 11, 10 - i)),
+    ]);
+    await pumpTeamTasks(tester, user: dana, board: board([busy]));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    double opacityOf(String id) => tester
+        .widget<Opacity>(find
+            .ancestor(of: find.byKey(Key('spotlight-log-$id')), matching: find.byType(Opacity))
+            .first)
+        .opacity;
+    expect(opacityOf('u0'), greaterThan(opacityOf('u3')));
+    await tester.pump(const Duration(milliseconds: 400));
+    for (final id in ['u0', 'u3', 'u7']) {
+      expect(opacityOf(id), 1.0);
+    }
+  });
+
+  testWidgets('"לא עכשיו" flings the card off to the side before the next comes in',
+      (tester) async {
+    await open(tester);
+    final start = tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx;
+    await tester.tap(find.byKey(const Key('spotlight-skip')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
+    expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, lessThan(start - 100));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('spotlight-card-c')), findsNothing);
+    expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+    expect(find.text('2/3'), findsOneWidget);
+  });
+
+  testWidgets('"סיימתי" throws confetti and shows a check; it is gone once settled',
+      (tester) async {
+    await open(tester);
+    await tester.tap(find.byKey(const Key('spotlight-done')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.byKey(const Key('spotlight-confetti')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-done-check')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('spotlight-confetti')), findsNothing);
+    expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+  });
+
+  testWidgets('a sent update lands in the log before the card moves on', (tester) async {
+    await open(tester);
+    await tester.tap(find.byKey(const Key('spotlight-update')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('spotlight-update-field')), 'דיברתי עם הספק');
+    await tester.ensureVisible(find.byKey(const Key('spotlight-send')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('spotlight-send')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byKey(const Key('spotlight-updates-c')), matching: find.text('דיברתי עם הספק')),
+        findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+  });
+
+  testWidgets('the summary counts up, with confetti when nothing was left for later',
+      (tester) async {
+    await pumpTeamTasks(tester, user: dana, board: board([never]));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('spotlight-update')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('spotlight-chip-0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('spotlight-send')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1300));
+    expect(find.byKey(const Key('spotlight-summary')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-confetti')), findsOneWidget);
+    await tester.pumpAndSettle();
+    final updated = tester.widget<Text>(find.byKey(const Key('spotlight-stat-1')));
+    expect(updated.data, '1');
   });
 }
