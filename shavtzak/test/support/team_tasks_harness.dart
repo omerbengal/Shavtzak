@@ -37,6 +37,7 @@ Future<TeamTasksHarness> pumpTeamTasks(
   required TeamTaskBoard board,
   Size size = teamPhoneSize,
   DateTime Function()? clock,
+  String? openTaskId,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -62,7 +63,7 @@ Future<TeamTasksHarness> pumpTeamTasks(
       BlocProvider<TeamTaskBloc>.value(value: bloc),
       BlocProvider<UserSelectionBloc>.value(value: userBloc),
     ],
-    child: MaterialApp(home: const TeamTasksScreen()),
+    child: MaterialApp(home: TeamTasksScreen(openTaskId: openTaskId)),
   ));
   await tester.pump();
   final harness = TeamTasksHarness(repository, bloc);

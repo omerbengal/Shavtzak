@@ -17,10 +17,12 @@ import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
+import '../../../core/services/app_version_service.dart';
 import '../../../core/services/google_oauth_service.dart';
 import '../../../core/services/google_calendar_service.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
+import '../../widgets/push_prompt_dialog.dart';
 import '../../widgets/assignment_export_dialog.dart';
 import '../../widgets/shamap_export_dialog.dart';
 import '../team_task/team_tasks_place.dart';
@@ -80,6 +82,22 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
 
     _hasRequestedAdminCalendarStartupCheck = false;
     _hasAutoOpenedCalendarReconnectDialog = false;
+  }
+
+  /// The notifications popup (push_prompt_dialog.dart), after the passcode
+  /// one: never both at once.
+  void _schedulePushPrompt() {
+    final state = context.read<UserSelectionBloc>().state;
+    if (state is! UserAuthenticated || !state.user.hasPasscode) return;
+    final user = state.user;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      maybeShowPushPrompt(
+        context,
+        canReceive: canGetTeamTaskNotifications(user),
+        appVersion: AppVersionService.instance.cachedVersion,
+      );
+    });
   }
 
   void _checkAndShowPasscodeDialog(BuildContext context) {
@@ -213,6 +231,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     // Check and show passcode dialog if user doesn't have one
     _checkAndShowPasscodeDialog(context);
     _scheduleAdminCalendarStartupCheckIfNeeded();
+    _schedulePushPrompt();
 
     return Directionality(
       textDirection: TextDirection.rtl,

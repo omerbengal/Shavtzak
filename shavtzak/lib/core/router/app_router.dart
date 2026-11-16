@@ -767,6 +767,7 @@ class AppRouter {
       pageBuilder: (context, state) => NoTransitionPage(
         child: TeamTasksScreen(
           key: ValueKey('team_tasks_$env'),
+          openTaskId: state.uri.queryParameters['task'],
         ),
       ),
     );
