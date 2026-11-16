@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/team_repository.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../../core/utils/crud_action_result.dart';
 import 'user_selection_event.dart';
@@ -268,6 +269,11 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   ) async {
     try {
       await _stopTeamStream();
+      // While still signed in: the server stops sending notifications to
+      // this device (never holds the sign-out up for long).
+      await PushNotificationService.instance
+          .forgetDevice()
+          .timeout(const Duration(seconds: 3), onTimeout: () {});
       await _userSelectionRepository.clearUserSelection();
       UserCacheService().clearPasscodeDialogFlag();
       emit(const UserSignedOut());
