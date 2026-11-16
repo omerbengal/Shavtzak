@@ -94,12 +94,15 @@ abstract final class SpotlightStyle {
   static const int logEntryMs = 250;
   static const int logMaxSteps = 4;
   static const Duration logIn = Duration(milliseconds: logStepMs * logMaxSteps + logEntryMs);
-  /// "לא עכשיו": a wind-up to the right over the first [skipWindUp] of the
-  /// time (by [skipWindUpOffset] of the card's width), then the fling left.
-  /// Omer, msg 4024: the wind-up further right and a little longer.
-  static const Duration fling = Duration(milliseconds: 640);
-  static const double skipWindUp = 0.28;
-  static const double skipWindUpOffset = 0.14;
+  /// "לא עכשיו": a slow wind-up to the right over the first [skipWindUp] of
+  /// the time (by [skipWindUpOffset] of the card's width), a short hold at the
+  /// peak ([skipHold]), then the fling left.
+  /// Omer, msg 4038: the wind-up was still too quick; now 440ms to 28% of the
+  /// width (was ~180ms to 14%), an 80ms hold, then the ~480ms fling.
+  static const Duration fling = Duration(milliseconds: 1000);
+  static const double skipWindUp = 0.44;
+  static const double skipHold = 0.08;
+  static const double skipWindUpOffset = 0.28;
   static const Duration done = Duration(milliseconds: 520);
 
   /// A sent update flies from the text field up to its place at the top of
@@ -663,15 +666,19 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         double check = 0;
         switch (_exitKind) {
           case _Exit.skip:
-            // A small wind-up to the right, then flung off to the left.
+            // A slow wind-up to the right, a beat at the peak, then flung off
+            // to the left.
             const w = SpotlightStyle.skipWindUp, o = SpotlightStyle.skipWindUpOffset;
+            const f = SpotlightStyle.skipWindUp + SpotlightStyle.skipHold;
             if (e < w) {
               dx = o * Curves.easeOutCubic.transform(e / w);
+            } else if (e < f) {
+              dx = o;
             } else {
-              dx = o - (1.75 + o) * Curves.easeInCubic.transform((e - w) / (1 - w));
+              dx = o - (1.75 + o) * Curves.easeInCubic.transform((e - f) / (1 - f));
             }
             angle = dx * 0.22;
-            opacity *= 1 - const Interval(0.7, 1).transform(e);
+            opacity *= 1 - const Interval(0.8, 1).transform(e);
             lowerOpacity *= 1 - const Interval(0, 0.35).transform(e);
           case _Exit.done:
             check = Curves.easeOutBack.transform(const Interval(0, 0.45).transform(e));

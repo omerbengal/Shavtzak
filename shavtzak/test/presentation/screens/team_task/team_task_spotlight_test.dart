@@ -195,11 +195,16 @@ void main() {
     final start = tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx;
     await tester.tap(find.byKey(const Key('spotlight-skip')));
     await tester.pump();
-    // First a clear wind-up to the right (Omer, msg 4024)...
-    await tester.pump(const Duration(milliseconds: 170));
-    expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, greaterThan(start + 30));
+    // First a slow, wide wind-up to the right (Omer, msgs 4024 / 4038): still
+    // going at 200ms...
+    await tester.pump(const Duration(milliseconds: 200));
+    final mid = tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx;
+    expect(mid, greaterThan(start + 30));
+    // ...further right at the peak...
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, greaterThan(mid + 10));
     // ...then flung off to the left.
-    await tester.pump(const Duration(milliseconds: 390));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
     expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, lessThan(start - 100));
     await tester.pumpAndSettle();
