@@ -318,7 +318,25 @@
   <!-- iPhone: the keyboard opens on the first tap of a text field. -->
   <!-- The in-app refresh: download screen + clean reinstall of the newest build. -->
   <script src="app_refresh.js"></script>
-  <script src="flutter_bootstrap.js" async></script>
+  <!-- Web Push: subscribe / unsubscribe, and a notification tap while open. -->
+  <script src="push.js"></script>
+  <!-- Flutter reads the address once, on start: a notification tap that left
+       a task to open (push.js) moves the address first. At most 1 s. -->
+  <script>
+    (function startFlutter() {
+      let started = false;
+      const start = () => {
+        if (started) return;
+        started = true;
+        const script = document.createElement('script');
+        script.src = 'flutter_bootstrap.js';
+        script.async = true;
+        document.body.appendChild(script);
+      };
+      Promise.resolve(window.shavtzakPendingOpen).then(start, start);
+      setTimeout(start, 1000);
+    })();
+  </script>
 
   <script>
     // sw.js keeps the app on this device (see the comment at its top).

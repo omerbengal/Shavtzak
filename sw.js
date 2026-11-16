@@ -22,7 +22,7 @@
 // Without a manifest (a debug run, or the generator did not run) the worker
 // does nothing and every request goes to the network as if it were absent.
 
-const PRECACHE = {"build":"2303d5f5d4b4f662","engine":"371f77202a73e8dff57a8b3bff75bca55c090aee","files":{"app_refresh.js":"71d2ca3bcab2561144d1eb331d45d5e69d125d65c505f31ea7005329f29d842d","assets/AssetManifest.bin":"1deec53c9909feb1738788e2724e2ac4f171dad06c168767b50985b8cebb2edf","assets/AssetManifest.bin.json":"1b4357d35ef841fe59a3e24781365720aa930172f8911b17de771af353de9080","assets/FontManifest.json":"02388f3989ac2c6a29232afaa44a45f523e1bda5db2056b269deee4bc364593b","assets/assets/animations/download_failed.json":"0dae2268af487d7ba8510e0fc45ddde67713dfc35dbd91924c9ee9dd16dc9bfa","assets/assets/animations/salute_loading.json":"9f63a3f7e4690eb118d497214154ee8aa8e16c0402369be7d50755551e761407","assets/assets/fonts/Rubik-Bold.ttf":"efd2a024c9f5e5922dfef7731825f160c20a1942651b504335e3c736281ddf6a","assets/assets/fonts/Rubik-Medium.ttf":"681aab50f612b5035b9be47398c923b00c22590bcb9b74606383708ee832aa13","assets/assets/fonts/Rubik-Regular.ttf":"e8443dbe61cfea841c68ddf74f1a3bb75a69d95f4b441afa69edeb92fd921ee0","assets/assets/images/google_maps.png":"e928c17cbbf120cd16e67a5457c48f6d4f5764901eb7eaed0f1c28e9d238160a","assets/assets/images/waze.png":"7e73c66dcd256055bc778672179e46a1d9c0852be9475cea0de752d1c3f3ce26","assets/fonts/MaterialIcons-Regular.otf":"e3a6aedf277753a40836d25e8b0de4922ec2b8deef1c52117d23db759a2f5c70","assets/packages/cupertino_icons/assets/CupertinoIcons.ttf":"9d8d1c5ec8089b5396386bd145d98f128749144ed62bccd1d111464bdda59fd0","assets/packages/flutter_map/lib/assets/flutter_map_logo.png":"6051ae42fb505931a833e58f9209a9f96669a4d0e4b3f06f6d82cde12a0e0401","assets/shaders/ink_sparkle.frag":"2dca5ab93d4ec29e963f996f3916320ba60825e9537dfb149a68008c7a16b026","assets/shaders/stretch_effect.frag":"ab412f07a5b9b50b67a885b24dbe16929738ae28630407d6490c924caf0a3220","favicon.svg":"44eb446793436021dcfe3fd9012e1e6cfe3db1d2a5c0e71f2d15ba9e8d03d4f5","flutter.js":"d2e7708f08b4a5b2a1bcd9671d2ff96f07daa0fd58e847d073d4e4ebff96f98f","flutter_bootstrap.js":"8ceffa6c4cbe84cc17a478d9a8276e1965c061a10390e9031c963c32affde40d","icons/Icon-192.png":"9c66da8cff41a56fe9a555b6e54a2a05827df3855c6fdc59088bc02384120821","icons/icon-192.svg":"2d91155692fd2ee650af858a98e72942786c81a00abb2f628230e87af4cd9ead","icons/icon-512.svg":"1deaa9eb989f2535747b15fa55afaa81b426a2c082f16547a28126fd88fe601b","index.html":"7247b8bdf2dd97d814bc5adad3b64c59f18ce4e8f16a71c19d6b90ddd5dfeb63","ios_keyboard_fix.js":"dace0d7326b62d233ef6c6ec163d13ec67df2d54d9dc3b3525d3e1ea1ba288d0","lottie/lottie_light.min.js":"23cd2c01be3d4da8bb664645d03afaff40879c62dc5f8dfe075ab3aa35c108f3","main.dart.js":"28f7b58b0455f155133054a9576d2e2fa6e3bd6dbad0c1ebdaaa95c8900ac7e6","manifest.json":"099bd7c9bc4d298e547dbc9260a70c05e85e60aeb8166fb97014a1e9796faf39"},"sizes":{"app_refresh.js":16778,"assets/AssetManifest.bin":765,"assets/AssetManifest.bin.json":1022,"assets/FontManifest.json":456,"assets/assets/animations/download_failed.json":400905,"assets/assets/animations/salute_loading.json":322048,"assets/assets/fonts/Rubik-Bold.ttf":208348,"assets/assets/fonts/Rubik-Medium.ttf":208232,"assets/assets/fonts/Rubik-Regular.ttf":207664,"assets/assets/images/google_maps.png":198045,"assets/assets/images/waze.png":21844,"assets/fonts/MaterialIcons-Regular.otf":26856,"assets/packages/cupertino_icons/assets/CupertinoIcons.ttf":844,"assets/packages/flutter_map/lib/assets/flutter_map_logo.png":2424,"assets/shaders/ink_sparkle.frag":8890,"assets/shaders/stretch_effect.frag":6737,"favicon.svg":137,"flutter.js":13169,"flutter_bootstrap.js":14107,"icons/Icon-192.png":16075,"icons/icon-192.svg":222,"icons/icon-512.svg":223,"index.html":11266,"ios_keyboard_fix.js":6622,"lottie/lottie_light.min.js":168236,"main.dart.js":6226384,"manifest.json":898}};
+const PRECACHE = {"build":"aff81c245587c79f","engine":"371f77202a73e8dff57a8b3bff75bca55c090aee","files":{"app_refresh.js":"71d2ca3bcab2561144d1eb331d45d5e69d125d65c505f31ea7005329f29d842d","assets/AssetManifest.bin":"1deec53c9909feb1738788e2724e2ac4f171dad06c168767b50985b8cebb2edf","assets/AssetManifest.bin.json":"1b4357d35ef841fe59a3e24781365720aa930172f8911b17de771af353de9080","assets/FontManifest.json":"02388f3989ac2c6a29232afaa44a45f523e1bda5db2056b269deee4bc364593b","assets/assets/animations/download_failed.json":"0dae2268af487d7ba8510e0fc45ddde67713dfc35dbd91924c9ee9dd16dc9bfa","assets/assets/animations/salute_loading.json":"9f63a3f7e4690eb118d497214154ee8aa8e16c0402369be7d50755551e761407","assets/assets/fonts/Rubik-Bold.ttf":"efd2a024c9f5e5922dfef7731825f160c20a1942651b504335e3c736281ddf6a","assets/assets/fonts/Rubik-Medium.ttf":"681aab50f612b5035b9be47398c923b00c22590bcb9b74606383708ee832aa13","assets/assets/fonts/Rubik-Regular.ttf":"e8443dbe61cfea841c68ddf74f1a3bb75a69d95f4b441afa69edeb92fd921ee0","assets/assets/images/google_maps.png":"e928c17cbbf120cd16e67a5457c48f6d4f5764901eb7eaed0f1c28e9d238160a","assets/assets/images/waze.png":"7e73c66dcd256055bc778672179e46a1d9c0852be9475cea0de752d1c3f3ce26","assets/fonts/MaterialIcons-Regular.otf":"77b5308323ffd536af0521ef5f3f9f67f082a300ad458825b208fe5c91fefe8f","assets/packages/cupertino_icons/assets/CupertinoIcons.ttf":"9d8d1c5ec8089b5396386bd145d98f128749144ed62bccd1d111464bdda59fd0","assets/packages/flutter_map/lib/assets/flutter_map_logo.png":"6051ae42fb505931a833e58f9209a9f96669a4d0e4b3f06f6d82cde12a0e0401","assets/shaders/ink_sparkle.frag":"2dca5ab93d4ec29e963f996f3916320ba60825e9537dfb149a68008c7a16b026","assets/shaders/stretch_effect.frag":"ab412f07a5b9b50b67a885b24dbe16929738ae28630407d6490c924caf0a3220","favicon.svg":"44eb446793436021dcfe3fd9012e1e6cfe3db1d2a5c0e71f2d15ba9e8d03d4f5","flutter.js":"d2e7708f08b4a5b2a1bcd9671d2ff96f07daa0fd58e847d073d4e4ebff96f98f","flutter_bootstrap.js":"8ceffa6c4cbe84cc17a478d9a8276e1965c061a10390e9031c963c32affde40d","icons/Icon-192.png":"9c66da8cff41a56fe9a555b6e54a2a05827df3855c6fdc59088bc02384120821","icons/icon-192.svg":"2d91155692fd2ee650af858a98e72942786c81a00abb2f628230e87af4cd9ead","icons/icon-512.svg":"1deaa9eb989f2535747b15fa55afaa81b426a2c082f16547a28126fd88fe601b","index.html":"ccc61ed9fea6237347180e9736cf9f247978ec9c0f6a319d33a3cde481287cba","ios_keyboard_fix.js":"dace0d7326b62d233ef6c6ec163d13ec67df2d54d9dc3b3525d3e1ea1ba288d0","lottie/lottie_light.min.js":"23cd2c01be3d4da8bb664645d03afaff40879c62dc5f8dfe075ab3aa35c108f3","main.dart.js":"07393acfb2208ab0ee0ce05ba0a24ea94775a1d0a40011b40064800c1988cd25","manifest.json":"099bd7c9bc4d298e547dbc9260a70c05e85e60aeb8166fb97014a1e9796faf39","push.js":"75bad52b49db721a5162fd5972cef36450c8e3aaff7cc712980c033cc2c30f60"},"sizes":{"app_refresh.js":16778,"assets/AssetManifest.bin":765,"assets/AssetManifest.bin.json":1022,"assets/FontManifest.json":456,"assets/assets/animations/download_failed.json":400905,"assets/assets/animations/salute_loading.json":322048,"assets/assets/fonts/Rubik-Bold.ttf":208348,"assets/assets/fonts/Rubik-Medium.ttf":208232,"assets/assets/fonts/Rubik-Regular.ttf":207664,"assets/assets/images/google_maps.png":198045,"assets/assets/images/waze.png":21844,"assets/fonts/MaterialIcons-Regular.otf":27172,"assets/packages/cupertino_icons/assets/CupertinoIcons.ttf":844,"assets/packages/flutter_map/lib/assets/flutter_map_logo.png":2424,"assets/shaders/ink_sparkle.frag":8890,"assets/shaders/stretch_effect.frag":6737,"favicon.svg":137,"flutter.js":13169,"flutter_bootstrap.js":14107,"icons/Icon-192.png":16075,"icons/icon-192.svg":222,"icons/icon-512.svg":223,"index.html":11936,"ios_keyboard_fix.js":6622,"lottie/lottie_light.min.js":168236,"main.dart.js":6252742,"manifest.json":898,"push.js":5607}};
 
 const PRECACHE_PREFIX = 'shavtzak-app-';
 const CDN_CACHE = 'shavtzak-cdn-v1';
@@ -145,3 +145,71 @@ async function cdnFirst(request) {
   return response;
 }
 
+
+// ---------------------------------------------------------------------------
+// Web Push ("שובצת למשימה"; the API sends it, functions/src/push.ts). Works
+// with or without a manifest, so a branch preview gets it too.
+//
+// Every push shows a notification: Safari takes the permission back after a
+// few pushes that showed none.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {
+    data = {body: event.data ? event.data.text() : ''};
+  }
+  const title = data.title || 'שבצק';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    tag: data.tag || undefined,
+    icon: BASE + 'icons/Icon-192.png',
+    badge: BASE + 'icons/Icon-192.png',
+    dir: 'rtl',
+    lang: 'he',
+    data: {path: data.path || ''},
+  }));
+});
+
+// Where a notification tap asked to go, for the page to take (web/push.js,
+// same names there). iPhone, home-screen app closed: WebKit starts the app at
+// its start page and ignores the URL given to openWindow (WebKit bug 263687),
+// so the task was lost and the app opened home; a message posted to a window
+// that is still starting can be lost too. The page takes this on start and
+// whenever it comes to the front, once, and only if it is recent.
+const PENDING_OPEN_CACHE = 'shavtzak-pending-open';
+const PENDING_OPEN_KEY = self.location.origin + '/__shavtzak-pending-open';
+
+async function rememberOpen(path) {
+  try {
+    const cache = await caches.open(PENDING_OPEN_CACHE);
+    await cache.put(PENDING_OPEN_KEY, new Response(
+      JSON.stringify({path, at: Date.now()}),
+      {headers: {'Content-Type': 'application/json'}}));
+  } catch (_) {
+    // Best effort: the URL and the message below still try.
+  }
+}
+
+// A tap opens the task: an open window of the app is brought forward and told
+// where to go (web/push.js moves its hash route); with none, a new one opens
+// there. Both also find it in [rememberOpen].
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const path = (event.notification.data && event.notification.data.path) || '';
+  event.waitUntil((async () => {
+    if (path) await rememberOpen(path);
+    const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    const app = windows.find((client) => client.url.startsWith(BASE));
+    if (app) {
+      app.postMessage({type: 'shavtzak-open', path});
+      try {
+        await app.focus();
+      } catch (_) {
+        // Some browsers refuse focus(); the page still moves.
+      }
+      return;
+    }
+    await self.clients.openWindow(BASE + (path ? '#' + path : ''));
+  })());
+});
