@@ -121,6 +121,11 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
         );
         return;
       }
+      // A task of the viewer's own (a "שובצת למשימה" notification) opens
+      // over "המשימות שלי", so closing it lands there (Omer, 17/11/2026).
+      if (canManage && _showAll && state.mine.any((task) => task.id == id)) {
+        setState(() => _showAll = false);
+      }
       if (_splitting(context)) {
         _openPanel(id);
       } else {
