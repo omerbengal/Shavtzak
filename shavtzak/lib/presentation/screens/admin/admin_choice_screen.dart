@@ -361,7 +361,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                   isCompact: isCompact,
                                   onTap: () {
                                     Logger.action('tap:teamTasks');
-                                    context.go(TeamTasksPlace.standalone.route);
+                                    context.go(teamTasksRoute);
                                   },
                                 ),
                                 SizedBox(height: cardSpacing),

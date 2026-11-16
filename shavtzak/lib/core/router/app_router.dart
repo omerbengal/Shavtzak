@@ -440,6 +440,11 @@ class AppRouter {
           }
         } else if (currentState is UserAuthenticated) {
           clearPendingDeepLinkIfArrived(currentRoute);
+          // The team tasks screen is the admins' only; the former members'
+          // tab leads an admin to it and anyone else home.
+          final teamTasksTarget =
+              teamTasksRedirect(strippedRoute, currentState.user);
+          if (teamTasksTarget != null) return '$envPrefix$teamTasksTarget';
           if (currentState.isAdmin) {
             if (strippedRoute.startsWith('/whoami')) {
               return postAuthDestination('$envPrefix/admin');
@@ -460,10 +465,6 @@ class AppRouter {
             if (strippedRoute.startsWith(TasksPlace.standalone.path)) {
               return '$envPrefix/user$strippedRoute';
             }
-            // The same for the team tasks screen.
-            final teamTasksTarget =
-                teamTasksRedirect(strippedRoute, currentState.user);
-            if (teamTasksTarget != null) return '$envPrefix$teamTasksTarget';
             if (strippedRoute.startsWith('/summary')) {
               if (!currentState.user.canAccessSummaryScreen) {
                 return '$envPrefix/user/assignments';
@@ -554,7 +555,7 @@ class AppRouter {
         _tasksRoute('/du-yomi', TasksPlace.standalone, 'prod'),
 
         // The admins' team tasks screen ("משימות"), opened from the admin home.
-        _teamTasksRoute('/team-tasks', TeamTasksPlace.standalone, 'prod'),
+        _teamTasksRoute('/team-tasks', 'prod'),
 
         // Admin routes shell - uses existing SwipeablePageView
         StatefulShellRoute.indexedStack(
@@ -635,11 +636,6 @@ class AppRouter {
             StatefulShellBranch(routes: [
               _tasksRoute('/user/du-yomi', TasksPlace.tab, 'prod'),
             ]),
-            // Shown in the bar only to a member who owns a task or manages
-            // tasks (UserNavigationShell).
-            StatefulShellBranch(routes: [
-              _teamTasksRoute('/user/team-tasks', TeamTasksPlace.tab, 'prod'),
-            ]),
           ],
         ),
 
@@ -677,7 +673,7 @@ class AppRouter {
                 child:
                     ChecklistLinkScreen(key: ValueKey('checklist_link_test')))),
         _tasksRoute('/test/du-yomi', TasksPlace.standalone, 'test'),
-        _teamTasksRoute('/test/team-tasks', TeamTasksPlace.standalone, 'test'),
+        _teamTasksRoute('/test/team-tasks', 'test'),
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -756,9 +752,6 @@ class AppRouter {
             StatefulShellBranch(routes: [
               _tasksRoute('/test/user/du-yomi', TasksPlace.tab, 'test'),
             ]),
-            StatefulShellBranch(routes: [
-              _teamTasksRoute('/test/user/team-tasks', TeamTasksPlace.tab, 'test'),
-            ]),
           ],
         ),
       ],
@@ -768,13 +761,12 @@ class AppRouter {
   }
 
   /// The team tasks screen at [path].
-  static GoRoute _teamTasksRoute(String path, TeamTasksPlace place, String env) {
+  static GoRoute _teamTasksRoute(String path, String env) {
     return GoRoute(
       path: path,
       pageBuilder: (context, state) => NoTransitionPage(
         child: TeamTasksScreen(
-          key: ValueKey('team_tasks_${place.name}_$env'),
-          place: place,
+          key: ValueKey('team_tasks_$env'),
         ),
       ),
     );

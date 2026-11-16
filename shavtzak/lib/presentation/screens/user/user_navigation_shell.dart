@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../core/utils/team_task_rules.dart';
 import '../../../domain/entities/team_member.dart';
-import '../../bloc/team_task/team_task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/member_bar_buttons.dart';
@@ -19,32 +17,13 @@ import '../../../core/services/user_cache_service.dart';
 // Global callback to trigger constraints sync when constraints page becomes visible
 void Function()? onConstraintsPageVisible;
 
-/// The member bar's routes, in order; the team tasks tab is the 4th and
-/// last, so the indexes of the first three never move.
-List<String> memberTabRoutes({required bool withTeamTasks}) => [
-      '/user/assignments',
-      '/user/constraints',
-      '/user/du-yomi',
-      if (withTeamTasks) '/user/team-tasks',
-    ];
-
-/// The index of the team tasks branch ("משימות").
-const int kTeamTasksTab = 3;
-
-/// Whether the member bar shows "משימות": to a manager always, to anyone else
-/// once they own a task that is not cancelled or a duplicate. A member who is
-/// already on that tab (a link) keeps it.
-bool memberShowsTeamTasksTab(
-  TeamMember user,
-  TeamTaskState state, {
-  required int currentIndex,
-}) {
-  if (currentIndex == kTeamTasksTab) return true;
-  final mine = state is TeamTasksLoaded && state.viewer.id == user.id
-      ? state.mine
-      : const <Never>[];
-  return showTeamTasksTab(user, mine);
-}
+/// The member bar's routes, in order. The team tasks screen ("משימות") is
+/// not here: it opens only from the admins' home (Omer, 16/11/2026).
+const List<String> memberTabRoutes = [
+  '/user/assignments',
+  '/user/constraints',
+  '/user/du-yomi',
+];
 
 /// Navigation shell for user-facing screens with bottom navigation
 class UserNavigationShell extends StatefulWidget {
@@ -68,11 +47,6 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
   void initState() {
     super.initState();
     _previousIndex = widget.navigationShell.currentIndex;
-    // The bar needs to know whether the member owns a team task.
-    final auth = context.read<UserSelectionBloc>().state;
-    if (auth is UserAuthenticated) {
-      context.read<TeamTaskBloc>().add(TeamTasksSubscribe(auth.user));
-    }
   }
 
   void _checkAndShowPasscodeDialog(BuildContext context) {
@@ -119,11 +93,8 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        // The דו יומי and team tasks screens bring their own bar with these
-        // buttons in it.
-        appBar: currentIndex == _kDuYomiTab || currentIndex == kTeamTasksTab
-            ? null
-            : _buildAppBar(context),
+        // The דו יומי screens bring their own bar with these buttons in it.
+        appBar: currentIndex == _kDuYomiTab ? null : _buildAppBar(context),
         body: TestEnvironmentIndicator(
           child: SafeArea(
             child: widget.navigationShell,
@@ -186,8 +157,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
       buildWhen: (previous, current) {
         if (previous is UserAuthenticated && current is UserAuthenticated) {
           return previous.user.isPermanent != current.user.isPermanent ||
-              previous.user.isAdmin != current.user.isAdmin ||
-              previous.user.canManageTasks != current.user.canManageTasks;
+              previous.user.isAdmin != current.user.isAdmin;
         }
         return previous.runtimeType != current.runtimeType;
       },
@@ -195,27 +165,14 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
         if (state is! UserAuthenticated) {
           return const SizedBox.shrink();
         }
-        final user = state.user;
-        // The bloc decides "owns a visible task"; the current tab is read on
-        // every build, outside the selector (a selector is re-run only when
-        // the bloc emits, so a navigation to the tab would go unseen).
-        return BlocSelector<TeamTaskBloc, TeamTaskState, bool>(
-          selector: (taskState) =>
-              memberShowsTeamTasksTab(user, taskState, currentIndex: -1),
-          builder: (context, ownsVisibleTask) => _buildBar(
-            context,
-            user,
-            ownsVisibleTask ||
-                widget.navigationShell.currentIndex == kTeamTasksTab,
-          ),
-        );
+        return _buildBar(context, state.user);
       },
     );
   }
 
-  Widget _buildBar(BuildContext context, TeamMember user, bool withTeamTasks) {
+  Widget _buildBar(BuildContext context, TeamMember user) {
     final isPermanent = user.isPermanent;
-    final tabRoutes = memberTabRoutes(withTeamTasks: withTeamTasks);
+    const tabRoutes = memberTabRoutes;
 
     return BottomNavWithDebugTrigger(
       currentIndex: widget.navigationShell.currentIndex,
@@ -246,12 +203,6 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
           activeIcon: Icon(Icons.event_note),
           label: 'דו יומי',
         ),
-        if (withTeamTasks)
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.task_alt_outlined),
-            activeIcon: Icon(Icons.task_alt),
-            label: 'משימות',
-          ),
       ],
     );
   }

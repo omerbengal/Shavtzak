@@ -347,14 +347,6 @@ List<TeamSubtask> visibleSubtasks(TeamTask task, TeamTaskFilter filter, {DateTim
   ];
 }
 
-/// Whether [member] gets the "משימות" tab: a manager always; anyone else when
-/// one of [myTasks] (the tasks they own) is not cancelled or a duplicate.
-bool showTeamTasksTab(TeamMember member, List<TeamTask> myTasks) {
-  if (canManageTeamTasks(member)) return true;
-  return myTasks.any(
-      (task) => task.status != TeamTaskStatus.cancelled && task.status != TeamTaskStatus.duplicate);
-}
-
 /// The events a task can be linked to: those that have not ended before
 /// today's Israel date, the nearest first (Omer, round 2).
 List<Event> linkableEvents(List<Event> events, DateTime now) {
