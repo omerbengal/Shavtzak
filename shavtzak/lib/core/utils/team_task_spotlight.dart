@@ -60,6 +60,39 @@ List<TeamTask> spotlightQueue(Iterable<TeamTask> rows) {
   return queue;
 }
 
+/// The glyphs to lay out, unseen, on the tasks screen before "בליץ" opens:
+/// [base] (the screen's own emoji), then every emoji or symbol (from U+2190,
+/// past Hebrew and the Latin / punctuation the app's font holds) in the
+/// updates of [tasks], each once, at most [maxGlyphs] code points.
+///
+/// On the web CanvasKit fetches and registers a fallback font (Noto Color
+/// Emoji, in chunks) the first time a glyph needs one, and then lays every
+/// text out again: on the first "בליץ" in a browser tab that landed in the
+/// middle of its opening animations (Omer, 16/11/2026: only the first entry
+/// stuttered). Done on the list, the cost is paid while nothing moves.
+String spotlightWarmupGlyphs(
+  Iterable<TeamTask> tasks, {
+  required String base,
+  int maxGlyphs = 64,
+}) {
+  final seen = <int>{};
+  final out = StringBuffer();
+  void add(int rune) {
+    if (seen.length >= maxGlyphs || !seen.add(rune)) return;
+    out.writeCharCode(rune);
+  }
+
+  base.runes.forEach(add);
+  for (final task in tasks) {
+    for (final entry in task.updates) {
+      for (final rune in entry.text.runes) {
+        if (rune >= 0x2190) add(rune);
+      }
+    }
+  }
+  return out.toString();
+}
+
 /// What one pass did, for its last screen: the tasks closed (done or another
 /// end status), those that got an update, and those left for later.
 class SpotlightTally extends Equatable {

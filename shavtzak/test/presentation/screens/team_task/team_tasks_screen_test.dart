@@ -6,6 +6,8 @@ import 'package:shavtzak/core/theme/app_theme.dart';
 import 'package:shavtzak/data/repositories/team_task_repository.dart';
 import 'package:shavtzak/domain/entities/team_task.dart';
 import 'package:shavtzak/presentation/screens/task/task_style.dart';
+import 'package:shavtzak/presentation/screens/team_task/team_tasks_screen.dart';
+import 'package:shavtzak/presentation/screens/team_task/widgets/team_task_spotlight.dart';
 
 import '../../../support/task_fixtures.dart';
 import '../../../support/team_task_fixtures.dart';
@@ -31,6 +33,30 @@ void main() {
     expect(find.byKey(const Key('team-task-new')), findsNothing);
     expect(find.text('כל המשימות'), findsNothing);
     expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+  });
+
+  testWidgets('once settled, "בליץ" is drawn unseen under the list for a moment, once a session',
+      (tester) async {
+    resetTeamTasksBlitzWarmup();
+    await pumpTeamTasks(tester, user: dana, board: board([mine]));
+    expect(find.byType(TeamTaskSpotlight), findsNothing);
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
+    final warm = find.byType(TeamTaskSpotlight);
+    expect(warm, findsOneWidget);
+    // Under the screen (painted first), untouchable and out of the semantics.
+    expect(find.ancestor(of: warm, matching: find.byType(IgnorePointer)), findsWidgets);
+    expect(find.ancestor(of: warm, matching: find.byType(ExcludeSemantics)), findsWidgets);
+    expect(tester.getTopLeft(find.byKey(const Key('team-task-row-a'))), isNotNull);
+    await tester.tap(find.byKey(const Key('team-task-row-a')), warnIfMissed: true);
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+    expect(find.byType(TeamTaskSpotlight), findsNothing);
+
+    // Once a session: the screen opened again does not warm it again.
+    await pumpTeamTasks(tester, user: dana, board: board([mine]));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byType(TeamTaskSpotlight), findsNothing);
   });
 
   testWidgets('manager sees both', (tester) async {

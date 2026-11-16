@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -32,6 +34,10 @@ import 'widgets/topic_management_dialog.dart';
 /// event screen: the same segmented switch, "המשימות שלי" on the right, a
 /// manager opening on every task. A member who is not a manager sees only
 /// their own tasks, with no tabs.
+/// Lets a test see the once-per-session "בליץ" warm-up again.
+@visibleForTesting
+void resetTeamTasksBlitzWarmup() => _TeamTasksScreenState._blitzWarmed = false;
+
 class TeamTasksScreen extends StatefulWidget {
   const TeamTasksScreen({super.key});
 
@@ -123,11 +129,60 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     context.read<TeamTaskBloc>().add(TeamTasksSubscribe(user));
   }
 
+  /// The first "בליץ" of a browser tab stuttered, the next ones did not
+  /// (Omer, 16/11/2026): in a tab the web engine pays for everything new the
+  /// first time it is drawn - the emoji's fallback font (downloaded,
+  /// registered, every text laid out again) and the GPU programs of the
+  /// card's shadows and layers. So once the screen has settled
+  /// ([_warmupDelay], after its own opening transition) it pays them here,
+  /// while nothing moves: the emoji are laid out offstage
+  /// ([spotlightWarmupGlyphs]) and, once per app session, "בליץ" itself is
+  /// drawn for a moment ([_blitzWarmFor]) under this screen's opaque
+  /// background, unseen and untouchable.
+  static const Duration _warmupDelay = Duration(milliseconds: 900);
+  static const Duration _blitzWarmFor = Duration(milliseconds: 700);
+  static bool _blitzWarmed = false;
+  bool _warm = false;
+  bool _blitzWarming = false;
+  Timer? _warmTimer;
+  Timer? _blitzWarmTimer;
+
+  /// The hidden "בליץ" while it warms up (see [_warmupDelay]), else nothing.
+  Widget _blitzWarmup(TeamTaskState state) {
+    if (!_warm || _blitzWarmed || state is! TeamTasksLoaded) return const SizedBox.shrink();
+    final queue = spotlightQueue(state.mine);
+    if (queue.isEmpty) return const SizedBox.shrink();
+    if (!_blitzWarming) {
+      _blitzWarming = true;
+      _blitzWarmTimer = Timer(_blitzWarmFor, () {
+        _blitzWarmed = true;
+        if (mounted) setState(() {});
+      });
+    }
+    return ExcludeSemantics(
+      child: IgnorePointer(
+        child: ExcludeFocus(
+          child: TeamTaskSpotlight(taskIds: [for (final task in queue) task.id]),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     final auth = context.read<UserSelectionBloc>().state;
     if (auth is UserAuthenticated) _subscribe(auth.user);
+    _warmTimer = Timer(_warmupDelay, () {
+      if (mounted) setState(() => _warm = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _warmTimer?.cancel();
+    _blitzWarmTimer?.cancel();
+    super.dispose();
   }
 
   void _goHome(TeamMember user) {
@@ -212,7 +267,18 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                     : null,
                 body: _withBanner(_body(state, canManage, user)),
               );
-              return scaffold;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Under the screen's opaque background: drawn, never seen.
+                  _blitzWarmup(state),
+                  scaffold,
+                  if (_warm && state is TeamTasksLoaded)
+                    Offstage(
+                      child: Text(spotlightWarmupGlyphs(state.mine, base: spotlightEmoji)),
+                    ),
+                ],
+              );
             },
           );
         },

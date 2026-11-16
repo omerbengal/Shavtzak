@@ -51,9 +51,11 @@ Future<Set<String>> showTeamTaskSpotlight(
   return touched ?? const {};
 }
 
-/// Every emoji the screen shows (the chips and the summary), laid out
-/// offstage on open so the web's emoji font is fetched before it is needed.
-const String _emojiWarmup = '👍⏳🧱🏁🎉👏';
+/// Every emoji the screen shows (the chips and the summary). The tasks
+/// screen lays them out offstage once it settles ([spotlightWarmupGlyphs]),
+/// so on the web their fallback font is loaded before "בליץ" opens; this
+/// screen does it too, for a "בליץ" opened before that.
+const String spotlightEmoji = '👍⏳🧱🏁🎉👏';
 
 /// The short updates one tap away (the "עדכון קצר" chips of the design).
 const List<String> spotlightQuickUpdates = [
@@ -557,10 +559,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               Positioned.fill(child: IgnorePointer(child: RepaintBoundary(child: _flightLayer(s)))),
             Positioned.fill(child: _dustLayer()),
             Positioned.fill(child: _confettiLayer()),
-            // On the web the emoji come from a fallback font downloaded the
-            // first time one is laid out: lay them all out, unseen, when the
-            // screen opens, so the chips and the summary do not stall on it.
-            const Offstage(child: Text(_emojiWarmup)),
+            // Normally already loaded by the tasks screen (see
+            // [spotlightEmoji]); a no-op then.
+            const Offstage(child: Text(spotlightEmoji)),
           ],
         ),
       ),

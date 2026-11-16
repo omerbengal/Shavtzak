@@ -59,4 +59,28 @@ void main() {
     expect(tally.reopen('d').summary, 'אחת נסגרה · אחת עודכנה · אחת לפעם אחרת');
     expect(const SpotlightTally().summary, 'לא שינית כלום');
   });
+
+  group('spotlightWarmupGlyphs', () {
+    TaskUpdateEntry said(String id, String text) =>
+        TaskUpdateEntry(id: id, text: text, at: DateTime.utc(2026, 11, 1), byId: 'm1');
+
+    test('the given glyphs, then each emoji or symbol of the updates once', () {
+      final a = buildTeamTask(id: 'a', updates: [said('1', 'התקדמתי 👍'), said('2', 'נשלח ✅ ו-✅')]);
+      final b = buildTeamTask(id: 'b', updates: [said('3', 'רגיל, בלי סימנים (1/2)')]);
+      final c = buildTeamTask(id: 'c', updates: [said('4', 'סגור 🔒 ←')]);
+      expect(spotlightWarmupGlyphs([a, b, c], base: '👍⏳'), '👍⏳✅🔒←');
+    });
+
+    test('keeps an emoji of two code points whole', () {
+      final a = buildTeamTask(id: 'a', updates: [said('1', 'אש 🔥 דגל 🇮🇱')]);
+      expect(spotlightWarmupGlyphs([a], base: ''), '🔥🇮🇱');
+    });
+
+    test('stops at maxGlyphs', () {
+      final many = buildTeamTask(id: 'm', updates: [
+        for (var i = 0; i < 80; i++) said('$i', String.fromCharCode(0x1F600 + i)),
+      ]);
+      expect(spotlightWarmupGlyphs([many], base: '', maxGlyphs: 10).runes.length, 10);
+    });
+  });
 }
