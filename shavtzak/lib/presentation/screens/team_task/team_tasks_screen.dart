@@ -417,7 +417,14 @@ class _GroupedListState extends State<_GroupedList> {
         child: ListView(
           padding: const EdgeInsets.only(top: 4, bottom: 96),
           children: [
-            for (final group in groups) _card(context, group, state),
+            // A card per tab and link: switching to "המשימות שלי" builds its
+            // cards anew, so their rows just show, with no fold animation
+            // from the other tab's height (Omer, msg 4024).
+            for (final group in groups)
+              KeyedSubtree(
+                key: ValueKey('team-task-card-${widget.editing}-${group.key}'),
+                child: _card(context, group, state),
+              ),
           ],
         ),
       ),
