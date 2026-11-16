@@ -180,21 +180,6 @@ self.addEventListener('push', (event) => {
 const PENDING_OPEN_CACHE = 'shavtzak-pending-open';
 const PENDING_OPEN_KEY = self.location.origin + '/__shavtzak-pending-open';
 
-// TEMP DIAGNOSTIC (preview only, removed before merge): what the tap did,
-// read and shown by web/push_debug.js.
-const DIAG_TAG = 'diag-2';
-async function diag(entry) {
-  try {
-    const cache = await caches.open('shavtzak-push-diag');
-    const key = self.location.origin + '/__diag-sw';
-    const hit = await cache.match(key);
-    const log = hit ? await hit.json() : [];
-    log.push(Object.assign({t: Date.now(), sw: DIAG_TAG}, entry));
-    await cache.put(key, new Response(JSON.stringify(log.slice(-20)),
-      {headers: {'Content-Type': 'application/json'}}));
-  } catch (_) {}
-}
-
 async function rememberOpen(path) {
   try {
     const cache = await caches.open(PENDING_OPEN_CACHE);
@@ -213,28 +198,18 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const path = (event.notification.data && event.notification.data.path) || '';
   event.waitUntil((async () => {
-    await diag({ev: 'click', path});
     if (path) await rememberOpen(path);
     const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
-    await diag({ev: 'windows', n: windows.length,
-      list: windows.map((c) => [c.url, c.visibilityState, c.focused])});
     const app = windows.find((client) => client.url.startsWith(BASE));
     if (app) {
       app.postMessage({type: 'shavtzak-open', path});
       try {
         await app.focus();
-        await diag({ev: 'focused', url: app.url});
-      } catch (e) {
-        await diag({ev: 'focusFailed', err: String(e)});
+      } catch (_) {
         // Some browsers refuse focus(); the page still moves.
       }
       return;
     }
-    try {
-      const opened = await self.clients.openWindow(BASE + (path ? '#' + path : ''));
-      await diag({ev: 'openWindow', url: opened ? opened.url : null});
-    } catch (e) {
-      await diag({ev: 'openWindowFailed', err: String(e)});
-    }
+    await self.clients.openWindow(BASE + (path ? '#' + path : ''));
   })());
 });

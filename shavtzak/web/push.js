@@ -97,28 +97,19 @@
   const PENDING_OPEN_KEY = location.origin + '/__shavtzak-pending-open';
   const PENDING_OPEN_MAX_AGE_MS = 2 * 60 * 1000;
 
-  // TEMP DIAGNOSTIC (preview only, removed before merge): web/push_debug.js.
-  const pageDiag = (window.shavtzakPushDiag = window.shavtzakPushDiag || []);
-  function diag(entry) {
-    pageDiag.push(Object.assign({t: Date.now()}, entry));
-    if (window.shavtzakPushDiagChanged) window.shavtzakPushDiagChanged();
-  }
-
-  async function takePendingOpen(why) {
+  async function takePendingOpen() {
     try {
-      if (typeof caches === 'undefined') { diag({ev: 'take', why, res: 'noCaches'}); return null; }
+      if (typeof caches === 'undefined') return null;
       const cache = await caches.open(PENDING_OPEN_CACHE);
       const hit = await cache.match(PENDING_OPEN_KEY);
-      if (!hit) { diag({ev: 'take', why, res: 'none'}); return null; }
+      if (!hit) return null;
       await cache.delete(PENDING_OPEN_KEY);
       const data = await hit.json();
       const age = Date.now() - (data && data.at);
-      diag({ev: 'take', why, res: data && data.path, age});
       if (!data || typeof data.path !== 'string' || !data.path.startsWith('/')) return null;
       if (!(age >= 0 && age <= PENDING_OPEN_MAX_AGE_MS)) return null;
       return data.path;
-    } catch (e) {
-      diag({ev: 'take', why, res: 'error ' + e});
+    } catch (_) {
       return null;
     }
   }
@@ -131,15 +122,14 @@
   // On start, before Flutter reads the address (index.html waits for this):
   // the iPhone started the app at its start page instead of at the task.
   // replaceState, so "back" does not return to the start page.
-  diag({ev: 'boot', href: location.href, vis: document.visibilityState});
-  window.shavtzakPendingOpen = takePendingOpen('boot').then((path) => {
+  window.shavtzakPendingOpen = takePendingOpen().then((path) => {
     if (path) history.replaceState(history.state, '', '#' + path);
   });
 
   // Back to the front after a tap whose message never arrived.
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible') return;
-    const path = await takePendingOpen('visible');
+    const path = await takePendingOpen();
     if (path) goTo(path);
   });
 
@@ -147,9 +137,8 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', async (event) => {
       const data = event.data || {};
-      diag({ev: 'message', type: data.type, path: data.path});
       if (data.type === 'shavtzak-open' && typeof data.path === 'string' && data.path) {
-        await takePendingOpen('message'); // handled here; do not replay it later
+        await takePendingOpen(); // handled here; do not replay it later
         goTo(data.path);
       }
     });
