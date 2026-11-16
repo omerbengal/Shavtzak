@@ -61,6 +61,27 @@ abstract final class TeamTaskStyle {
   /// than the card's header.
   static const Color sectionHeader = Color(0xFFF8FAFC);
 
+  /// A category card's header (Omer, 16/11/2026): the category's own colour
+  /// from "ניהול קטגוריות", as a soft tint on white like the category blocks
+  /// of the calendar picture (`calendar_share_card.dart`); no colour = the
+  /// usual grey header. A tint stays light for every colour of the palette,
+  /// even the darkest (indigo, brown), so the header's dark text stays
+  /// readable.
+  static Color categoryHeader(int? colorValue) => colorValue == null
+      ? TaskStyle.stageHeader
+      : Color.alphaBlend(Color(colorValue).withAlpha(categoryTintAlpha), Colors.white);
+
+  /// The tint's strength: a little stronger than the calendar's 56, so the
+  /// colour reads at once on a header bar.
+  static const int categoryTintAlpha = 72;
+
+  /// The separator line between a category's own tasks and its tasks of
+  /// several events (Omer, 16/11/2026: seen, but not harsh black): the
+  /// category's colour half-transparent, or a mid grey without one.
+  static Color categorySeparator(int? colorValue) => colorValue == null
+      ? const Color(0xFFBDBDBD)
+      : Color(colorValue).withAlpha(140);
+
   /// A row under the mouse (desktop): a light blue, clearly seen on white.
   static const Color rowHover = TaskStyle.currentLight;
 

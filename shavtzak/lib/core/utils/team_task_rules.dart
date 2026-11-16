@@ -81,10 +81,11 @@ class TeamTaskSection extends Equatable {
 }
 
 /// One card of the list (16/11/2026). A category's card holds, on top, the
-/// tasks of the category itself and the tasks linked to several events of
-/// it ([tasks]), then a [sections] entry per event of the category. Any other
-/// card (an event with no category, a pending event, a topic, "ללא שיוך",
-/// [type] null) has only [tasks].
+/// tasks of the category itself ([tasks]), then, as a list of their own, the
+/// tasks linked to several events of it ([severalEventTasks], Omer
+/// 16/11/2026: two separate lists), then a [sections] entry per event of the
+/// category. Any other card (an event with no category, a pending event, a
+/// topic, "ללא שיוך", [type] null) has only [tasks].
 class TeamTaskGroup extends Equatable {
   final String key;
   final String label;
@@ -96,6 +97,10 @@ class TeamTaskGroup extends Equatable {
   /// The card's own event (an event with no category), for its 👥 button.
   final Event? event;
   final List<TeamTask> tasks;
+
+  /// A category's card: the tasks linked to several of its events, shown
+  /// after [tasks] behind a separator.
+  final List<TeamTask> severalEventTasks;
   final List<TeamTaskSection> sections;
 
   const TeamTaskGroup({
@@ -105,6 +110,7 @@ class TeamTaskGroup extends Equatable {
     required this.tasks,
     this.link,
     this.event,
+    this.severalEventTasks = const [],
     this.sections = const [],
   });
 
@@ -112,13 +118,18 @@ class TeamTaskGroup extends Equatable {
   List<TeamTask> get allTasks {
     final seen = <String>{};
     return [
-      for (final task in [...tasks, for (final section in sections) ...section.tasks])
+      for (final task in [
+        ...tasks,
+        ...severalEventTasks,
+        for (final section in sections) ...section.tasks,
+      ])
         if (seen.add(task.id)) task,
     ];
   }
 
   @override
-  List<Object?> get props => [key, label, type, link, event, tasks, sections];
+  List<Object?> get props =>
+      [key, label, type, link, event, tasks, severalEventTasks, sections];
 }
 
 const String noLinkLabel = 'ללא שיוך';
@@ -144,12 +155,17 @@ String teamTaskLinkLabel(TeamTask task) {
   }
 }
 
-/// The order inside a group: still-active tasks first, by deadline (none
-/// last), then the title; done, cancelled and duplicate at the bottom.
+/// The order inside a group: still-active tasks first; then the urgency,
+/// גבוהה, רגילה, נמוכה (Omer, 16/11/2026); then the deadline (none last) and
+/// the title. Done, cancelled and duplicate stay at the bottom, in the same
+/// order among themselves.
 int compareTeamTasks(TeamTask a, TeamTask b) {
   final activeA = a.status.isActive ? 0 : 1;
   final activeB = b.status.isActive ? 0 : 1;
   if (activeA != activeB) return activeA.compareTo(activeB);
+  // The enum runs נמוכה, רגילה, גבוהה: the higher index first.
+  final byUrgency = b.urgency.index.compareTo(a.urgency.index);
+  if (byUrgency != 0) return byUrgency;
   final byDeadline = _compareDeadlines(a.deadline, b.deadline);
   if (byDeadline != 0) return byDeadline;
   return a.title.compareTo(b.title);
@@ -180,8 +196,8 @@ int compareEventsByNearest(Event? a, Event? b, DateTime now) {
 
 /// [tasks] as the list's cards (Omer, 16/11/2026):
 /// - a card per category, by name (א-ב): on top the tasks linked to the
-///   category itself and those linked to several events of it (such a task
-///   shows on top of every category of its events), then a section per event
+///   category itself, then those linked to several events of it (such a task
+///   shows on every category of its events), then a section per event
 ///   of the category with the tasks linked to it alone, ordered by
 ///   [compareEventsByNearest];
 /// - an event with no category (or a deleted one) keeps a card of its own,
@@ -199,6 +215,7 @@ List<TeamTaskGroup> groupTeamTasks(
 
   final categoryLabels = <String, String>{};
   final categoryTop = <String, List<TeamTask>>{};
+  final categorySeveral = <String, List<TeamTask>>{};
   final categorySections = <String, Map<String, List<TeamTask>>>{};
   final sectionEvents = <String, Event?>{};
   final sectionLabels = <String, String>{};
@@ -218,9 +235,9 @@ List<TeamTaskGroup> groupTeamTasks(
     if (event != null) otherEvents[key] = event;
   }
 
-  void addCategoryTop(String categoryId, String label, TeamTask task) {
+  void addCategoryTop(String categoryId, String label, TeamTask task, {bool several = false}) {
     categoryLabels[categoryId] = label;
-    final list = categoryTop.putIfAbsent(categoryId, () => []);
+    final list = (several ? categorySeveral : categoryTop).putIfAbsent(categoryId, () => []);
     if (!list.any((t) => t.id == task.id)) list.add(task);
   }
 
@@ -247,7 +264,7 @@ List<TeamTaskGroup> groupTeamTasks(
           final category = categoryId == null ? null : categoryById[categoryId];
           if (event != null && category != null) {
             if (several) {
-              addCategoryTop(category.id, category.name, task);
+              addCategoryTop(category.id, category.name, task, several: true);
             } else {
               categoryLabels[category.id] = category.name;
               categorySections
@@ -273,6 +290,7 @@ List<TeamTaskGroup> groupTeamTasks(
         type: TaskLinkType.category,
         link: TaskLink(TaskLinkType.category, categoryId),
         tasks: [...?categoryTop[categoryId]]..sort(compareTeamTasks),
+        severalEventTasks: [...?categorySeveral[categoryId]]..sort(compareTeamTasks),
         sections: [
           for (final entry in (categorySections[categoryId] ?? const <String, List<TeamTask>>{}).entries)
             TeamTaskSection(

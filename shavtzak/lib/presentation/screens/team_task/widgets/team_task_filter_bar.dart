@@ -196,7 +196,13 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
       _set(_filter.copyWith(link: () => null));
       return;
     }
-    final choice = await showTaskLinkPicker(context, allowNone: false, multiEvents: false);
+    final choice = await showTaskLinkPicker(
+      context,
+      allowNone: false,
+      multiEvents: false,
+      // Filtering never creates a new "אירוע שעוד לא נוצר" (Omer, 16/11/2026).
+      allowNewPending: false,
+    );
     if (choice?.link == null || !mounted) return;
     _set(_filter.copyWith(link: () => choice!.link));
   }

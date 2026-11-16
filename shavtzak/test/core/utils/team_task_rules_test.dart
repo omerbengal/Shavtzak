@@ -126,9 +126,71 @@ void main() {
       final groups = groupTeamTasks([both], now, categories: [hanukkah, shows]);
       expect(groups.map((g) => g.label), ['אירועי בית', 'אירועי חנוכה']);
       for (final group in groups) {
-        expect(group.tasks.map((t) => t.id), ['both']);
+        expect(group.tasks, isEmpty);
+        expect(group.severalEventTasks.map((t) => t.id), ['both']);
         expect(group.sections, isEmpty);
+        expect(group.allTasks.map((t) => t.id), ['both']);
       }
+    });
+
+    test('a category card: its own tasks and its tasks of several events are two lists', () {
+      final several = buildTeamTask(
+        id: 'several',
+        title: 'א',
+        link: const TaskLink(TaskLinkType.event, 'e1'),
+        eventIds: const ['e1', 'e2'],
+        event: candles,
+        events: [candles, party],
+      );
+      final own = buildTeamTask(id: 'own', title: 'ב',
+          link: const TaskLink(TaskLinkType.category, 'c1'), category: hanukkah);
+      final card = groupTeamTasks([several, own, onEvent('candles', candles)], now,
+              categories: [hanukkah])
+          .single;
+      expect(card.tasks.map((t) => t.id), ['own']);
+      expect(card.severalEventTasks.map((t) => t.id), ['several']);
+      expect(card.sections.single.tasks.map((t) => t.id), ['candles']);
+      expect(card.allTasks.map((t) => t.id), ['own', 'several', 'candles']);
+    });
+
+    test('inside every list: urgency first (גבוהה, רגילה, נמוכה), then the old order', () {
+      TeamTask t(String id, TeamTaskUrgency urgency,
+              {String? deadline, TeamTaskStatus status = TeamTaskStatus.open, TaskLink? link,
+              List<String> eventIds = const [], List<Event> events = const []}) =>
+          buildTeamTask(
+              id: id, title: id, urgency: urgency, deadline: deadline, status: status,
+              link: link, eventIds: eventIds, event: events.firstOrNull, events: events,
+              category: link?.type == TaskLinkType.category ? hanukkah : null);
+      const low = TeamTaskUrgency.low;
+      const normal = TeamTaskUrgency.normal;
+      const high = TeamTaskUrgency.high;
+      // A list with no link: the deadline still orders a level, done stays last.
+      final plain = groupTeamTasks([
+        t('low-soon', low, deadline: '2026-11-16'),
+        t('normal-late', normal, deadline: '2026-11-30'),
+        t('high-none', high),
+        t('normal-soon', normal, deadline: '2026-11-17'),
+        t('high-soon', high, deadline: '2026-11-18'),
+        t('high-done', high, status: TeamTaskStatus.done),
+      ], now).single;
+      expect(plain.tasks.map((x) => x.id),
+          ['high-soon', 'high-none', 'normal-soon', 'normal-late', 'low-soon', 'high-done']);
+
+      // A category's two lists and an event's section, each on its own.
+      const catLink = TaskLink(TaskLinkType.category, 'c1');
+      const e1 = TaskLink(TaskLinkType.event, 'e1');
+      final card = groupTeamTasks([
+        t('cat-low', low, link: catLink),
+        t('cat-high', high, link: catLink),
+        t('sev-normal', normal, link: e1, eventIds: ['e1', 'e2'], events: [candles, party]),
+        t('sev-high', high, link: e1, eventIds: ['e1', 'e2'], events: [candles, party]),
+        t('ev-low', low, link: e1, events: [candles]),
+        t('ev-normal', normal, link: e1, events: [candles]),
+        t('ev-high', high, link: e1, events: [candles]),
+      ], now, categories: [hanukkah]).single;
+      expect(card.tasks.map((x) => x.id), ['cat-high', 'cat-low']);
+      expect(card.severalEventTasks.map((x) => x.id), ['sev-high', 'sev-normal']);
+      expect(card.sections.single.tasks.map((x) => x.id), ['ev-high', 'ev-normal', 'ev-low']);
     });
 
     test('a task of several events with no category shows on each event card', () {

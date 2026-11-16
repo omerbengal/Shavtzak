@@ -59,6 +59,9 @@ const String pendingEventLabel = 'אירוע שעוד לא נוצר';
 /// "שיוך לאירוע" / "שיוך ל-N אירועים" (Omer, 16/11/2026: one way for both).
 /// A category, a topic or a placeholder is still picked by a tap.
 /// [initialEventIds] = the events marked when it opens.
+///
+/// [allowNewPending]: whether a new "אירוע שעוד לא נוצר" can be named here;
+/// the filter's picker cannot (Omer, 16/11/2026: filtering creates nothing).
 Future<TaskLinkChoice?> showTaskLinkPicker(
   BuildContext context, {
   TaskLink? initial,
@@ -66,6 +69,7 @@ Future<TaskLinkChoice?> showTaskLinkPicker(
   bool allowNone = true,
   bool eventsOnly = false,
   bool multiEvents = true,
+  bool allowNewPending = true,
   String? title,
 }) {
   return showDialog<TaskLinkChoice>(
@@ -80,6 +84,7 @@ Future<TaskLinkChoice?> showTaskLinkPicker(
           allowNone: allowNone && !eventsOnly,
           eventsOnly: eventsOnly,
           multiEvents: multiEvents && !eventsOnly,
+          allowNewPending: allowNewPending,
           title: title,
         ),
       ),
@@ -94,6 +99,7 @@ class _TaskLinkPicker extends StatefulWidget {
     required this.allowNone,
     this.eventsOnly = false,
     this.multiEvents = true,
+    this.allowNewPending = true,
     this.title,
   });
 
@@ -104,6 +110,9 @@ class _TaskLinkPicker extends StatefulWidget {
 
   /// Several events can be marked (a task's link; not the filter's).
   final bool multiEvents;
+
+  /// "אירוע שעוד לא נוצר" can be named here (not in the filter).
+  final bool allowNewPending;
   final String? title;
 
   @override
@@ -325,8 +334,11 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
     final options = _options(state)
         .where((o) => query.isEmpty || normalizeForSearch(o.name).toLowerCase().contains(query))
         .toList();
-    final showPending =
-        !widget.eventsOnly && _type == TaskLinkType.event && state.canManage && query.isEmpty;
+    final showPending = widget.allowNewPending &&
+        !widget.eventsOnly &&
+        _type == TaskLinkType.event &&
+        state.canManage &&
+        query.isEmpty;
     final multi = widget.multiEvents && _type == TaskLinkType.event;
     final allOptions = _options(state);
     return AlertDialog(

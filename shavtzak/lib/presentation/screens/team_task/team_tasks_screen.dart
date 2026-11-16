@@ -727,10 +727,51 @@ class _GroupedListState extends State<_GroupedList> {
     return start == end ? start : '$start-$end';
   }
 
+  /// Between a category's own tasks and its tasks of several events (Omer,
+  /// 16/11/2026): a thin line in the category's colour with a small title.
+  Widget _severalSeparator(TeamTaskGroup group, int? colorValue) {
+    final line = Expanded(
+      child: Container(height: 1.5, color: TeamTaskStyle.categorySeparator(colorValue)),
+    );
+    return Padding(
+      key: Key('team-task-several-separator-${group.key}'),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: Row(
+        children: [
+          line,
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              'משויכות לכמה אירועים',
+              style: TextStyle(
+                fontSize: TaskStyle.rowMetaSize,
+                color: TaskStyle.neutralText,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          line,
+        ],
+      ),
+    );
+  }
+
   Widget _card(BuildContext context, TeamTaskGroup group, TeamTasksLoaded state) {
+    // A category's card takes the category's colour (Omer, 16/11/2026).
+    final colorValue = group.type == TaskLinkType.category
+        ? state.categories.where((c) => c.id == group.link?.id).firstOrNull?.colorValue
+        : null;
     final rows = <Widget>[];
     for (final task in group.tasks) {
       if (rows.isNotEmpty) rows.add(_rowDivider);
+      rows.add(_row(task));
+    }
+    // The tasks of several events: a list of their own, after a separator.
+    if (group.severalEventTasks.isNotEmpty && rows.isNotEmpty) {
+      rows.add(_severalSeparator(group, colorValue));
+    }
+    for (final (i, task) in group.severalEventTasks.indexed) {
+      if (i > 0) rows.add(_rowDivider);
       rows.add(_row(task));
     }
     for (final section in group.sections) {
@@ -765,7 +806,8 @@ class _GroupedListState extends State<_GroupedList> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Material(
-              color: TaskStyle.stageHeader,
+              key: Key('team-task-group-header-${group.key}'),
+              color: TeamTaskStyle.categoryHeader(colorValue),
               child: InkWell(
                 key: Key('team-task-group-${group.key}'),
                 hoverColor: TeamTaskStyle.rowHover,

@@ -42,12 +42,18 @@ TeamTask buildTeamTask({
   );
 }
 
-Category buildCategory({String id = 'c1', String name = 'אירועי חנוכה', bool isArchived = false}) =>
+Category buildCategory({
+  String id = 'c1',
+  String name = 'אירועי חנוכה',
+  bool isArchived = false,
+  int? colorValue,
+}) =>
     Category(
       id: id,
       name: name,
       sortOrder: 0,
       isArchived: isArchived,
+      colorValue: colorValue,
       createdAt: fixtureCreatedAt,
       updatedAt: fixtureCreatedAt,
     );
