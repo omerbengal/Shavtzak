@@ -115,6 +115,12 @@ abstract final class SpotlightStyle {
   /// left (Omer, msg 4070: Safari's bars cut the buttons off).
   static const double fitFrom = 520;
 
+  /// Narrower than this (a phone) the card stretches over all the height
+  /// its buttons leave, so there is no gap above or below it and the log gets
+  /// the room (Omer, msg 4085: a gap under the progress bar in the installed
+  /// app). A wider window keeps the card at its own height, centred.
+  static const double fillBelowWidth = 600;
+
   /// Below this room (a small phone with the browser's bars) the description
   /// keeps [compactDescriptionLines], to leave the log some room.
   static const double compactBelow = 500;
@@ -181,6 +187,10 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   /// The short update field is open on the current card.
   bool _composing = false;
 
+  /// The card fills the page's height (a phone, the update field closed):
+  /// [SpotlightStyle.fillBelowWidth].
+  bool _fill = false;
+
   /// An action of the current card is on its way to the backend.
   bool _busy = false;
 
@@ -199,6 +209,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   bool _landed = false;
 
   final GlobalKey _bodyKey = GlobalKey();
+
+  /// The buttons (or the update field) under the card: [_snackMargin].
+  final GlobalKey _lowerKey = GlobalKey();
   final GlobalKey _fieldKey = GlobalKey();
   final GlobalKey _landingKey = GlobalKey();
   final ScrollController _logScroll = ScrollController();
@@ -367,6 +380,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   void _openComposer() {
     Logger.action('tap:spotlightCompose');
     HapticFeedback.selectionClick();
+    // The field moves the layout; a message placed over the old buttons
+    // would now sit on it.
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
     setState(() => _composing = true);
     _updateFocus.requestFocus();
   }
@@ -389,8 +405,26 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
 
   void _failed(CrudActionResult result) {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(result.message ?? 'הפעולה נכשלה')),
+      SnackBar(
+        content: Text(result.message ?? 'הפעולה נכשלה'),
+        behavior: SnackBarBehavior.floating,
+        margin: _snackMargin(),
+      ),
     );
+  }
+
+  /// A message floats just above the buttons, never over them: on a phone
+  /// the card fills the height, so the buttons sit at the very bottom, where
+  /// a plain snack bar would hide them for its seconds.
+  EdgeInsets _snackMargin() {
+    final body = _bodyKey.currentContext?.findRenderObject();
+    final lower = _lowerKey.currentContext?.findRenderObject();
+    var bottom = 16.0;
+    if (body is RenderBox && lower is RenderBox && lower.attached && lower.hasSize) {
+      final bodyBottom = body.localToGlobal(Offset(0, body.size.height)).dy;
+      bottom = math.max(bottom, bodyBottom - lower.localToGlobal(Offset.zero).dy + 8);
+    }
+    return EdgeInsets.fromLTRB(16, 0, 16, bottom);
   }
 
   Future<void> _send(TeamTask task) async {
@@ -512,6 +546,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     messenger?.showSnackBar(SnackBar(
       key: const Key('spotlight-undo-bar'),
       duration: const Duration(seconds: 4),
+      behavior: SnackBarBehavior.floating,
+      margin: _snackMargin(),
       content:
           Text(status == TeamTaskStatus.done ? 'סומנה כבוצעה' : 'סומנה כ"${status.hebrewLabel}"'),
       action: SnackBarAction(
@@ -592,6 +628,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                           MediaQuery.paddingOf(context).bottom, browserBottomOverlap());
                       final pad = EdgeInsets.fromLTRB(16, 12, 16, 16 + bottom);
                       final room = math.max(0.0, box.maxHeight - pad.vertical);
+                      _fill = !_composing && box.maxWidth < SpotlightStyle.fillBelowWidth;
                       if (room != _room || _logExtraFor != _index) {
                         _room = room;
                         _logExtra = 0;
@@ -817,7 +854,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         ),
       ),
     );
-    final lower = RepaintBoundary(child: _composing ? _composer(task, s) : _actions(task, s));
+    final lower = RepaintBoundary(
+        key: _lowerKey, child: _composing ? _composer(task, s) : _actions(task, s));
     return AnimatedBuilder(
       animation: _motion,
       builder: (context, _) {
@@ -874,11 +912,13 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             break;
         }
         return Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: _fill ? MainAxisSize.max : MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // The card takes what the buttons leave, no more than it needs.
+            // The card takes what the buttons leave: all of it on a phone,
+            // else no more than it needs.
             Flexible(
+              fit: _fill ? FlexFit.tight : FlexFit.loose,
               child: Opacity(
                 opacity: opacity.clamp(0.0, 1.0),
                 child: FractionalTranslation(
@@ -892,26 +932,33 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                       scale: scale,
                       child: Stack(
                         alignment: Alignment.center,
+                        // On a phone the card is stretched to the full height.
+                        fit: _fill ? StackFit.expand : StackFit.loose,
                         children: [
                           card,
                           if (check > 0)
-                            Transform.scale(
-                              scale: check,
-                              child: Container(
-                                key: const Key('spotlight-done-check'),
-                                width: 96 * s,
-                                height: 96 * s,
-                                decoration: const BoxDecoration(
-                                  color: TaskStyle.done,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                        color: Color(0x552E7D32),
-                                        blurRadius: 24,
-                                        offset: Offset(0, 8)),
-                                  ],
+                            Positioned.fill(
+                              child: Center(
+                                child: Transform.scale(
+                                  scale: check,
+                                  child: Container(
+                                    key: const Key('spotlight-done-check'),
+                                    width: 96 * s,
+                                    height: 96 * s,
+                                    decoration: const BoxDecoration(
+                                      color: TaskStyle.done,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                            color: Color(0x552E7D32),
+                                            blurRadius: 24,
+                                            offset: Offset(0, 8)),
+                                      ],
+                                    ),
+                                    child: Icon(Icons.check_rounded,
+                                        color: Colors.white, size: 60 * s),
+                                  ),
                                 ),
-                                child: Icon(Icons.check_rounded, color: Colors.white, size: 60 * s),
                               ),
                             ),
                         ],
@@ -962,7 +1009,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         ],
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: _fill ? MainAxisSize.max : MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
@@ -1002,10 +1049,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             ),
           ),
           Flexible(
+            fit: _fill ? FlexFit.tight : FlexFit.loose,
             child: Padding(
               padding: EdgeInsets.fromLTRB(20 * s, 18 * s, 20 * s, 20 * s),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: _fill ? MainAxisSize.max : MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (task.isSubtask)
@@ -1066,7 +1114,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                     ),
                   ],
                   SizedBox(height: 16 * s),
-                  Flexible(child: _log(task, s)),
+                  // On a phone the log takes all the card's leftover room.
+                  Flexible(fit: _fill ? FlexFit.tight : FlexFit.loose, child: _log(task, s)),
                 ],
               ),
             ),
@@ -1132,7 +1181,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       // The title scrolls with the updates: squeezed by a short screen the
       // box shrinks as a whole and never overflows.
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: SpotlightStyle.logMax),
+        constraints:
+            BoxConstraints(maxHeight: _fill ? double.infinity : SpotlightStyle.logMax),
         child: Scrollbar(
           controller: _logScroll,
           child: SingleChildScrollView(
@@ -1755,8 +1805,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   }
 }
 
-/// The status chip of the card: its colour morphs and its label rolls when
-/// the status changes (the [TeamTaskStatusChip] colours, bigger).
+/// The status chip of the card: its colour morphs and its circle and label
+/// roll when the status changes (the [TeamTaskStatusChip] colours, bigger,
+/// with the lists' [TeamTaskStatusIcon] before the word; Omer, msg 4081).
 class _MorphStatusChip extends StatelessWidget {
   const _MorphStatusChip({required this.status, required this.scale});
 
@@ -1778,14 +1829,21 @@ class _MorphStatusChip extends StatelessWidget {
         duration: const Duration(milliseconds: 300),
         transitionBuilder: (child, animation) => ScaleTransition(
             scale: animation, child: FadeTransition(opacity: animation, child: child)),
-        child: Text(
-          status.hebrewLabel,
+        child: Row(
           key: ValueKey(status),
-          style: TextStyle(
-            fontSize: 14 * scale,
-            color: TeamTaskStyle.statusColor(status),
-            fontWeight: FontWeight.w700,
-          ),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TeamTaskStatusIcon(status: status, size: 18 * scale),
+            SizedBox(width: 6 * scale),
+            Text(
+              status.hebrewLabel,
+              style: TextStyle(
+                fontSize: 14 * scale,
+                color: TeamTaskStyle.statusColor(status),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ),
     );

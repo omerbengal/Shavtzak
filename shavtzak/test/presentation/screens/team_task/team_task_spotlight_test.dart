@@ -456,4 +456,71 @@ void main() {
     expect(tester.getRect(find.byKey(const Key('spotlight-status'))).bottom,
         lessThanOrEqualTo(screen.bottom));
   });
+
+  testWidgets('the status chip shows the status circle too, and it changes with the status',
+      (tester) async {
+    await open(tester);
+    final chip = find.byKey(const Key('spotlight-status-chip'));
+    expect(find.descendant(of: chip, matching: find.byKey(const Key('team-status-icon-open'))),
+        findsOneWidget);
+    expect(find.descendant(of: chip, matching: find.text('פתוחה')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('spotlight-status')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: chip, matching: find.byKey(const Key('team-status-icon-inProgress'))),
+        findsOneWidget);
+    expect(find.descendant(of: chip, matching: find.byKey(const Key('team-status-icon-open'))),
+        findsNothing);
+  });
+
+  testWidgets('on a phone the card fills the height, with no gap above or below it',
+      (tester) async {
+    // Omer, msg 4085: the installed app has more height than the card needs.
+    final short = task('c', 'משימה קצרה', link: topic2, updates: [entry('u1', DateTime.utc(2026, 11, 1))]);
+    await pumpTeamTasks(tester, user: dana, board: board([short]), size: const Size(390, 844));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final progress = tester.getRect(find.byKey(const Key('spotlight-progress')));
+    final card = tester.getRect(find.byKey(const Key('spotlight-card-c')));
+    final buttons = tester.getRect(find.byKey(const Key('spotlight-update')));
+    final screen = tester.getRect(find.byKey(const Key('spotlight-screen')));
+    // Only the page's padding and the shadow's room between them.
+    expect(card.top - progress.bottom, lessThan(40));
+    expect(buttons.top - card.bottom, lessThan(50));
+    expect(tester.getRect(find.byKey(const Key('spotlight-status'))).bottom,
+        lessThanOrEqualTo(screen.bottom));
+    // The log takes the room.
+    expect(tester.getRect(find.byKey(const Key('spotlight-updates-c'))).height, greaterThan(250));
+  });
+
+  testWidgets('on a wide window the card keeps its own height, centred', (tester) async {
+    final short = task('c', 'משימה קצרה', link: topic2, updates: [entry('u1', DateTime.utc(2026, 11, 1))]);
+    await pumpTeamTasks(tester, user: dana, board: board([short]), size: const Size(1280, 1000));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final progress = tester.getRect(find.byKey(const Key('spotlight-progress')));
+    final card = tester.getRect(find.byKey(const Key('spotlight-card-c')));
+    final screen = tester.getRect(find.byKey(const Key('spotlight-screen')));
+    final status = tester.getRect(find.byKey(const Key('spotlight-status')));
+    expect(card.top - progress.bottom, greaterThan(100));
+    // About as much room under the buttons as above the card.
+    expect(((screen.bottom - status.bottom) - (card.top - progress.bottom)).abs(), lessThan(60));
+  });
+
+  testWidgets('the "ביטול" bar floats above the buttons, never over them', (tester) async {
+    await open(tester);
+    await tester.tap(find.byKey(const Key('spotlight-done')));
+    await tester.pumpAndSettle();
+    // The bar's own box (the SnackBar widget's box also holds its margin).
+    final bar = tester.getRect(find
+        .descendant(of: find.byKey(const Key('spotlight-undo-bar')), matching: find.byType(Material))
+        .first);
+    expect(bar.bottom, lessThanOrEqualTo(tester.getRect(find.byKey(const Key('spotlight-update'))).top));
+    await tester.tap(find.byKey(const Key('spotlight-skip')));
+    await tester.pumpAndSettle();
+    expect(find.text('3/3'), findsOneWidget);
+  });
 }
