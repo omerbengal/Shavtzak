@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/crud_action_result.dart';
+import '../../../../core/utils/debounced_saver.dart';
 import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
@@ -26,6 +27,20 @@ class TaskLinkChoice {
     if (link == null || link.type != TaskLinkType.event) return const [];
     return [link.id, ...eventIds.where((id) => id != link.id)];
   }
+}
+
+/// Shown in the picker while no event is marked: nothing is saved then.
+const String noEventMarkedHint = 'צריך לסמן לפחות אירוע אחד (או "ללא שיוך"). השיוך הקודם נשמר.';
+
+/// An existing task's events, saved as they are marked (Omer, 16/11/2026:
+/// no save button). [onChanged] gets every marked set, in the list's order
+/// (nearest first), even an empty one ([saver] refuses it and says so);
+/// after a refused save the marks go back to [saved].
+class LiveEventsLink {
+  const LiveEventsLink({required this.onChanged, required this.saver, required this.saved});
+  final ValueChanged<List<String>> onChanged;
+  final DebouncedSaver<TaskLinkChoice> saver;
+  final List<String> Function() saved;
 }
 
 /// The name of [link]'s target in [state], or null when it is gone.
@@ -62,6 +77,10 @@ const String pendingEventLabel = 'אירוע שעוד לא נוצר';
 ///
 /// [allowNewPending]: whether a new "אירוע שעוד לא נוצר" can be named here;
 /// the filter's picker cannot (Omer, 16/11/2026: filtering creates nothing).
+///
+/// [liveEvents] (an existing task's link): no "שיוך ל-N אירועים" button;
+/// each mark is saved through it, and "ביטול" becomes "סגירה". A new task's
+/// form keeps the button: there nothing is saved until "שמירה".
 Future<TaskLinkChoice?> showTaskLinkPicker(
   BuildContext context, {
   TaskLink? initial,
@@ -71,6 +90,7 @@ Future<TaskLinkChoice?> showTaskLinkPicker(
   bool multiEvents = true,
   bool allowNewPending = true,
   String? title,
+  LiveEventsLink? liveEvents,
 }) {
   return showDialog<TaskLinkChoice>(
     context: context,
@@ -86,6 +106,7 @@ Future<TaskLinkChoice?> showTaskLinkPicker(
           multiEvents: multiEvents && !eventsOnly,
           allowNewPending: allowNewPending,
           title: title,
+          live: multiEvents && !eventsOnly ? liveEvents : null,
         ),
       ),
     ),
@@ -101,7 +122,10 @@ class _TaskLinkPicker extends StatefulWidget {
     this.multiEvents = true,
     this.allowNewPending = true,
     this.title,
+    this.live,
   });
+
+  final LiveEventsLink? live;
 
   final TaskLink? initial;
   final List<String> initialEventIds;
@@ -146,22 +170,57 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
     setState(() {
       if (!_marked.remove(id)) _marked.add(id);
     });
+    final live = widget.live;
+    if (live != null) live.onChanged(_sortedMarked(_options(_currentState()!)));
   }
 
-  /// Confirms the marked events, in the list's order (nearest first).
-  void _confirmMarked(List<({TaskLinkType type, String id, String name, String? note})> options) {
+  TeamTasksLoaded? _currentState() {
+    final state = context.read<TeamTaskBloc>().state;
+    return state is TeamTasksLoaded ? state : null;
+  }
+
+  int _seenRevision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.live?.saver.addListener(_onSaver);
+  }
+
+  /// A refused save: the marks go back to what is saved.
+  void _onSaver() {
+    final live = widget.live;
+    if (live == null || !mounted) return;
+    if (live.saver.revision != _seenRevision) {
+      _seenRevision = live.saver.revision;
+      _marked
+        ..clear()
+        ..addAll(live.saved());
+    }
+    setState(() {});
+  }
+
+  /// The marked events in the list's order (nearest first).
+  List<String> _sortedMarked(
+      List<({TaskLinkType type, String id, String name, String? note})> options) {
     final order = [for (final option in options) option.id];
-    final ids = [..._marked]..sort((a, b) {
+    return [..._marked]..sort((a, b) {
         final ia = order.indexOf(a);
         final ib = order.indexOf(b);
         return (ia < 0 ? order.length : ia).compareTo(ib < 0 ? order.length : ib);
       });
+  }
+
+  /// Confirms the marked events, in the list's order (nearest first).
+  void _confirmMarked(List<({TaskLinkType type, String id, String name, String? note})> options) {
+    final ids = _sortedMarked(options);
     Navigator.of(context)
         .pop(TaskLinkChoice(TaskLink(TaskLinkType.event, ids.first), eventIds: ids));
   }
 
   @override
   void dispose() {
+    widget.live?.saver.removeListener(_onSaver);
     _newTopic.dispose();
     _newPending.dispose();
     super.dispose();
@@ -340,6 +399,7 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
         state.canManage &&
         query.isEmpty;
     final multi = widget.multiEvents && _type == TaskLinkType.event;
+    final live = multi && widget.live != null;
     final allOptions = _options(state);
     return AlertDialog(
       title: Text(widget.title ?? 'שיוך המשימה'),
@@ -399,7 +459,8 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
                                 : null,
                             onMark: () => _toggleMarked(option.id),
                             // An event of a task's link is marked, never
-                            // picked at once: the button saves (16/11/2026).
+                            // picked at once: the button saves (16/11/2026),
+                            // or, for an existing task, the mark itself.
                             onTap: multi && option.type == TaskLinkType.event
                                 ? () => _toggleMarked(option.id)
                                 : (multi && _marked.isNotEmpty
@@ -410,6 +471,16 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
                       ],
                     ),
             ),
+            if (live && widget.live!.saver.error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  noEventMarkedHint,
+                  key: const Key('task-link-no-event-hint'),
+                  style: TextStyle(
+                      fontSize: 13, color: Theme.of(context).colorScheme.error),
+                ),
+              ),
             if (_type == TaskLinkType.topic && state.canManage)
               Row(
                 children: [
@@ -440,7 +511,7 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
         ),
       ),
       actions: [
-        if (multi && _marked.isNotEmpty)
+        if (multi && !live && _marked.isNotEmpty)
           FilledButton(
             key: const Key('task-link-confirm-events'),
             onPressed: () => _confirmMarked(allOptions),
@@ -453,8 +524,10 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
             child: const Text('ללא שיוך'),
           ),
         TextButton(
+          key: const Key('task-link-close'),
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('ביטול'),
+          // Marked events are already saved: closing cancels nothing.
+          child: Text(widget.live != null ? 'סגירה' : 'ביטול'),
         ),
       ],
     );

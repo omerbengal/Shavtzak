@@ -342,6 +342,9 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
           list: column,
           openTaskId: _panelTaskId,
           panelBuilder: (context, taskId) => TeamTaskSheet(
+            // Another task = a new sheet, so its pickers' waiting changes
+            // are sent for the right task.
+            key: ValueKey('team-task-panel-$taskId'),
             taskId: taskId,
             wide: MediaQuery.sizeOf(context).width >= TaskStyle.wideBreakpoint,
             manage: all,

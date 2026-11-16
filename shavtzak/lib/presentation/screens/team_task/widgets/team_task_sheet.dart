@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/utils/crud_action_result.dart';
+import '../../../../core/utils/debounced_saver.dart';
 import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/team_member.dart';
@@ -13,6 +14,7 @@ import '../../task/edit/value_editors.dart';
 import '../../task/task_style.dart';
 import '../../task/widgets/confirm_delete_dialog.dart';
 import 'deadline_picker.dart';
+import 'live_owners_picker.dart';
 import 'task_link_picker.dart';
 import 'team_task_actions.dart';
 import 'team_task_split_view.dart';
@@ -98,7 +100,71 @@ class TeamTaskSheet extends StatefulWidget {
 class _TeamTaskSheetState extends State<TeamTaskSheet> {
   bool _closed = false;
 
-  TeamTaskBloc get _bloc => context.read<TeamTaskBloc>();
+  // Kept, not looked up: a picker's last change is sent as the sheet closes
+  // and may be refused after it is gone.
+  late final TeamTaskBloc _bloc = context.read<TeamTaskBloc>();
+  ScaffoldMessengerState? _messenger;
+
+  static const _ownersField = 'owners';
+  static const _linkField = 'link';
+
+  /// The owners and the link have no save button (Omer, 16/11/2026): every
+  /// tick is saved, a moment after the last one, in one call.
+  late final DebouncedSaver<List<String>> _owners = DebouncedSaver<List<String>>(
+    send: (ids) => _sendField(_ownersField, (task) => task.copyWith(assigneeIds: ids, ownerIds: ids)),
+    onDraft: (ids) => _draft(
+        _ownersField, ids == null ? null : (task) => task.copyWith(assigneeIds: ids)),
+    onFailure: _showError,
+  );
+
+  late final DebouncedSaver<TaskLinkChoice> _link = DebouncedSaver<TaskLinkChoice>(
+    send: (choice) => _sendField(_linkField, (task) => _linked(task, choice)),
+    onDraft: (choice) =>
+        _draft(_linkField, choice == null ? null : (task) => _linked(task, choice)),
+    // No event marked: the picker hands an event link with no id.
+    validate: (choice) => choice.link?.type == TaskLinkType.event && choice.link!.id.isEmpty
+        ? noEventMarkedHint
+        : null,
+    onFailure: _showError,
+  );
+
+  static TeamTask _linked(TeamTask task, TaskLinkChoice choice) =>
+      task.copyWith(link: () => choice.link, eventIds: choice.linkedEventIds);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.maybeOf(context);
+  }
+
+  @override
+  void dispose() {
+    // Sends a change still waiting for its moment.
+    _owners.dispose();
+    _link.dispose();
+    super.dispose();
+  }
+
+  void _draft(String field, TeamTask Function(TeamTask task)? apply) =>
+      _bloc.add(TeamTaskDraftChanged(widget.taskId, field, apply));
+
+  /// Sends [field] of the task as it stands now (other fields included, as
+  /// any edit does), taking its draft over in the same step.
+  Future<CrudActionResult> _sendField(String field, TeamTask Function(TeamTask task) apply) {
+    final state = _bloc.state;
+    final task = state is TeamTasksLoaded ? state.taskById(widget.taskId) : null;
+    if (task == null) {
+      _draft(field, null);
+      return Future.value(const CrudActionResult.success());
+    }
+    final completion = CrudActionCompleter();
+    _bloc.add(UpdateTeamTask(apply(task), completion: completion, draftField: field));
+    return completion.future;
+  }
+
+  void _showError(String message) {
+    _messenger?.showSnackBar(SnackBar(content: Text(message)));
+  }
 
   void _report(CrudActionCompleter completion) {
     completion.future.then((result) {
@@ -326,15 +392,35 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       key: const Key('team-task-edit-link'),
       enabled: manage,
       onTap: () async {
+        // Events are saved as they are marked (no button); a category, a
+        // topic or "ללא שיוך" is one tap that closes the picker.
         final choice = await showTaskLinkPicker(
           context,
           initial: task.link,
           initialEventIds: task.linkedEventIds,
+          liveEvents: LiveEventsLink(
+            onChanged: (ids) => _link.change(TaskLinkChoice(
+                TaskLink(TaskLinkType.event, ids.isEmpty ? '' : ids.first),
+                eventIds: ids)),
+            saver: _link,
+            saved: () {
+              final state = _bloc.state;
+              return state is TeamTasksLoaded
+                  ? state.taskById(widget.taskId)?.linkedEventIds ?? const []
+                  : const [];
+            },
+          ),
         );
-        if (choice == null) return;
-        final eventIds = choice.linkedEventIds;
-        if (choice.link == task.link && _sameIds(eventIds, task.linkedEventIds)) return;
-        _edit(task.copyWith(link: () => choice.link, eventIds: eventIds));
+        if (choice != null) {
+          final current = _bloc.state is TeamTasksLoaded
+              ? (_bloc.state as TeamTasksLoaded).taskById(widget.taskId)
+              : null;
+          final same = current != null &&
+              choice.link == current.link &&
+              _sameIds(choice.linkedEventIds, current.linkedEventIds);
+          if (!same) _link.change(choice);
+        }
+        _link.flush();
       },
       child: Text('$kind$label'),
     );
@@ -461,24 +547,18 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             ],
           );
     if (!manage) return chips;
-    return EditableValue<List<String>>(
+    // No save button (Omer, 16/11/2026): each tick is saved at once.
+    return _tappable(
       key: const Key('team-task-edit-owners'),
-      value: task.assigneeIds,
-      display: chips,
-      sheetTitle: 'אחראים',
-      wide: widget.wide,
-      inDialog: true,
-      editor: (context, draft, onChanged, onSubmit) => AssigneesEditor(
-        initial: draft,
+      enabled: true,
+      onTap: () => showLiveOwnersPicker(
+        context,
+        taskId: widget.taskId,
+        wide: widget.wide,
         offered: activeMembers,
-        current: task.owners,
-        onChanged: onChanged,
-        emptyLabel: 'אין חברי צוות',
-        notOfferedLabel: 'כבר לא פעיל/ה בצוות',
-        pickedFirst: true,
-        showPermanentMark: true,
+        saver: _owners,
       ),
-      onCommit: (ids) => _edit(task.copyWith(assigneeIds: ids, ownerIds: ids)),
+      child: chips,
     );
   }
 

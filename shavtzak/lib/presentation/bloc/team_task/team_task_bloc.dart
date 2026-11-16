@@ -46,6 +46,9 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
   TeamTaskFilter _filter = TeamTaskFilter.initial;
   final Map<String, List<_Pending>> _pending = {};
 
+  /// Changes not sent yet, per task and field, laid over everything else.
+  final Map<String, Map<String, TeamTask Function(TeamTask task)>> _drafts = {};
+
   TeamTaskBloc({
     required TeamTaskRepository repository,
     DateTime Function()? clock,
@@ -86,6 +89,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     on<DeleteTaskTopic>(
         (event, emit) => _send(event.completion, () => _repository.deleteTopic(event.id)));
     on<UpdateTeamTask>(_onUpdate);
+    on<TeamTaskDraftChanged>(_onDraft);
     on<SetTeamTaskStatus>(_onStatus);
   }
 
@@ -107,6 +111,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     _viewer = viewer;
     _board = null;
     _pending.clear();
+    _drafts.clear();
     _subscription = _repository.watchBoardFor(viewer).listen(
       (board) => add(_BoardArrived(board)),
       onError: (Object error) {
@@ -131,6 +136,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
           (change) => change.isSettled && delivered.updatedAt.isAfter(change.baseUpdatedAt));
       return changes.isEmpty;
     });
+    _drafts.removeWhere((id, _) => !byId.containsKey(id));
     _board = event.board;
     _emitLoaded(emit);
   }
@@ -141,8 +147,10 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     if (board == null || viewer == null) return;
     final all = [
       for (final task in board.tasks)
-        (_pending[task.id] ?? const <_Pending>[])
-            .fold<TeamTask>(task, (value, change) => change.apply(value)),
+        _withDrafts(
+          (_pending[task.id] ?? const <_Pending>[])
+              .fold<TeamTask>(task, (value, change) => change.apply(value)),
+        ),
     ];
     final mine = myTeamTaskRows(all, viewer.id);
     final now = _clock();
@@ -211,8 +219,36 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     }
   }
 
+  TeamTask _withDrafts(TeamTask task) {
+    final drafts = _drafts[task.id];
+    if (drafts == null || drafts.isEmpty) return task;
+    var drafted = task;
+    for (final apply in drafts.values) {
+      drafted = apply(drafted);
+    }
+    return _joined(drafted.copyWith(ownerIds: _ownerIds(drafted)));
+  }
+
+  void _onDraft(TeamTaskDraftChanged event, Emitter<TeamTaskState> emit) {
+    final apply = event.apply;
+    if (apply == null) {
+      final drafts = _drafts[event.id];
+      if (drafts?.remove(event.field) == null) return;
+      if (drafts!.isEmpty) _drafts.remove(event.id);
+    } else {
+      _drafts.putIfAbsent(event.id, () => {})[event.field] = apply;
+    }
+    _emitLoaded(emit);
+  }
+
   Future<void> _onUpdate(UpdateTeamTask event, Emitter<TeamTaskState> emit) {
     final edited = event.task;
+    final field = event.draftField;
+    if (field != null) {
+      final drafts = _drafts[edited.id];
+      drafts?.remove(field);
+      if (drafts?.isEmpty ?? false) _drafts.remove(edited.id);
+    }
     return _optimistic(
       edited.id,
       (task) => _joined(task.copyWith(

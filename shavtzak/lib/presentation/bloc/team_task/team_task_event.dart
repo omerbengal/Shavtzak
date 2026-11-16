@@ -43,10 +43,28 @@ class UpdateTeamTask extends TeamTaskEvent {
   final TeamTask task;
   final CrudActionCompleter? completion;
 
-  const UpdateTeamTask(this.task, {this.completion});
+  /// The draft ([TeamTaskDraftChanged.field]) this edit sends: dropped in the
+  /// same step the edit is laid over the task, so nothing flickers.
+  final String? draftField;
+
+  const UpdateTeamTask(this.task, {this.completion, this.draftField});
 
   @override
   List<Object?> get props => [task];
+}
+
+/// A manager's change to one field that is not sent yet (a picker with no
+/// save button waits a moment for the next tick, [DebouncedSaver]): shown
+/// over task [id] at once. [apply] null drops it.
+class TeamTaskDraftChanged extends TeamTaskEvent {
+  final String id;
+  final String field;
+  final TeamTask Function(TeamTask task)? apply;
+
+  const TeamTaskDraftChanged(this.id, this.field, this.apply);
+
+  @override
+  List<Object?> get props => [id, field, apply];
 }
 
 class DeleteTeamTask extends TeamTaskEvent {
