@@ -104,7 +104,9 @@ test('setSubtaskDone, addUpdate and delete', async () => {
   await insert(store, {assigneeIds: [], subtasks: [{id: 's1', title: 'x', assigneeIds: ['a']}]});
   const ticked = await runTeamTaskOperation(store, 'teamTask.setSubtaskDone',
     {id: 't1', subtaskId: 's1', isDone: true}, owner, now);
-  assert.equal(ticked.after?.status, 'done');
+  assert.equal(ticked.after?.subtasks[0].status, 'done');
+  // Subtasks no longer drive the parent's status (16/11/2026).
+  assert.equal(ticked.after?.status, 'open');
   const logged = await runTeamTaskOperation(store, 'teamTask.addUpdate', {id: 't1', text: 'סגרנו'}, owner, now);
   assert.equal(logged.after?.updates[0].text, 'סגרנו');
   await assert.rejects(runTeamTaskOperation(store, 'teamTask.delete', {id: 't1'}, owner, now), status(403));
@@ -139,7 +141,7 @@ test('setStatus and addUpdate with a subtaskId act on that subtask', async () =>
   const moved = await runTeamTaskOperation(store, 'teamTask.setStatus',
     {id: 't1', subtaskId: 's1', status: 'inProgress'}, owner, now);
   assert.equal(moved.after?.subtasks[0].status, 'inProgress');
-  assert.equal(moved.after?.status, 'inProgress');
+  assert.equal(moved.after?.status, 'open');
   const dup = await runTeamTaskOperation(store, 'teamTask.setStatus',
     {id: 't1', subtaskId: 's2', status: 'duplicate', duplicateOfId: 's1'}, owner, now);
   assert.equal(dup.after?.subtasks[1].duplicateOfId, 's1');
@@ -149,6 +151,19 @@ test('setStatus and addUpdate with a subtaskId act on that subtask', async () =>
     {id: 't1', subtaskId: 's1', text: 'התחלתי'}, owner, now);
   assert.equal(logged.after?.subtasks[0].updates[0].text, 'התחלתי');
   assert.equal(logged.after?.updates.length, 0);
+});
+
+test('setStatus on a task that still stores subtasks sets its own status (16/11/2026)', async () => {
+  const store = new MemoryStore();
+  await insert(store, {assigneeIds: [], subtasks: [
+    {id: 's1', title: 'x', assigneeIds: ['a']},
+    {id: 's2', title: 'y', assigneeIds: ['a']},
+  ]});
+  const result = await runTeamTaskOperation(store, 'teamTask.setStatus',
+    {id: 't1', status: 'done'}, manager, now);
+  assert.equal(result.after?.status, 'done');
+  assert.equal(result.after?.subtasks.length, 2);
+  assert.deepEqual(result.after?.ownerIds, ['a']);
 });
 
 test('insert links to a pending event only when it exists (round 10)', async () => {

@@ -84,7 +84,7 @@ export type TeamTaskDoc = {
    */
   eventIds: string[];
   urgency: TeamTaskUrgency;
-  /** The task's own owners; always empty when it has subtasks. */
+  /** The task's own owners (also on an old task that still stores subtasks). */
   assigneeIds: string[];
   subtasks: TeamSubtask[];
   contacts: StageContact[];
@@ -141,8 +141,10 @@ function storedUrgency(value: unknown): TeamTaskUrgency {
 export function deriveOwnerIds(
   task: Pick<TeamTaskDoc, 'assigneeIds' | 'subtasks'>,
 ): string[] {
-  if (task.subtasks.length === 0) return [...new Set(task.assigneeIds)];
-  const ids: string[] = [];
+  // Subtasks were removed from the app (16/11/2026): a task's own owners
+  // count first; owners of subtasks still stored on an old task keep their
+  // access until the migration turns those subtasks into tasks.
+  const ids: string[] = [...new Set(task.assigneeIds)];
   for (const subtask of task.subtasks) {
     for (const id of subtask.assigneeIds) {
       if (!ids.includes(id)) ids.push(id);
@@ -436,10 +438,7 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
     link: parseTaskLink(input['link']),
     eventIds: parseEventIds(input['eventIds']),
     urgency: parseTeamTaskUrgency(input['urgency']),
-    // A task with subtasks has no owners of its own (decision 6).
-    assigneeIds: subtasks != null && subtasks.length > 0
-      ? []
-      : parseAssigneeIds(input['assigneeIds']),
+    assigneeIds: parseAssigneeIds(input['assigneeIds']),
     subtasks,
     contacts: parseContacts(input['contacts']),
     deadline: parseDeadline(input['deadline']),
@@ -447,36 +446,6 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
 }
 
 // ---- status ----
-
-/**
- * A parent's status, computed from its subtasks (Omer, round 4: it is never
- * set by hand). Cancelled and duplicate subtasks do not count; of the rest:
- * every one open = open, every one done = done, anything else (one in
- * progress, or open and done mixed) = in progress. When every subtask is
- * cancelled or a duplicate there is nothing left to do: cancelled.
- */
-export function deriveParentStatus(subtasks: readonly TeamSubtask[]): TeamTaskStatus {
-  const counted = subtasks.filter((subtask) =>
-    subtask.status !== 'cancelled' && subtask.status !== 'duplicate');
-  if (counted.length === 0) return 'cancelled';
-  if (counted.every((subtask) => subtask.status === 'open')) return 'open';
-  if (counted.every((subtask) => subtask.status === 'done')) return 'done';
-  return 'inProgress';
-}
-
-/** [next] with the status its subtasks give it; a task without subtasks keeps its own. */
-function withAutoStatus(previous: TeamTaskDoc, next: TeamTaskDoc, ctx: Ctx): TeamTaskDoc {
-  if (next.subtasks.length === 0) return next;
-  const status = deriveParentStatus(next.subtasks);
-  return {
-    ...next,
-    status,
-    duplicateOfId: null,
-    completedAt: status === 'done'
-      ? (previous.status === 'done' && previous.completedAt != null ? previous.completedAt : ctx.now)
-      : null,
-  };
-}
 
 function finish(task: TeamTaskDoc): TeamTaskDoc {
   return {...task, ownerIds: deriveOwnerIds(task)};
@@ -528,7 +497,8 @@ export function applyTeamTaskEdit(
   const fields = parseEditableFields(input);
   const storedById = new Map(task.subtasks.map((subtask) => [subtask.id, subtask]));
   // A payload without subtasks (this app version, which no longer shows
-  // them) keeps the stored ones; without the task's owners then.
+  // them) keeps the stored ones. Stored subtasks no longer drive the task's
+  // own status or owners (16/11/2026).
   const subtasks = fields.subtasks == null
     ? task.subtasks
     : fields.subtasks.map((subtask) => {
@@ -550,10 +520,9 @@ export function applyTeamTaskEdit(
     eventIds,
     urgency: fields.urgency ?? task.urgency,
     subtasks,
-    assigneeIds: subtasks.length > 0 ? [] : fields.assigneeIds,
     updatedAt: ctx.now,
   };
-  return finish(withAutoStatus(task, next, ctx));
+  return finish(next);
 }
 
 export function parseTeamTaskStatus(value: unknown): TeamTaskStatus {
@@ -570,9 +539,6 @@ export function applyTeamTaskStatus(
   ctx: Ctx,
 ): TeamTaskDoc {
   requireManagerOrOwner(task, ctx.actor);
-  if (task.subtasks.length > 0) {
-    throw new TaskError(400, 'הסטטוס של משימת אב נקבע לפי תתי-המשימות');
-  }
   let original: string | null = null;
   if (status === 'duplicate') {
     if (duplicateOfId == null || !ID_PATTERN.test(duplicateOfId)) {
@@ -598,7 +564,7 @@ export function applyTeamTaskStatus(
 /**
  * A subtask's own status, by a manager or one of its owners. A duplicate
  * points to another subtask of the same task or to another task (the caller
- * checks that a task id exists). The parent's status follows.
+ * checks that a task id exists). The parent keeps its own status.
  */
 export function applyTeamSubtaskStatus(
   task: TeamTaskDoc,
@@ -631,7 +597,7 @@ export function applyTeamSubtaskStatus(
     ),
     updatedAt: ctx.now,
   };
-  return finish(withAutoStatus(task, next, ctx));
+  return finish(next);
 }
 
 /** The quick tick in the parent's list: done, or back to open. */

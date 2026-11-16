@@ -29,16 +29,27 @@ if [ -z "$channel" ] || [ "$channel" = "head" ] || [ "$channel" = "live" ]; then
 fi
 
 # PREVIEW_API=1 points the build at the branch's parallel function
-# `apiPreview` (deployed separately, with Omer's approval), so backend changes
-# can be tried before `api` is redeployed.
+# `apiPreview` (deployed separately), so backend changes can be tried before
+# `api` is redeployed. When the branch changes functions/src it is the
+# default: a preview of such a branch against the production `api` fails on
+# every new operation (16/11/2026: "אירוע שעוד לא נוצר" got 400 and the old
+# parent-status block came back). PREVIEW_API=0 forces `api`.
+if [ -z "${PREVIEW_API:-}" ]; then
+  git fetch --quiet origin main || true
+  if git diff --quiet origin/main -- functions/src; then PREVIEW_API=0; else PREVIEW_API=1; fi
+fi
 dart_defines=()
-if [ "${PREVIEW_API:-0}" = "1" ]; then
+if [ "$PREVIEW_API" = "1" ]; then
   dart_defines+=(--dart-define=SHAVTZAK_API_FUNCTION=apiPreview)
   echo "==> Backend: apiPreview"
 fi
 
 echo "==> Building web (base href /) ..."
 (cd shavtzak && flutter build web --release --base-href / "${dart_defines[@]}")
+if [ "$PREVIEW_API" = "1" ] && ! grep -q apiPreview shavtzak/build/web/main.dart.js; then
+  echo "The build does not point at apiPreview; not deploying." >&2
+  exit 1
+fi
 
 echo "==> Deploying to preview channel '$channel' (expires in 7 days) ..."
 out="$(firebase hosting:channel:deploy "$channel" --expires 7d --json)"

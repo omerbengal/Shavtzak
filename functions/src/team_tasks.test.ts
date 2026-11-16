@@ -12,7 +12,6 @@ import {
   applyTeamTaskStatus,
   buildNewTeamTask,
   deriveOwnerIds,
-  deriveParentStatus,
   deleteTeamTaskUpdate,
   editTeamTaskUpdate,
   isTeamTaskOwner,
@@ -50,6 +49,7 @@ function withSubtasks(): TeamTaskDoc {
         {id: 's1', title: 'מחיר', assigneeIds: ['a'], contacts: []},
         {id: 's2', title: 'חוזה', assigneeIds: ['b'], contacts: []},
       ],
+      assigneeIds: [],
     }),
     {now, actor: manager},
   );
@@ -68,7 +68,7 @@ test('deriveOwnerIds uses assigneeIds without subtasks', () => {
   assert.deepEqual(deriveOwnerIds({assigneeIds: ['a', 'b'], subtasks: []}), ['a', 'b']);
 });
 
-test('deriveOwnerIds is the distinct subtask owners when there are subtasks', () => {
+test("deriveOwnerIds: the task's own owners, then owners of stored subtasks", () => {
   const sub = (id: string, assigneeIds: string[]) => ({
     id, title: id, description: '', assigneeIds, contacts: [], deadline: null,
     status: 'open' as const, duplicateOfId: null, updates: [], completedAt: null,
@@ -76,19 +76,25 @@ test('deriveOwnerIds is the distinct subtask owners when there are subtasks', ()
   assert.deepEqual(
     deriveOwnerIds({
       assigneeIds: ['x'],
-      subtasks: [sub('1', ['a']), sub('2', ['b', 'c']), sub('3', ['a']), sub('4', [])],
+      subtasks: [sub('1', ['a']), sub('2', ['b', 'c']), sub('3', ['a', 'x']), sub('4', [])],
     }),
-    ['a', 'b', 'c'],
+    ['x', 'a', 'b', 'c'],
   );
 });
 
-test('buildNewTeamTask clears assigneeIds when subtasks exist', () => {
+test('buildNewTeamTask from an old app with subtasks keeps its own owners', () => {
   const task = withSubtasks();
   assert.deepEqual(task.assigneeIds, []);
   assert.deepEqual(task.ownerIds, ['a', 'b']);
   assert.equal(task.status, 'open');
   assert.equal(task.createdById, 'm-admin');
   assert.equal(task.contacts.length, 1);
+  const owned = buildNewTeamTask(input({
+    assigneeIds: ['c'],
+    subtasks: [{id: 's1', title: 'מחיר', assigneeIds: ['a'], contacts: []}],
+  }), {now, actor: manager});
+  assert.deepEqual(owned.assigneeIds, ['c']);
+  assert.deepEqual(owned.ownerIds, ['c', 'a']);
 });
 
 test('buildNewTeamTask refuses a non-manager', () => {
@@ -119,55 +125,31 @@ test('link type must be event, category or topic', () => {
   assert.equal(buildNewTeamTask(input({link: null}), {now, actor: manager}).link, null);
 });
 
-test('ticking the last open subtask sets done and completedAt', () => {
+test("ticking stored subtasks no longer changes the parent's status", () => {
   let task = withSubtasks();
   task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
-  assert.equal(task.status, 'inProgress');
   task = applyTeamSubtaskToggle(task, 's2', true, {now: later, actor: ownerB});
-  assert.equal(task.status, 'done');
-  assert.deepEqual(task.completedAt, later);
-});
-
-test('unticking a subtask of a done task sets inProgress and clears completedAt', () => {
-  let task = withSubtasks();
-  task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
-  task = applyTeamSubtaskToggle(task, 's2', true, {now, actor: ownerB});
-  task = applyTeamSubtaskToggle(task, 's2', false, {now: later, actor: ownerB});
-  assert.equal(task.status, 'inProgress');
+  assert.ok(task.subtasks.every((subtask) => subtask.status === 'done'));
+  assert.equal(task.status, 'open');
   assert.equal(task.completedAt, null);
 });
 
-test("a parent's status is never set by hand", () => {
+test('a task that still stores subtasks takes a status by hand (16/11/2026)', () => {
   const task = withSubtasks();
-  expectTaskError(
-    () => applyTeamTaskStatus(task, 'cancelled', null, {now, actor: manager}),
-    400,
-    'הסטטוס של משימת אב נקבע לפי תתי-המשימות',
-  );
+  const cancelled = applyTeamTaskStatus(task, 'cancelled', null, {now, actor: manager});
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.subtasks.length, 2);
+  const done = applyTeamTaskStatus(task, 'done', null, {now: later, actor: ownerA});
+  assert.equal(done.status, 'done');
+  assert.deepEqual(done.completedAt, later);
 });
 
-test("deriveParentStatus follows Omer's round-4 rules", () => {
-  const sub = (status: TeamSubtask['status']): TeamSubtask => ({
-    id: status, title: status, description: '', assigneeIds: [], contacts: [], deadline: null,
-    status, duplicateOfId: null, updates: [], completedAt: null,
-  });
-  // Cancelled and duplicate subtasks do not count.
-  assert.equal(deriveParentStatus([sub('open'), sub('open'), sub('cancelled')]), 'open');
-  assert.equal(deriveParentStatus([sub('done'), sub('duplicate'), sub('done')]), 'done');
-  assert.equal(deriveParentStatus([sub('open'), sub('inProgress'), sub('done')]), 'inProgress');
-  // Not in the rules: open and done mixed = in progress; nothing left = cancelled.
-  assert.equal(deriveParentStatus([sub('open'), sub('done')]), 'inProgress');
-  assert.equal(deriveParentStatus([sub('cancelled'), sub('duplicate')]), 'cancelled');
-});
-
-test('cancelling every subtask cancels the parent; reopening one reopens it', () => {
+test("cancelling every stored subtask leaves the parent's status alone", () => {
   let task = withSubtasks();
+  task = applyTeamTaskStatus(task, 'inProgress', null, {now, actor: manager});
   task = applyTeamSubtaskStatus(task, 's1', 'cancelled', null, {now, actor: ownerA});
   task = applyTeamSubtaskStatus(task, 's2', 'cancelled', null, {now, actor: ownerB});
-  assert.equal(task.status, 'cancelled');
-  assert.equal(task.completedAt, null);
-  task = applyTeamSubtaskStatus(task, 's2', 'open', null, {now, actor: ownerB});
-  assert.equal(task.status, 'open');
+  assert.equal(task.status, 'inProgress');
 });
 
 test('duplicate requires duplicateOfId and refuses the task\'s own id', () => {
@@ -243,16 +225,18 @@ test('applyTeamTaskEdit keeps ticks, status, log and recomputes owners', () => {
   );
   assert.equal(edited.title, 'אולם לחנוכה');
   assert.ok(edited.subtasks[0].status === 'done');
-  assert.deepEqual(edited.ownerIds, ['c', 'b']);
+  // input() carries the parent's own owners now that they count (16/11/2026).
+  assert.deepEqual(edited.assigneeIds, ['a', 'b']);
+  assert.deepEqual(edited.ownerIds, ['a', 'b', 'c']);
   assert.equal(edited.updates.length, 1);
-  assert.equal(edited.status, 'inProgress');
+  assert.equal(edited.status, 'open');
   assert.deepEqual(edited.createdAt, now);
   assert.deepEqual(edited.updatedAt, later);
   expectTaskError(() => applyTeamTaskEdit(task, input(), {now, actor: ownerA}), 403);
   expectTaskError(() => applyTeamTaskEdit(task, input({id: 'other'}), {now, actor: manager}), 400);
 });
 
-test('applyTeamTaskEdit: removing the last open subtask completes the task', () => {
+test("applyTeamTaskEdit keeps the parent's own status whatever its subtasks", () => {
   let task = withSubtasks();
   task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
   const edited = applyTeamTaskEdit(
@@ -260,7 +244,7 @@ test('applyTeamTaskEdit: removing the last open subtask completes the task', () 
     input({subtasks: [{id: 's1', title: 'מחיר', assigneeIds: ['a'], contacts: []}]}),
     {now: later, actor: manager},
   );
-  assert.equal(edited.status, 'done');
+  assert.equal(edited.status, 'open');
 });
 
 test('isTeamTaskOwner and audit details', () => {
@@ -280,11 +264,10 @@ test('teamTaskFromStored tolerates missing fields', () => {
   assert.equal(task.deadline, null);
 });
 
-test('an edit recomputes a stored parent status that does not fit its subtasks', () => {
+test('an edit keeps a stored parent status set by hand', () => {
   let task = withSubtasks();
   task = applyTeamSubtaskToggle(task, 's1', true, {now, actor: ownerA});
-  // A document written before round 4 may hold a status set by hand.
-  task = {...task, status: 'done'};
+  task = {...task, status: 'done', completedAt: now};
   const edited = applyTeamTaskEdit(task, input({
     title: 'אולם חדש',
     subtasks: [
@@ -292,8 +275,8 @@ test('an edit recomputes a stored parent status that does not fit its subtasks',
       {id: 's2', title: 'חוזה מעודכן', assigneeIds: ['b'], contacts: []},
     ],
   }), {now: later, actor: manager});
-  assert.equal(edited.status, 'inProgress');
-  assert.equal(edited.completedAt, null);
+  assert.equal(edited.status, 'done');
+  assert.deepEqual(edited.completedAt, now);
 });
 
 test('a subtask is a full task: its fields, its status and its own log', () => {
@@ -312,7 +295,7 @@ test('a subtask is a full task: its fields, its status and its own log', () => {
   assert.deepEqual(task.ownerIds, ['a', 'b']);
   task = applyTeamSubtaskStatus(task, 's1', 'inProgress', null, {now, actor: ownerB});
   assert.equal(task.subtasks[0].status, 'inProgress');
-  assert.equal(task.status, 'inProgress');
+  assert.equal(task.status, 'open');
   task = appendTeamTaskUpdate(task, 'ביקשתי הצעות', {now, actor: ownerA}, 's1');
   assert.equal(task.subtasks[0].updates[0].text, 'ביקשתי הצעות');
   assert.equal(task.updates.length, 0);
@@ -321,15 +304,13 @@ test('a subtask is a full task: its fields, its status and its own log', () => {
     () => applyTeamSubtaskStatus(task, 's1', 'done', null, {now, actor: stranger}), 403);
 });
 
-test('the parent is done when every subtask is closed and one is done', () => {
+test('closing every stored subtask does not close the parent', () => {
   let task = withSubtasks();
   task = applyTeamSubtaskStatus(task, 's1', 'cancelled', null, {now, actor: ownerA});
-  assert.notEqual(task.status, 'done');
   task = applyTeamSubtaskStatus(task, 's2', 'done', null, {now: later, actor: ownerB});
-  assert.equal(task.status, 'done');
-  assert.deepEqual(task.completedAt, later);
-  task = applyTeamSubtaskStatus(task, 's2', 'inProgress', null, {now: later, actor: ownerB});
-  assert.equal(task.status, 'inProgress');
+  assert.equal(task.subtasks[1].status, 'done');
+  assert.equal(task.status, 'open');
+  assert.equal(task.completedAt, null);
 });
 
 test('a subtask duplicate points elsewhere, never to itself', () => {
@@ -467,6 +448,10 @@ test('an edit with no subtasks key keeps the stored subtasks', () => {
   delete payload['subtasks'];
   const edited = applyTeamTaskEdit(doc, payload, {now: later, actor: manager});
   assert.deepEqual(edited.subtasks.map((s) => s.id), ['s1', 's2']);
-  assert.deepEqual(edited.assigneeIds, []);
+  // This app sends the task's own owners; they now count next to the stored
+  // subtasks' owners.
+  assert.deepEqual(edited.assigneeIds, ['a', 'b']);
   assert.deepEqual(edited.ownerIds, ['a', 'b']);
+  const own = applyTeamTaskEdit(doc, {...payload, assigneeIds: ['c']}, {now: later, actor: manager});
+  assert.deepEqual(own.ownerIds, ['c', 'a', 'b']);
 });
