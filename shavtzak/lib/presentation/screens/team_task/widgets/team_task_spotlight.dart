@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
+import '../../../../core/web/browser_insets.dart';
 import '../../../../core/utils/team_task_rules.dart';
 import '../../../../core/utils/team_task_spotlight.dart';
 import '../../../../domain/entities/team_task.dart';
@@ -585,9 +586,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, box) {
-                      // The home bar's room in the installed app (zero in a tab).
-                      final pad = EdgeInsets.fromLTRB(
-                          16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom);
+                      // The home bar's room in the installed app (zero in a
+                      // tab), or the part Safari's floating toolbar covers.
+                      final bottom = math.max(
+                          MediaQuery.paddingOf(context).bottom, browserBottomOverlap());
+                      final pad = EdgeInsets.fromLTRB(16, 12, 16, 16 + bottom);
                       final room = math.max(0.0, box.maxHeight - pad.vertical);
                       if (room != _room || _logExtraFor != _index) {
                         _room = room;
