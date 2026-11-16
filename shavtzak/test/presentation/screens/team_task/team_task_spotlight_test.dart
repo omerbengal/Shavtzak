@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/data/repositories/team_task_repository.dart';
@@ -215,16 +217,40 @@ void main() {
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
   });
 
-  testWidgets('a sent update lands in the log before the card moves on', (tester) async {
+  testWidgets('a sent update flies from the field up to the log before the card moves on',
+      (tester) async {
     await open(tester);
     await tester.tap(find.byKey(const Key('spotlight-update')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('spotlight-update-field')), 'דיברתי עם הספק');
     await tester.ensureVisible(find.byKey(const Key('spotlight-send')));
     await tester.pumpAndSettle();
+    final fieldTop =
+        tester.getRect(find.byKey(const Key('spotlight-update-field'))).top;
     await tester.tap(find.byKey(const Key('spotlight-send')));
     await tester.pump();
+    await tester.pump();
+    // Mid-air: one box carries the text, between the field and the log; the
+    // row in the log keeps its place empty until it lands.
+    await tester.pump(const Duration(milliseconds: 260));
+    final flight = find.byKey(const Key('spotlight-update-flight'));
+    expect(flight, findsOneWidget);
+    expect(find.descendant(of: flight, matching: find.text('דיברתי עם הספק')), findsOneWidget);
+    final rowRect = tester.getRect(find.byKey(const Key('spotlight-log-echo')));
+    final midTop = tester.getRect(flight).top;
+    expect(midTop, lessThan(fieldTop));
+    expect(midTop, greaterThan(rowRect.top));
+    final hidden = tester.widget<Opacity>(find
+        .ancestor(
+            of: find.descendant(
+                of: find.byKey(const Key('spotlight-log-echo')),
+                matching: find.text('דיברתי עם הספק')),
+            matching: find.byType(Opacity))
+        .first);
+    expect(hidden.opacity, 0);
+    // Landed: the box is gone, the row is in place, the card still waits.
     await tester.pump(const Duration(milliseconds: 300));
+    expect(flight, findsNothing);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
     expect(
         find.descendant(
@@ -232,6 +258,71 @@ void main() {
         findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+  });
+
+  testWidgets(
+      'the first save flies at once, while the server still holds the save and the '
+      'stream already shows the update (Omer, msg 4004)', (tester) async {
+    final harness = await open(tester);
+    await tester.tap(find.byKey(const Key('spotlight-update')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('spotlight-update-field')), 'דיברתי עם הספק');
+    await tester.ensureVisible(find.byKey(const Key('spotlight-send')));
+    await tester.pumpAndSettle();
+    // The first save after the app opens waits for the server.
+    final server = harness.repository.gate = Completer<void>();
+    await tester.tap(find.byKey(const Key('spotlight-send')));
+    await tester.pump();
+    // Firestore shows the written update in the log before the save returns.
+    final sent = TaskUpdateEntry(
+        id: 'new', text: 'דיברתי עם הספק', at: DateTime.utc(2026, 11, 15, 8), byId: 'm1',
+        byName: 'דנה');
+    await harness.deliver(
+        tester,
+        board([
+          recent,
+          quiet,
+          task('c', 'מוזמנים', link: topic2, updates: [sent]),
+          closed,
+        ]));
+    await tester.pump(const Duration(milliseconds: 200));
+    final flight = find.byKey(const Key('spotlight-update-flight'));
+    expect(flight, findsOneWidget);
+    // Its row waits, unseen, for the box to land.
+    final hidden = tester.widget<Opacity>(find
+        .ancestor(
+            of: find.descendant(
+                of: find.byKey(const Key('spotlight-log-new')),
+                matching: find.text('דיברתי עם הספק')),
+            matching: find.byType(Opacity))
+        .first);
+    expect(hidden.opacity, 0);
+    await tester.pump(const Duration(milliseconds: 400));
+    // Landed, but the card stays until the save is confirmed.
+    expect(flight, findsNothing);
+    expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
+    server.complete();
+    harness.repository.gate = null;
+    await tester.pumpAndSettle();
+    expect(harness.repository.calls, ['log:c:דיברתי עם הספק']);
+    expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+  });
+
+  testWidgets('a refused save brings the text back to the field', (tester) async {
+    final harness = await open(tester);
+    await tester.tap(find.byKey(const Key('spotlight-update')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('spotlight-update-field')), 'דיברתי עם הספק');
+    await tester.ensureVisible(find.byKey(const Key('spotlight-send')));
+    await tester.pumpAndSettle();
+    harness.repository.failWith = Exception('offline');
+    await tester.tap(find.byKey(const Key('spotlight-send')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('spotlight-update-flight')), findsNothing);
+    expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
+    final field = tester.widget<TextField>(find.byKey(const Key('spotlight-update-field')));
+    expect(field.controller!.text, 'דיברתי עם הספק');
+    expect(find.byKey(const Key('spotlight-log-echo')), findsNothing);
   });
 
   testWidgets('the summary counts up, with confetti when nothing was left for later',
@@ -245,7 +336,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('spotlight-send')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1300));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 800));
     expect(find.byKey(const Key('spotlight-summary')), findsOneWidget);
     expect(find.byKey(const Key('spotlight-confetti')), findsOneWidget);
     await tester.pumpAndSettle();

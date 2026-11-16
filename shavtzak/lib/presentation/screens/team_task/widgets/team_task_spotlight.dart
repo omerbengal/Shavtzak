@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -96,9 +97,17 @@ abstract final class SpotlightStyle {
   static const Duration fling = Duration(milliseconds: 560);
   static const Duration done = Duration(milliseconds: 520);
 
-  /// A sent update: it lands in the log, stays a moment, then the card goes.
-  static const Duration update = Duration(milliseconds: 1150);
-  static const double updateHold = 0.55;
+  /// A sent update flies from the text field up to its place at the top of
+  /// the log (Omer, msg 3969: "ממש יגיע משורת הטקסט למטה - ישר למעלה").
+  static const Duration flight = Duration(milliseconds: 520);
+
+  /// After it lands: it glows a moment, then the card goes.
+  static const Duration update = Duration(milliseconds: 760);
+  static const double updateHold = 0.35;
+
+  /// Room around the card for its shadow (blur 28, 12 down), so the
+  /// picture of the card taken for its way out holds the whole shadow.
+  static const EdgeInsets cardShadowRoom = EdgeInsets.fromLTRB(52, 40, 52, 64);
 
   static const Duration confetti = Duration(milliseconds: 1600);
   static const Duration progress = Duration(milliseconds: 500);
@@ -134,6 +143,26 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   /// The update just sent, shown in the log until the stream brings it.
   String? _echo;
 
+  /// The sent update in flight: where it took off (the field, global) and
+  /// its text. Null when nothing flies.
+  Rect? _flightFrom;
+  String _flightText = '';
+
+  /// The sent update reached its place in the log (its row shows from here).
+  bool _landed = false;
+
+  final GlobalKey _bodyKey = GlobalKey();
+  final GlobalKey _fieldKey = GlobalKey();
+  final GlobalKey _landingKey = GlobalKey();
+  final ScrollController _logScroll = ScrollController();
+
+  /// While "לא עכשיו" / "סיימתי" throw the card away it is painted from one
+  /// picture of it ([SnapshotWidget]): a turned or shrinking card with its
+  /// blurred shadow is costly to redraw on every frame, enough to halve the
+  /// frame rate in a browser tab (Omer, msg 3998 / 4001: only the installed
+  /// app was smooth). The picture is the same pixels, so it looks the same.
+  final SnapshotController _cardPicture = SnapshotController();
+
   /// The update ids the current card opened with: any other one is new and
   /// lands with the "sent" animation.
   Set<String> _seenUpdates = const {};
@@ -146,7 +175,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       AnimationController(vsync: this, duration: SpotlightStyle.confetti);
   late final AnimationController _logIn =
       AnimationController(vsync: this, duration: SpotlightStyle.logIn);
-  late final Listenable _motion = Listenable.merge([_enter, _exit]);
+  late final AnimationController _flight =
+      AnimationController(vsync: this, duration: SpotlightStyle.flight);
+  late final Listenable _motion = Listenable.merge([_enter, _exit, _flight]);
   List<_ConfettiPiece> _pieces = const [];
   final math.Random _random = math.Random();
 
@@ -171,6 +202,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     _enter.dispose();
     _logIn.dispose();
     _exit.dispose();
+    _flight.dispose();
+    _logScroll.dispose();
+    _cardPicture.dispose();
     _confetti.dispose();
     _update.dispose();
     _updateFocus.dispose();
@@ -189,10 +223,14 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       _index++;
       _composing = false;
       _echo = null;
+      _flightFrom = null;
+      _landed = false;
       _exitKind = _Exit.none;
       _update.clear();
     });
+    _cardPicture.allowSnapshotting = false;
     _exit.value = 0;
+    _flight.value = 0;
     _enter.forward(from: 0);
     _logIn.forward(from: 0);
     if (_finished && _tally.skipped.isEmpty && _total > 0) _celebrate();
@@ -201,6 +239,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   /// Plays [kind]'s way out, then moves on.
   Future<void> _leaveCard(_Exit kind) async {
     setState(() => _exitKind = kind);
+    // Not for a sent update: its row still glows inside the card.
+    _cardPicture.allowSnapshotting = kind == _Exit.skip || kind == _Exit.done;
     _exit.duration = switch (kind) {
       _Exit.skip => SpotlightStyle.fling,
       _Exit.done => SpotlightStyle.done,
@@ -285,16 +325,57 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     context.read<TeamTaskBloc>().add(task.isSubtask
         ? AddTeamTaskUpdate(task.parentId!, text, subtaskId: task.id, completion: completion)
         : AddTeamTaskUpdate(task.id, text, completion: completion));
-    final result = await _await(completion);
-    if (!mounted) return;
-    if (!result.isSuccess) return _failed(result);
-    HapticFeedback.lightImpact();
+    // Take off right away, from where the field is now, before the keyboard
+    // goes. Not after the save: Firestore shows the new update in the log
+    // the moment it is written locally, while the save itself waits for the
+    // server (long on the first send after the app opens), so waiting made
+    // the update just appear on top, with the flight late or never seen
+    // (Omer, msg 4004: no flight in the first Blitz).
+    final field = _fieldKey.currentContext?.findRenderObject();
+    final from = field is RenderBox && field.attached && field.hasSize
+        ? field.localToGlobal(Offset.zero) & field.size
+        : null;
     _updateFocus.unfocus();
     setState(() {
-      _tally = _tally.update(task.id);
       _echo = text;
       _update.clear();
+      _exitKind = _Exit.update;
+      _flightFrom = from;
+      _flightText = text;
+      _landed = false;
     });
+    // Its place is the top of the log: bring the log back there.
+    if (_logScroll.hasClients && _logScroll.offset > 0) _logScroll.jumpTo(0);
+    // It lands when the flight ends, even while the server still holds the
+    // save; the card moves on only once the save is confirmed.
+    final flown = (from == null
+            ? Future<void>.value()
+            : _flight.forward(from: 0).orCancel.catchError((_) {}))
+        .then((_) {
+      if (!mounted || _exitKind != _Exit.update || _echo != text) return;
+      setState(() {
+        _landed = true;
+        _flightFrom = null;
+      });
+    });
+    final result = await _await(completion);
+    if (!mounted) return;
+    if (!result.isSuccess) {
+      // Back to the field with the text, as if it never left.
+      _flight.value = 0;
+      setState(() {
+        _echo = null;
+        _exitKind = _Exit.none;
+        _flightFrom = null;
+        _landed = false;
+        _update.text = text;
+      });
+      return _failed(result);
+    }
+    HapticFeedback.lightImpact();
+    await flown;
+    if (!mounted || _exitKind != _Exit.update) return;
+    setState(() => _tally = _tally.update(task.id));
     _leaveCard(_Exit.update);
   }
 
@@ -397,6 +478,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           title: Text(label, overflow: TextOverflow.ellipsis),
         ),
         body: Stack(
+          key: _bodyKey,
           children: [
             Column(
               children: [
@@ -426,6 +508,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 ),
               ],
             ),
+            if (_flightFrom != null)
+              Positioned.fill(child: IgnorePointer(child: _flightLayer(s))),
             Positioned.fill(child: _confettiLayer()),
             // On the web the emoji come from a fallback font downloaded the
             // first time one is laid out: lay them all out, unseen, when the
@@ -551,7 +635,17 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     // Their own layers: the card's move / fade / turn only composites the
     // cached picture instead of repainting the card (its blurred shadow, the
     // timeline) on every frame.
-    final card = RepaintBoundary(child: _card(task, s, logHeight));
+    final card = _ShadowRoom(
+      room: SpotlightStyle.cardShadowRoom,
+      child: SnapshotWidget(
+        controller: _cardPicture,
+        mode: SnapshotMode.permissive,
+        child: Padding(
+          padding: SpotlightStyle.cardShadowRoom,
+          child: RepaintBoundary(child: _card(task, s, logHeight)),
+        ),
+      ),
+    );
     final lower = RepaintBoundary(child: _composing ? _composer(task, s) : _actions(task, s));
     return AnimatedBuilder(
       animation: _motion,
@@ -581,11 +675,13 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             opacity *= 1 - out;
             lowerOpacity *= 1 - const Interval(0, 0.3).transform(e);
           case _Exit.update:
-            final out =
-                Curves.easeInCubic.transform(Interval(SpotlightStyle.updateHold, 1).transform(e));
+            final out = _landed
+                ? Curves.easeInCubic.transform(Interval(SpotlightStyle.updateHold, 1).transform(e))
+                : 0.0;
             dy = -0.2 * out;
             opacity *= 1 - out;
-            lowerOpacity *= 1 - const Interval(0, 0.3).transform(e);
+            // The field's row fades while the update flies out of it.
+            lowerOpacity *= 1 - const Interval(0, 0.35).transform(math.max(_flight.value, e));
           case _Exit.none:
             break;
         }
@@ -797,6 +893,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           stamp: 'עכשיו',
           s: s,
           fresh: true,
+          landing: true,
           first: true,
           last: task.updates.isEmpty,
         ),
@@ -810,6 +907,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 '${task.updates[i].byName ?? unknownMemberLabel} · ${logStamp(task.updates[i].at)}',
             s: s,
             fresh: fresh.contains(task.updates[i].id),
+            landing: fresh.isNotEmpty && task.updates[i].id == fresh.first,
             first: i == 0 && echo == null,
             last: i == task.updates.length - 1,
           ),
@@ -846,8 +944,10 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: maxHeight),
               child: Scrollbar(
+                controller: _logScroll,
                 child: SingleChildScrollView(
                   key: Key('spotlight-updates-scroll-${task.id}'),
+                  controller: _logScroll,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: rows,
@@ -886,6 +986,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     required String stamp,
     required double s,
     required bool fresh,
+    bool landing = false,
     required bool first,
     required bool last,
   }) {
@@ -938,30 +1039,105 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       ),
     );
     if (!fresh) return KeyedSubtree(key: key, child: row);
+    // A sent update keeps its place empty while it flies up (the flight
+    // lands on this row's box, [_flightLayer]); once there it glows a moment.
     return AnimatedBuilder(
       key: key,
       animation: _exit,
       builder: (context, child) {
-        final t = _exitKind == _Exit.update
-            ? Curves.easeOutBack.transform(const Interval(0, 0.35).transform(_exit.value))
-            : 1.0;
-        final glow =
-            _exitKind == _Exit.update ? 1 - const Interval(0.3, 0.9).transform(_exit.value) : 0.0;
-        return Transform.translate(
-          offset: Offset(0, 90 * (1 - t)),
-          child: Opacity(
-            opacity: t.clamp(0.0, 1.0),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Color.lerp(Colors.transparent, TaskStyle.currentLight, glow),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: child,
+        final sent = _exitKind == _Exit.update;
+        final glow = sent && _landed ? 1 - const Interval(0.1, 0.8).transform(_exit.value) : 0.0;
+        return Opacity(
+          opacity: sent && !_landed ? 0 : 1,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              // Fade the blue's own alpha: from Colors.transparent (black,
+              // alpha 0) the way passed through grey.
+              color: TaskStyle.currentLight.withValues(alpha: glow),
+              borderRadius: BorderRadius.circular(10),
             ),
+            child: child,
           ),
         );
       },
-      child: row,
+      child: landing ? KeyedSubtree(key: _landingKey, child: row) : row,
+    );
+  }
+
+  /// The sent update on its way from the field (bottom) to its row at the
+  /// top of the log: one box that moves and reshapes from the field's look
+  /// (white, bordered) to the row's landing glow, the text riding inside.
+  /// Only this layer rebuilds per frame; it reads where the row is every
+  /// frame, so it follows the card if the keyboard closing moves it.
+  Widget _flightLayer(double s) {
+    return AnimatedBuilder(
+      animation: _flight,
+      builder: (context, _) {
+        final body = _bodyKey.currentContext?.findRenderObject();
+        final target = _landingKey.currentContext?.findRenderObject();
+        final from = _flightFrom;
+        if (from == null ||
+            body is! RenderBox ||
+            target is! RenderBox ||
+            !target.attached ||
+            !target.hasSize) {
+          return const SizedBox.shrink();
+        }
+        final origin = body.localToGlobal(Offset.zero);
+        final to = (target.localToGlobal(Offset.zero) & target.size).shift(-origin);
+        final t = Curves.easeInOutCubic.transform(_flight.value);
+        final rect = Rect.lerp(from.shift(-origin), to, t)!;
+        final lift = math.sin(math.pi * t);
+        final padding = EdgeInsetsDirectional.lerp(
+          const EdgeInsetsDirectional.fromSTEB(12, 14, 12, 14),
+          EdgeInsetsDirectional.fromSTEB(28 * s, 4 * s, 0, 10 * s),
+          t,
+        )!;
+        return Stack(
+          children: [
+            Positioned.fromRect(
+              rect: rect,
+              child: RepaintBoundary(
+                child: Transform.scale(
+                  scale: 1 + 0.04 * lift,
+                  child: Container(
+                    key: const Key('spotlight-update-flight'),
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: Color.lerp(TaskStyle.stageCard, TaskStyle.currentLight, t),
+                      border: Border.all(
+                        color: Color.lerp(TaskStyle.stageCardBorder, TaskStyle.currentLight, t)!,
+                      ),
+                      borderRadius: BorderRadius.circular(14 - 4 * t),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color.fromRGBO(10, 30, 60, 0.22 * lift),
+                          blurRadius: 22 * lift,
+                          offset: Offset(0, 8 * lift),
+                        ),
+                      ],
+                    ),
+                    padding: padding,
+                    child: Align(
+                      alignment: AlignmentDirectional.topStart,
+                      child: Text(
+                        _flightText,
+                        overflow: TextOverflow.clip,
+                        style: TextStyle(
+                          fontSize: SpotlightStyle.bodySize * s,
+                          height: 1.35,
+                          fontWeight: FontWeight.lerp(FontWeight.normal, FontWeight.w600, t),
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1136,6 +1312,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           ),
           SizedBox(height: 12 * s),
           RtlArrowKeys(
+            key: _fieldKey,
             multiline: true,
             child: TextField(
               key: const Key('spotlight-update-field'),
@@ -1396,4 +1573,91 @@ class _ConfettiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ConfettiPainter old) => old.t != t || old.pieces != pieces;
+}
+
+/// Lays [child] out [room] bigger on every side than its own box and paints it
+/// that much up and to the side, so the child can hold the paint that spills
+/// out of the card (its shadow) while the layout around sees only the card.
+class _ShadowRoom extends SingleChildRenderObjectWidget {
+  const _ShadowRoom({required this.room, required super.child});
+
+  final EdgeInsets room;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderShadowRoom(room);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderShadowRoom renderObject) {
+    renderObject.room = room;
+  }
+}
+
+class _RenderShadowRoom extends RenderProxyBox {
+  _RenderShadowRoom(this._room);
+
+  EdgeInsets _room;
+  EdgeInsets get room => _room;
+  set room(EdgeInsets value) {
+    if (value == _room) return;
+    _room = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    final inner = BoxConstraints(
+      minWidth: constraints.minWidth + room.horizontal,
+      maxWidth: constraints.maxWidth + room.horizontal,
+      minHeight: constraints.minHeight + room.vertical,
+      maxHeight: constraints.maxHeight + room.vertical,
+    );
+    child.layout(inner, parentUsesSize: true);
+    size = constraints.constrain(
+        Size(child.size.width - room.horizontal, child.size.height - room.vertical));
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      math.max(0, super.computeMinIntrinsicWidth(height + room.vertical) - room.horizontal);
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      math.max(0, super.computeMaxIntrinsicWidth(height + room.vertical) - room.horizontal);
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      math.max(0, super.computeMinIntrinsicHeight(width + room.horizontal) - room.vertical);
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      math.max(0, super.computeMaxIntrinsicHeight(width + room.horizontal) - room.vertical);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.smallest;
+
+  Offset get _shift => Offset(-room.left, -room.top);
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child != null) context.paintChild(child, offset + _shift);
+  }
+
+  @override
+  void applyPaintTransform(RenderObject child, Matrix4 transform) {
+    transform.translateByDouble(_shift.dx, _shift.dy, 0, 1);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final child = this.child;
+    if (child == null) return false;
+    return result.addWithPaintOffset(
+      offset: _shift,
+      position: position,
+      hitTest: (result, transformed) => child.hitTest(result, position: transformed),
+    );
+  }
 }
