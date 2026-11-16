@@ -175,56 +175,63 @@ void main() {
     expect(harness.repository.inserted, isEmpty);
   });
 
-  testWidgets('a new task is filled in full before it exists: owners, contacts, subtasks',
+  testWidgets('a new task is filled in full before it exists: contacts and urgency, no subtasks',
       (tester) async {
     final harness = await pumpTeamTasks(tester,
         user: manager, board: board(const []), size: const Size(1200, 1000));
     await tester.tap(find.byKey(const Key('team-task-new')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('new-team-task-title')), 'להזמין אולם');
+    expect(find.byKey(const Key('new-team-task-add-subtask')), findsNothing);
 
-    // Contacts.
     await tester.tap(find.byKey(const Key('new-team-task-add-contact')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('edit-contact-name-0')), 'רונית');
     await tester.enterText(find.byKey(const Key('edit-contact-phone-0')), '0501234567');
 
-    // Two subtasks, each in the same form as a task (round 2).
-    Future<void> addSubtask(String title, {String? ownerId}) async {
-      await tester.ensureVisible(find.byKey(const Key('new-team-task-add-subtask')));
-      await tester.tap(find.byKey(const Key('new-team-task-add-subtask')));
-      await tester.pumpAndSettle();
-      expect(find.text('תת-משימה חדשה'), findsOneWidget);
-      // The subtask form has no link: it belongs where its parent does.
-      expect(find.byKey(const Key('new-team-task-link')), findsOneWidget);
-      await tester.enterText(find.byKey(const Key('new-team-task-title')).last, title);
-      // No contact line appears by itself while typing (bug 6).
-      expect(find.byKey(const Key('edit-contact-name-0')), findsOneWidget);
-      if (ownerId != null) {
-        await tester.tap(find.byKey(const Key('new-team-task-owners')).last);
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(Key('edit-assignee-$ownerId')).last);
-        await tester.pumpAndSettle();
-      }
-      await tester.tap(find.byKey(const Key('new-team-task-save')).last);
-      await tester.pumpAndSettle();
-    }
-
-    await addSubtask('הצעת מחיר');
-    // The parent's title changes once it has a subtask.
-    expect(find.text('משימת אב חדשה'), findsOneWidget);
-    await addSubtask('חוזה', ownerId: 'm2');
-    // With subtasks the owners are theirs: no own owners field.
-    expect(find.byKey(const Key('new-team-task-owners')), findsNothing);
+    // Urgency: "רגילה" unless picked (16/11/2026).
+    await tester.ensureVisible(find.byKey(const Key('team-task-urgency-high')));
+    await tester.tap(find.byKey(const Key('team-task-urgency-high')));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('new-team-task-save')));
     await tester.pumpAndSettle();
     final saved = harness.repository.inserted.single;
     expect(saved.title, 'להזמין אולם');
     expect(saved.contacts.single.name, 'רונית');
-    expect(saved.subtasks.map((s) => s.title), ['הצעת מחיר', 'חוזה']);
-    expect(saved.subtasks.last.assigneeIds, ['m2']);
-    expect(saved.ownerIds, ['m2']);
+    expect(saved.urgency, TeamTaskUrgency.high);
+  });
+
+  testWidgets('a new task linked to several events keeps them all, the nearest first',
+      (tester) async {
+    final first = buildEvent(id: 'e1', name: 'ראשון', startDate: DateTime(2099, 1, 10));
+    final second = buildEvent(id: 'e2', name: 'שני', startDate: DateTime(2099, 1, 20));
+    final harness = await pumpTeamTasks(tester,
+        user: manager,
+        board: TeamTaskBoard(
+          tasks: const [],
+          events: [second, first],
+          members: [dana, yossi, manager],
+        ),
+        size: const Size(1200, 1000));
+    await tester.tap(find.byKey(const Key('team-task-new')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'שילוט');
+    await tester.tap(find.byKey(const Key('new-team-task-link')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('task-link-option-e2-mark')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('task-link-option-e1-mark')));
+    await tester.pumpAndSettle();
+    expect(find.text('שיוך ל-2 אירועים'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('task-link-confirm-events')));
+    await tester.pumpAndSettle();
+    expect(find.text('ראשון, שני'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('new-team-task-save')));
+    await tester.pumpAndSettle();
+    final saved = harness.repository.inserted.single;
+    expect(saved.link, const TaskLink(TaskLinkType.event, 'e1'));
+    expect(saved.linkedEventIds, ['e1', 'e2']);
   });
 
   testWidgets('a new task without subtasks picks its owners in the form', (tester) async {
@@ -245,63 +252,6 @@ void main() {
   testWidgets('an empty list says so', (tester) async {
     await pumpTeamTasks(tester, user: dana, board: board(const []));
     expect(find.text('אין משימות להצגה'), findsOneWidget);
-  });
-
-  testWidgets('a first subtask on a task with owners asks what to do', (tester) async {
-    await pumpTeamTasks(tester,
-        user: manager, board: board(const []), size: const Size(1200, 1000));
-    await tester.tap(find.byKey(const Key('team-task-new')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'להזמין אולם');
-    await tester.tap(find.byKey(const Key('new-team-task-owners')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('edit-assignee-m1')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('new-team-task-add-subtask')));
-    await tester.tap(find.byKey(const Key('new-team-task-add-subtask')));
-    await tester.pumpAndSettle();
-    // "להשאיר כמשימה אחת": nothing changes.
-    await tester.tap(find.byKey(const Key('first-subtask-keep')));
-    await tester.pumpAndSettle();
-    expect(find.text('תת-משימה חדשה'), findsNothing);
-    expect(find.byKey(const Key('new-team-task-owners')), findsOneWidget);
-    // "ליצור תתי-משימות ולהסיר את האחראים": the subtask form opens.
-    await tester.tap(find.byKey(const Key('new-team-task-add-subtask')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('first-subtask-split')));
-    await tester.pumpAndSettle();
-    expect(find.text('תת-משימה חדשה'), findsOneWidget);
-  });
-
-  testWidgets('"המשימות שלי" lists my subtask as its own row under the parent title',
-      (tester) async {
-    final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: [
-      TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: const ['m1'], assignees: [dana]),
-      const TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
-    ]);
-    await pumpTeamTasks(tester, user: dana, board: board([parent]));
-    expect(find.byKey(const Key('team-task-row-s1')), findsOneWidget);
-    expect(find.byKey(const Key('team-task-parent-s1')), findsOneWidget);
-    expect(find.text('אולם'), findsOneWidget);
-    expect(find.byKey(const Key('team-task-row-p')), findsNothing);
-    expect(find.byKey(const Key('team-task-row-s2')), findsNothing);
-  });
-
-  testWidgets('"כל המשימות" folds the subtasks under their parent, "2/4 ▾" opens them',
-      (tester) async {
-    final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
-      TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
-      TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
-    ]);
-    await pumpTeamTasks(tester, user: manager, board: board([parent]));
-    await tester.tap(find.byKey(const Key('team-tab-all')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('team-task-row-s1')), findsNothing);
-    await tester.tap(find.byKey(const Key('team-task-progress-p')));
-    await tester.pumpAndSettle();
-    final parentTop = tester.getTopLeft(find.byKey(const Key('team-task-row-p'))).dy;
-    expect(tester.getTopLeft(find.byKey(const Key('team-task-row-s1'))).dy, greaterThan(parentTop));
-    expect(find.byKey(const Key('team-task-row-s2')), findsOneWidget);
   });
 
   group('round 3', () {
@@ -428,18 +378,6 @@ void main() {
       );
     });
 
-    testWidgets('a search that matches a subtask opens its parent', (tester) async {
-      final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
-        TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
-        TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
-      ]);
-      await pumpTeamTasks(tester, user: manager, board: board([parent]));
-      await tester.enterText(find.byKey(const Key('team-filter-search')), 'חוזה');
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-task-row-s2')), findsOneWidget);
-      expect(find.byKey(const Key('team-task-row-s1')), findsNothing);
-    });
-
     testWidgets('a row shows the status circle and the initials of the owners', (tester) async {
       final omer = buildMember(id: 'o1', name: 'עומר בנגל');
       final task = buildTeamTask(
@@ -526,24 +464,6 @@ void main() {
       expect(find.byKey(const Key('team-task-panel')), findsNothing);
     });
 
-    testWidgets("a parent's status circle in \"כל המשימות\" explains it updates by itself",
-        (tester) async {
-      final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
-        TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
-      ]);
-      final harness = await pumpTeamTasks(tester, user: manager, board: board([parent]));
-      await tester.tap(find.byKey(const Key('team-tab-all')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-task-parent-status-tap-p')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-task-parent-status-info')), findsOneWidget);
-      expect(find.byKey(const Key('team-task-panel')), findsNothing);
-      await tester.tap(find.byKey(const Key('team-task-parent-status-ok')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-task-parent-status-info')), findsNothing);
-      expect(harness.repository.calls, isEmpty);
-    });
-
     testWidgets('"כל המשימות" rows have no quick buttons', (tester) async {
       await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
       expect(find.byKey(const Key('team-task-quick-update-a')), findsNothing);
@@ -587,25 +507,6 @@ void main() {
       expect(tester.getCenter(arrow).dx, greaterThan(tester.getRect(word.first).right));
     });
 
-    testWidgets('a subtask row in "כל המשימות" lights up under the mouse', (tester) async {
-      final parent = buildTeamTask(id: 'p', title: 'אולם', subtasks: const [
-        TeamSubtask(id: 's1', title: 'הצעת מחיר', assigneeIds: ['m1']),
-      ]);
-      await pumpTeamTasks(tester, user: manager, board: board([parent]));
-      await tester.tap(find.byKey(const Key('team-task-progress-p')));
-      await tester.pumpAndSettle();
-      final row = tester.widget<InkWell>(find.byKey(const Key('team-task-row-s1')));
-      expect(row.hoverColor, TaskStyle.currentLight);
-      // The ink lands on a Material inside the card, above its colour.
-      expect(
-        find.ancestor(
-          of: find.byKey(const Key('team-task-row-s1')),
-          matching:
-              find.byWidgetPredicate((w) => w is Material && w.type == MaterialType.transparency),
-        ),
-        findsWidgets,
-      );
-    });
   });
 
   group('round 6', () {
@@ -814,6 +715,71 @@ void main() {
       expect(wordRight('team-filter-menu-link', 'שיוך'), closeTo(status, 1));
       expect(wordRight('team-filter-menu-owner', 'אחראי/ת'), closeTo(status, 1));
       expect(wordRight('team-filter-menu-late', 'באיחור'), closeTo(status, 1));
+    });
+  });
+
+  group('16/11/2026: categories, several events, urgency', () {
+    final hanukkah = buildCategory();
+    final candles = buildEvent(
+        id: 'e1', name: 'הדלקת נרות', categoryId: 'c1', startDate: DateTime(2099, 12, 1));
+    final party = buildEvent(
+        id: 'e2', name: 'מסיבה', categoryId: 'c1', startDate: DateTime(2099, 12, 20));
+    TeamTaskBoard categoryBoard(List<TeamTask> tasks) => TeamTaskBoard(
+          tasks: tasks,
+          events: [candles, party],
+          categories: [hanukkah],
+          members: [dana, yossi, manager],
+        );
+
+    testWidgets('a category card: its tasks of several events on top with chips, then its events',
+        (tester) async {
+      final both = buildTeamTask(
+        id: 'both',
+        title: 'שילוט לשניהם',
+        link: const TaskLink(TaskLinkType.event, 'e1'),
+        eventIds: const ['e1', 'e2'],
+        event: candles,
+        events: [candles, party],
+        assigneeIds: ['m1'],
+      );
+      final one = buildTeamTask(
+        id: 'one',
+        title: 'נרות',
+        link: const TaskLink(TaskLinkType.event, 'e1'),
+        event: candles,
+        events: [candles],
+        assigneeIds: ['m1'],
+      );
+      await pumpTeamTasks(tester, user: manager, board: categoryBoard([both, one]));
+      expect(find.byKey(const Key('team-task-card-category:c1')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-events-both')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-events-one')), findsNothing);
+      final section = find.byKey(const Key('team-task-section-category:c1/event:e1'));
+      expect(section, findsOneWidget);
+      final bothTop = tester.getTopLeft(find.byKey(const Key('team-task-row-both'))).dy;
+      expect(tester.getTopLeft(section).dy, greaterThan(bothTop));
+      expect(tester.getTopLeft(find.byKey(const Key('team-task-row-one'))).dy,
+          greaterThan(tester.getTopLeft(section).dy));
+      // A tap on the event's title folds its tasks.
+      await tester.tap(find.byKey(const Key('team-task-section-fold-category:c1/event:e1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-one')), findsNothing);
+    });
+
+    testWidgets('the urgency shows on a row only when not "רגילה", and filters', (tester) async {
+      final high = buildTeamTask(id: 'h', title: 'דחוף', urgency: TeamTaskUrgency.high)
+          .copyWith(owners: [dana]);
+      final normal = buildTeamTask(id: 'n', title: 'רגיל').copyWith(owners: [dana]);
+      await pumpTeamTasks(tester, user: manager, board: board([high, normal]));
+      expect(find.byKey(const Key('team-task-urgency-h')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-urgency-n')), findsNothing);
+      expect(find.text('דחיפות גבוהה'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-filter-urgency')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-urgency-high')).first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-n')), findsNothing);
+      expect(find.byKey(const Key('team-task-row-h')), findsOneWidget);
     });
   });
 }

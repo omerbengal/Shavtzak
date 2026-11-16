@@ -12,7 +12,7 @@ import 'task_link_picker.dart';
 import 'team_task_style.dart';
 
 /// The row above the list: a narrow search field, then the filters
-/// (status, owner, link, late) as chips. While the search is in use (focused or
+/// (status, owner, urgency, link, late) as chips. While the search is in use (focused or
 /// holding text) the chips fold into one funnel button whose menu holds the
 /// same three filters as rows (Omer, round 3).
 ///
@@ -106,6 +106,34 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     _set(_filter.copyWith(ownerIds: next));
   }
 
+  /// The urgency chip's label: "דחיפות", the one level, or "דחיפות (n)".
+  String get _urgencyLabel {
+    final urgencies = _filter.urgencies;
+    if (urgencies.isEmpty) return 'דחיפות';
+    if (urgencies.length == 1) return 'דחיפות ${urgencies.first.hebrewLabel}';
+    return 'דחיפות (${urgencies.length})';
+  }
+
+  void _toggleUrgency(TeamTaskUrgency urgency) {
+    Logger.action('tap:teamTasksUrgencyFilter', {'urgency': urgency.key});
+    final next = {..._filter.urgencies};
+    if (!next.remove(urgency)) next.add(urgency);
+    // Every level ticked = no filter.
+    _set(_filter.copyWith(
+        urgencies: next.length == TeamTaskUrgency.values.length ? const {} : next));
+  }
+
+  List<Widget> _urgencyRows({required String keyPrefix}) => [
+        for (final urgency in TeamTaskUrgency.values.reversed)
+          CheckboxMenuButton(
+            key: Key('$keyPrefix-${urgency.key}'),
+            value: _filter.urgencies.contains(urgency),
+            closeOnActivate: false,
+            onChanged: (_) => _toggleUrgency(urgency),
+            child: Text(urgency.hebrewLabel),
+          ),
+      ];
+
   void _toggleLate() {
     Logger.action('tap:teamTasksLateChip', {'on': !_filter.lateOnly});
     _set(_filter.copyWith(lateOnly: !_filter.lateOnly));
@@ -161,7 +189,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
       _set(_filter.copyWith(link: () => null));
       return;
     }
-    final choice = await showTaskLinkPicker(context, allowNone: false);
+    final choice = await showTaskLinkPicker(context, allowNone: false, multiEvents: false);
     if (choice?.link == null || !mounted) return;
     _set(_filter.copyWith(link: () => choice!.link));
   }
@@ -174,6 +202,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   bool get _anyFilterSet =>
       _filter.statusesChanged ||
       (widget.showOwner && _filter.ownerIds.isNotEmpty) ||
+      _filter.urgencies.isNotEmpty ||
       _filter.link != null ||
       _filter.lateOnly;
 
@@ -323,6 +352,24 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
         ),
       ],
       gap,
+      // Urgency (16/11/2026), several ticked in one go like the statuses.
+      MenuAnchor(
+        menuChildren: _urgencyRows(keyPrefix: 'team-filter-urgency'),
+        builder: (context, controller, _) => Tooltip(
+          message: 'סינון לפי דחיפות',
+          child: InkWell(
+            key: const Key('team-filter-urgency'),
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              Logger.action('tap:teamTasksUrgencyChip');
+              controller.isOpen ? controller.close() : controller.open();
+            },
+            child: _FilterChipLook(
+                compact: _compact, label: _urgencyLabel, active: filter.urgencies.isNotEmpty),
+          ),
+        ),
+      ),
+      gap,
       InkWell(
         key: const Key('team-filter-link'),
         borderRadius: BorderRadius.circular(16),
@@ -400,6 +447,12 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
             menuChildren: _ownerRows(keyPrefix: 'team-filter-menu-owner'),
             child: _withArrow(Text(_ownerLabel)),
           ),
+        SubmenuButton(
+          key: const Key('team-filter-menu-urgency'),
+          submenuIcon: _noTrailingArrow,
+          menuChildren: _urgencyRows(keyPrefix: 'team-filter-menu-urgency'),
+          child: _withArrow(Text(_urgencyLabel)),
+        ),
         // "שיוך" opens the link picker, so it carries the same arrow as the
         // rows above (Omer, round 9); once a link is set the row clears it
         // ("<name> ✕") and the arrow's room stays empty.

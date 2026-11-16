@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../task/task_style.dart';
 
@@ -24,13 +25,30 @@ abstract final class TeamTaskStyle {
         TeamTaskStatus.duplicate => TaskStyle.chip,
       };
 
+  /// "גבוהה" in orange, "נמוכה" in grey (16/11/2026); "רגילה" is not shown
+  /// on a row.
+  static Color urgencyColor(TeamTaskUrgency urgency) => switch (urgency) {
+        TeamTaskUrgency.high => TaskStyle.soonDark,
+        TeamTaskUrgency.normal => TaskStyle.neutralText,
+        TeamTaskUrgency.low => TaskStyle.neutralText,
+      };
+
+  static Color urgencyFill(TeamTaskUrgency urgency) => switch (urgency) {
+        TeamTaskUrgency.high => TaskStyle.soonLight,
+        TeamTaskUrgency.normal => TaskStyle.chip,
+        TeamTaskUrgency.low => TaskStyle.chip,
+      };
+
   static const double maxListWidth = TaskStyle.readableWidth;
 
   // Design A (Omer, round 3): a card per link, a status circle per row.
   static const double statusIconSize = 20;
-  static const double subtaskIconSize = 16;
+  static const double smallStatusIconSize = 16;
   static const double avatarSize = 24;
-  static const double subtaskAvatarSize = 20;
+
+  /// An event's title row inside a category's card (16/11/2026): lighter
+  /// than the card's header.
+  static const Color sectionHeader = Color(0xFFF8FAFC);
 
   /// A row under the mouse (desktop): a light blue, clearly seen on white.
   static const Color rowHover = TaskStyle.currentLight;
@@ -95,6 +113,123 @@ class TeamTaskStatusChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The urgency as a small chip ("דחיפות גבוהה"); nothing for "רגילה" unless
+/// [showNormal].
+class TeamTaskUrgencyChip extends StatelessWidget {
+  const TeamTaskUrgencyChip({
+    super.key,
+    required this.urgency,
+    this.dense = true,
+    this.showNormal = false,
+  });
+
+  final TeamTaskUrgency urgency;
+  final bool dense;
+  final bool showNormal;
+
+  @override
+  Widget build(BuildContext context) {
+    if (urgency == TeamTaskUrgency.normal && !showNormal) return const SizedBox.shrink();
+    final high = urgency == TeamTaskUrgency.high;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: dense ? 6 : 10, vertical: dense ? 1 : 4),
+      decoration: BoxDecoration(
+        color: TeamTaskStyle.urgencyFill(urgency),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (high)
+            Icon(Icons.priority_high,
+                size: dense ? 13 : 15, color: TeamTaskStyle.urgencyColor(urgency)),
+          Text(
+            'דחיפות ${urgency.hebrewLabel}',
+            style: TextStyle(
+              fontSize: dense ? TaskStyle.rowMetaSize : 13,
+              color: TeamTaskStyle.urgencyColor(urgency),
+              fontWeight: high ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The urgency's three choices in one row (the form and the task screen),
+/// in the app's segmented-switch colours; "גבוהה" in its orange.
+class TeamTaskUrgencyPicker extends StatelessWidget {
+  const TeamTaskUrgencyPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.showLabel = true,
+  });
+
+  final TeamTaskUrgency value;
+  final ValueChanged<TeamTaskUrgency> onChanged;
+  final bool showLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final picker = SizedBox(
+      width: double.infinity,
+      child: SegmentedButton<TeamTaskUrgency>(
+        key: const Key('team-task-urgency-picker'),
+        showSelectedIcon: false,
+        style: SegmentedButton.styleFrom(
+          selectedBackgroundColor: value == TeamTaskUrgency.high
+              ? TaskStyle.soonDark
+              : AppTheme.primaryDark,
+          selectedForegroundColor: Colors.white,
+          visualDensity: VisualDensity.compact,
+        ),
+        segments: [
+          for (final urgency in TeamTaskUrgency.values)
+            ButtonSegment(
+              value: urgency,
+              label: Text(urgency.hebrewLabel, key: Key('team-task-urgency-${urgency.key}')),
+            ),
+        ],
+        selected: {value},
+        onSelectionChanged: (selection) => onChanged(selection.first),
+      ),
+    );
+    if (!showLabel) return picker;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('דחיפות', style: TextStyle(fontSize: 12.5, color: TaskStyle.neutralText)),
+        const SizedBox(height: 4),
+        picker,
+      ],
+    );
+  }
+}
+
+/// An event's name as a small outlined chip: the events of a task linked to
+/// several of them (16/11/2026).
+class TeamTaskEventChip extends StatelessWidget {
+  const TeamTaskEventChip({super.key, required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          color: TaskStyle.stageHeader,
+          border: Border.all(color: TaskStyle.rest),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          name,
+          style: const TextStyle(fontSize: TaskStyle.rowMetaSize, color: TaskStyle.neutralText),
+        ),
+      );
 }
 
 /// The app's mark of a permanent team member (חבר צוות קבוע), as in the

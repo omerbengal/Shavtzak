@@ -68,10 +68,9 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
     final task = widget.task;
     final completion = CrudActionCompleter();
     setState(() => _saving = true);
-    context.read<TeamTaskBloc>().add(task.isSubtask
-        ? EditTeamTaskUpdate(task.parentId!, entry.id, text,
-            subtaskId: task.id, completion: completion)
-        : EditTeamTaskUpdate(task.id, entry.id, text, completion: completion));
+    context
+        .read<TeamTaskBloc>()
+        .add(EditTeamTaskUpdate(task.id, entry.id, text, completion: completion));
     final result = await completion.future;
     if (!mounted) return;
     setState(() {
@@ -95,10 +94,7 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
       keyPrefix: 'team-task-log-delete',
       onDelete: () {
         final completion = CrudActionCompleter();
-        bloc.add(task.isSubtask
-            ? DeleteTeamTaskUpdate(task.parentId!, entry.id,
-                subtaskId: task.id, completion: completion)
-            : DeleteTeamTaskUpdate(task.id, entry.id, completion: completion));
+        bloc.add(DeleteTeamTaskUpdate(task.id, entry.id, completion: completion));
         return completion.future;
       },
     );
@@ -187,9 +183,7 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
     if (text.isEmpty) return;
     final completion = CrudActionCompleter();
     setState(() => _sending = true);
-    context.read<TeamTaskBloc>().add(task.isSubtask
-        ? AddTeamTaskUpdate(task.parentId!, text, subtaskId: task.id, completion: completion)
-        : AddTeamTaskUpdate(task.id, text, completion: completion));
+    context.read<TeamTaskBloc>().add(AddTeamTaskUpdate(task.id, text, completion: completion));
     final result = await completion.future;
     if (!mounted) return;
     setState(() => _sending = false);

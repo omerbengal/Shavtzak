@@ -76,52 +76,24 @@ void main() {
     expect(state.filter.statuses, hasLength(5));
   });
 
-  test('optimistic tick then rollback on error', () async {
-    final task = buildTeamTask(id: 't', subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
-      TeamSubtask(id: 's2', title: 'y', assigneeIds: ['m1']),
-    ]);
+  test('optimistic status then rollback on error', () async {
     bloc.add(TeamTasksSubscribe(dana));
     await pumpEventQueue();
-    repository.controller.add(TeamTaskBoard(tasks: [task]));
+    repository.controller.add(TeamTaskBoard(tasks: [mine]));
     await loaded((s) => s.all.isNotEmpty);
 
     repository.gate = Completer<void>();
-    repository.failWith = Exception('Failed backend mutation teamTask.setSubtaskDone: אין הרשאה');
+    repository.failWith = Exception('Failed backend mutation teamTask.setStatus: אין הרשאה');
     final completion = CrudActionCompleter();
-    bloc.add(ToggleTeamSubtask('t', 's1', true, completion: completion));
-    final ticked = await loaded((s) => s.all.single.subtasks.first.isDone);
-    // Shown at once, with the status the backend would give it.
-    expect(ticked.all.single.status, TeamTaskStatus.inProgress);
+    bloc.add(SetTeamTaskStatus('a', TeamTaskStatus.inProgress, completion: completion));
+    await loaded((s) => s.all.single.status == TeamTaskStatus.inProgress);
 
     repository.gate!.complete();
     final result = await completion.future;
     expect(result.isFailure, isTrue);
     expect(result.message, 'אין הרשאה');
-    final rolledBack = await loaded((s) => !s.all.single.subtasks.first.isDone);
-    expect(rolledBack.all.single.status, TeamTaskStatus.open);
-    expect(repository.calls, ['subtask:t:s1:true']);
-  });
-
-  test("a parent's status follows its subtasks at once, whatever was stored", () async {
-    final task = buildTeamTask(id: 't', subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
-    ]);
-    // Stored before round 4 with a status set by hand.
-    final cancelled = buildTeamTask(id: 'c', status: TeamTaskStatus.cancelled, subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m1']),
-    ]);
-    bloc.add(TeamTasksSubscribe(manager));
-    await pumpEventQueue();
-    repository.controller.add(TeamTaskBoard(tasks: [task, cancelled]));
-    final first = await loaded((s) => s.all.length == 2);
-    expect(first.all.firstWhere((t) => t.id == 'c').status, TeamTaskStatus.open);
-    bloc.add(const ToggleTeamSubtask('t', 's1', true));
-    bloc.add(const ToggleTeamSubtask('c', 's1', true));
-    final state = await loaded(
-        (s) => s.all.every((t) => t.subtasks.single.isDone));
-    expect(state.all.firstWhere((t) => t.id == 't').status, TeamTaskStatus.done);
-    expect(state.all.firstWhere((t) => t.id == 'c').status, TeamTaskStatus.done);
+    await loaded((s) => s.all.single.status == TeamTaskStatus.open);
+    expect(repository.calls, ['status:a:inProgress']);
   });
 
   test('optimistic status, kept once the backend accepts', () async {
@@ -148,18 +120,24 @@ void main() {
     repository.gate!.complete();
   });
 
-  test('a manager giving a new subtask to someone shows their name at once', () async {
+  test('a manager linking a task to several events and raising its urgency: shown at once',
+      () async {
+    final first = buildEvent(id: 'e1', name: 'ראשון');
+    final second = buildEvent(id: 'e2', name: 'שני');
     bloc.add(TeamTasksSubscribe(manager));
     await pumpEventQueue();
-    repository.controller.add(TeamTaskBoard(tasks: [mine], members: [dana, yossi, manager]));
+    repository.controller.add(
+        TeamTaskBoard(tasks: [mine], events: [first, second], members: [dana, manager]));
     await loaded((s) => s.all.isNotEmpty);
     repository.gate = Completer<void>();
-    bloc.add(UpdateTeamTask(mine.copyWith(subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m2']),
-    ])));
-    final state = await loaded((s) => s.all.single.subtasks.isNotEmpty);
-    expect(state.all.single.subtasks.single.assignees.single.name, 'יוסי');
-    expect(teamTaskOwnerNames(state.all.single), ['יוסי']);
+    bloc.add(UpdateTeamTask(mine.copyWith(
+      link: () => const TaskLink(TaskLinkType.event, 'e1'),
+      eventIds: ['e1', 'e2'],
+      urgency: TeamTaskUrgency.high,
+    )));
+    final state = await loaded((s) => s.all.single.urgency == TeamTaskUrgency.high);
+    expect(state.all.single.events.map((e) => e.name), ['ראשון', 'שני']);
+    expect(state.all.single.hasSeveralEvents, isTrue);
     repository.gate!.complete();
   });
 

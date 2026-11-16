@@ -108,32 +108,6 @@ void main() {
       expect(top('new-team-task-owners'), lessThan(top('new-team-task-deadline')));
     });
 
-    testWidgets('a subtask is one line of text, no description', (tester) async {
-      await pumpTeamTasks(tester,
-          user: manager, board: board(const []), size: const Size(1200, 1000));
-      await tester.tap(find.byKey(const Key('team-task-new')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('new-team-task-add-subtask')));
-      await tester.pumpAndSettle();
-      expect(find.text('תת-משימה חדשה'), findsOneWidget);
-      // The subtask form sits on top of the task's form: one title field
-      // each, and only the task's description.
-      expect(find.byKey(const Key('new-team-task-description')), findsOneWidget);
-      expect(find.byKey(const Key('new-team-task-title')), findsNWidgets(2));
-      expect(find.widgetWithText(TextField, 'תת-משימה'), findsOneWidget);
-    });
-
-    testWidgets('a description saved before stays readable on the subtask', (tester) async {
-      final parent = buildTeamTask(id: 'p', title: 'דו יומי', subtasks: const [
-        TeamSubtask(
-            id: 's1', title: 'לשלוח לוז', description: 'מחזור 12.11', assigneeIds: ['m1']),
-      ]).copyWith(owners: [dana]);
-      await pumpTeamTasks(tester, user: dana, board: board([parent]));
-      await openTask(tester, 's1');
-      expect(find.byKey(const Key('team-task-legacy-description')), findsOneWidget);
-      expect(find.text('מחזור 12.11'), findsOneWidget);
-      expect(find.byKey(const Key('team-task-edit-description')), findsNothing);
-    });
   });
 
   group('cards', () {

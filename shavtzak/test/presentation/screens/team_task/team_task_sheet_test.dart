@@ -23,15 +23,10 @@ void main() {
         topics: [buildTopic()],
       );
 
-  final withSubtasks = buildTeamTask(id: 't', title: 'אולם', subtasks: const [
-    TeamSubtask(
-      id: 's1',
-      title: 'הצעת מחיר',
-      assigneeIds: ['m1'],
-      contacts: [StageContact(id: 'c1', name: 'רונית', phone: '050-1234567', role: 'אולם')],
-    ),
-    TeamSubtask(id: 's2', title: 'חוזה', assigneeIds: ['m2']),
-  ]).copyWith(owners: [dana, yossi]);
+  final hall = buildTeamTask(id: 't', title: 'אולם', assigneeIds: ['m1', 'm2'])
+      .copyWith(owners: [dana, yossi], contacts: const [
+    StageContact(id: 'c1', name: 'רונית', phone: '050-1234567', role: 'אולם'),
+  ]);
   final other =
       buildTeamTask(id: 'o', title: 'משימה מקורית', assigneeIds: ['m1']).copyWith(owners: [dana]);
 
@@ -70,7 +65,7 @@ void main() {
   });
 
   testWidgets('choosing כפילות asks for the original', (tester) async {
-    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks, other]));
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([hall, other]));
     await openTask(tester, 'o');
     await tester.tap(find.byKey(const Key('team-task-status')));
     await tester.pumpAndSettle();
@@ -80,43 +75,6 @@ void main() {
     await tester.tap(find.byKey(const Key('duplicate-original-t')));
     await tester.pumpAndSettle();
     expect(harness.repository.calls, contains('status:o:duplicate:t'));
-  });
-
-  testWidgets("a parent's status says it is automatic; a tap explains, no menu (rounds 4, 5)",
-      (tester) async {
-    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
-    await openTask(tester, 't');
-    expect(find.byKey(const Key('team-task-status-auto')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('team-task-status')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('team-task-parent-status-info')), findsOneWidget);
-    expect(find.byKey(const Key('team-task-status-option-בוצעה')), findsNothing);
-    await tester.tap(find.text('הבנתי'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('team-task-parent-status-info')), findsNothing);
-    expect(harness.repository.calls, isEmpty);
-  });
-
-  testWidgets('an owner changes only their own subtask, from its status circle (round 4)',
-      (tester) async {
-    final harness = await pumpTeamTasks(tester, user: dana, board: board([withSubtasks]));
-    // Her subtask is her row; its contact is on its own screen, with the phone.
-    await openTask(tester, 's1');
-    expect(find.textContaining('רונית'), findsWidgets);
-    // The parent opens from the subtask's "תת-משימה של" line.
-    await tester.tap(find.byKey(const Key('team-task-kind')));
-    await tester.pumpAndSettle();
-    expect(find.byType(Checkbox), findsNothing);
-    final rows = find.byKey(const Key('team-subtask-row-s1'));
-    final mine =
-        find.descendant(of: rows, matching: find.byKey(const Key('team-task-status-tap-s1')));
-    expect(mine, findsOneWidget);
-    expect(find.byKey(const Key('team-task-status-tap-s2')), findsNothing);
-    await tester.tap(mine);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('team-task-status-option-בוצעה')).last);
-    await tester.pumpAndSettle();
-    expect(harness.repository.calls, ['status:t/s1:done']);
   });
 
   testWidgets('the send button spins until the update is saved (round 4)', (tester) async {
@@ -160,7 +118,7 @@ void main() {
   });
 
   testWidgets('manager deletes only after the confirm', (tester) async {
-    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([hall]));
     await openTask(tester, 't');
     await tester.ensureVisible(find.byKey(const Key('team-task-delete')));
     await tester.tap(find.byKey(const Key('team-task-delete')));
@@ -172,7 +130,7 @@ void main() {
   });
 
   testWidgets('a delete closes the sheet, also when the list updates first', (tester) async {
-    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
+    final harness = await pumpTeamTasks(tester, user: manager, board: board([hall]));
     await openTask(tester, 't');
     await tester.ensureVisible(find.byKey(const Key('team-task-delete')));
     await tester.tap(find.byKey(const Key('team-task-delete')));
@@ -198,49 +156,11 @@ void main() {
   });
 
   testWidgets('wide window shows the task in a centred panel', (tester) async {
-    await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]), size: teamWideSize);
+    await pumpTeamTasks(tester, user: manager, board: board([hall]), size: teamWideSize);
     await openTask(tester, 't');
     final panel = tester.getSize(find.byKey(const Key('team-task-panel')));
     expect(panel.width, lessThanOrEqualTo(960));
     expect(find.byKey(const Key('team-task-edit-title')), findsOneWidget);
   });
 
-  testWidgets('a subtask opens in its own task screen: status and log go to it', (tester) async {
-    final harness = await pumpTeamTasks(tester, user: manager, board: board([withSubtasks]));
-    await tester.tap(find.byKey(const Key('team-tab-all')));
-    await tester.pumpAndSettle();
-    await openTask(tester, 't');
-    expect(find.text('משימת אב'), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('team-subtask-row-s1')));
-    await tester.tap(find.byKey(const Key('team-subtask-row-s1')));
-    await tester.pumpAndSettle();
-    expect(find.text('תת-משימה של: אולם'), findsOneWidget);
-    // A subtask has no subtasks of its own (the one found is the parent's,
-    // under it).
-    expect(find.byKey(const Key('team-task-add-subtask')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('team-task-status')).last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')).last);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('team-task-update-field')).last, 'ביקשתי הצעות');
-    await tester.tap(find.byKey(const Key('team-task-update-send')).last);
-    await tester.pumpAndSettle();
-    expect(harness.repository.calls, ['status:t/s1:inProgress', 'log:t/s1:ביקשתי הצעות']);
-  });
-
-  testWidgets('adding a first subtask to a task with owners asks first', (tester) async {
-    final harness = await pumpTeamTasks(tester, user: manager, board: board([other]));
-    await openTask(tester, 'o');
-    await tester.ensureVisible(find.byKey(const Key('team-task-add-subtask')));
-    await tester.tap(find.byKey(const Key('team-task-add-subtask')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('first-subtask-split')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('new-team-task-title')), 'חוזה');
-    await tester.tap(find.byKey(const Key('new-team-task-save')));
-    await tester.pumpAndSettle();
-    final saved = harness.repository.updated.single;
-    expect(saved.subtasks.single.title, 'חוזה');
-    expect(saved.assigneeIds, isEmpty);
-  });
 }

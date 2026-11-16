@@ -59,77 +59,57 @@ class DeleteTeamTask extends TeamTaskEvent {
   List<Object?> get props => [id];
 }
 
-/// With [subtaskId], the status of that subtask of task [id].
 class SetTeamTaskStatus extends TeamTaskEvent {
   final String id;
   final TeamTaskStatus status;
   final String? duplicateOfId;
-  final String? subtaskId;
   final CrudActionCompleter? completion;
 
   const SetTeamTaskStatus(
     this.id,
     this.status, {
     this.duplicateOfId,
-    this.subtaskId,
     this.completion,
   });
 
   @override
-  List<Object?> get props => [id, status, duplicateOfId, subtaskId];
+  List<Object?> get props => [id, status, duplicateOfId];
 }
 
-class ToggleTeamSubtask extends TeamTaskEvent {
-  final String taskId;
-  final String subtaskId;
-  final bool isDone;
-  final CrudActionCompleter? completion;
-
-  const ToggleTeamSubtask(this.taskId, this.subtaskId, this.isDone, {this.completion});
-
-  @override
-  List<Object?> get props => [taskId, subtaskId, isDone];
-}
-
-/// With [subtaskId], into that subtask's own log.
 class AddTeamTaskUpdate extends TeamTaskEvent {
   final String id;
   final String text;
-  final String? subtaskId;
   final CrudActionCompleter? completion;
 
-  const AddTeamTaskUpdate(this.id, this.text, {this.subtaskId, this.completion});
+  const AddTeamTaskUpdate(this.id, this.text, {this.completion});
 
   @override
-  List<Object?> get props => [id, text, subtaskId];
+  List<Object?> get props => [id, text];
 }
 
-/// A new text for an update of the log (with [subtaskId], of that
-/// subtask's): its writer, or a manager in "כל המשימות" (round 10).
+/// A new text for an update of the log: its writer, or a manager in "כל
+/// המשימות" (round 10).
 class EditTeamTaskUpdate extends TeamTaskEvent {
   final String id;
   final String updateId;
   final String text;
-  final String? subtaskId;
   final CrudActionCompleter? completion;
 
-  const EditTeamTaskUpdate(this.id, this.updateId, this.text,
-      {this.subtaskId, this.completion});
+  const EditTeamTaskUpdate(this.id, this.updateId, this.text, {this.completion});
 
   @override
-  List<Object?> get props => [id, updateId, text, subtaskId];
+  List<Object?> get props => [id, updateId, text];
 }
 
 class DeleteTeamTaskUpdate extends TeamTaskEvent {
   final String id;
   final String updateId;
-  final String? subtaskId;
   final CrudActionCompleter? completion;
 
-  const DeleteTeamTaskUpdate(this.id, this.updateId, {this.subtaskId, this.completion});
+  const DeleteTeamTaskUpdate(this.id, this.updateId, {this.completion});
 
   @override
-  List<Object?> get props => [id, updateId, subtaskId];
+  List<Object?> get props => [id, updateId];
 }
 
 /// A new "אירוע שעוד לא נוצר" (round 10).

@@ -26,11 +26,10 @@ class TeamTasksLoaded extends TeamTaskState {
   /// Every task the viewer may see, with unconfirmed ticks and edits laid over.
   final List<TeamTask> all;
 
-  /// The viewer's rows of "המשימות שלי": the tasks without subtasks they own,
-  /// and each subtask they own as its own row ([myTeamTaskRows]).
+  /// The viewer's rows of "המשימות שלי": the tasks they own ([myTeamTaskRows]).
   final List<TeamTask> mine;
 
-  /// [all] / [mine] after [filter], grouped by link.
+  /// [all] / [mine] after [filter], as the list's cards ([groupTeamTasks]).
   final List<TeamTaskGroup> allGroups;
   final List<TeamTaskGroup> mineGroups;
   final TeamTaskFilter filter;
@@ -59,15 +58,9 @@ class TeamTasksLoaded extends TeamTaskState {
     this.pendingEvents = const [],
   });
 
-  /// A task, or a subtask as a task of its own ([TeamTask.subtaskView]).
   TeamTask? taskById(String id) {
     for (final task in all) {
       if (task.id == id) return task;
-    }
-    for (final task in all) {
-      for (final subtask in task.subtasks) {
-        if (subtask.id == id) return TeamTask.subtaskView(task, subtask);
-      }
     }
     return null;
   }

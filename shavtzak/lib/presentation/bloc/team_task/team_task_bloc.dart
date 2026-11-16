@@ -63,14 +63,12 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         (event, emit) => _send(event.completion, () => _repository.insertTask(event.task)));
     on<DeleteTeamTask>(
         (event, emit) => _send(event.completion, () => _repository.deleteTask(event.id)));
-    on<AddTeamTaskUpdate>((event, emit) => _send(event.completion,
-        () => _repository.addUpdate(event.id, event.text, subtaskId: event.subtaskId)));
+    on<AddTeamTaskUpdate>((event, emit) =>
+        _send(event.completion, () => _repository.addUpdate(event.id, event.text)));
     on<EditTeamTaskUpdate>((event, emit) => _send(
-        event.completion,
-        () => _repository.editUpdate(event.id, event.updateId, event.text,
-            subtaskId: event.subtaskId)));
-    on<DeleteTeamTaskUpdate>((event, emit) => _send(event.completion,
-        () => _repository.deleteUpdate(event.id, event.updateId, subtaskId: event.subtaskId)));
+        event.completion, () => _repository.editUpdate(event.id, event.updateId, event.text)));
+    on<DeleteTeamTaskUpdate>((event, emit) =>
+        _send(event.completion, () => _repository.deleteUpdate(event.id, event.updateId)));
     on<CreatePendingEvent>((event, emit) =>
         _send(event.completion, () => _repository.insertPendingEvent(event.pendingEvent)));
     on<LinkPendingEvent>((event, emit) =>
@@ -89,7 +87,6 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         (event, emit) => _send(event.completion, () => _repository.deleteTopic(event.id)));
     on<UpdateTeamTask>(_onUpdate);
     on<SetTeamTaskStatus>(_onStatus);
-    on<ToggleTeamSubtask>(_onToggle);
   }
 
   Future<void> _onSubscribe(TeamTasksSubscribe event, Emitter<TeamTaskState> emit) async {
@@ -142,12 +139,10 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     final board = _board;
     final viewer = _viewer;
     if (board == null || viewer == null) return;
-    // A parent's status always follows its subtasks, also for a document
-    // written before that rule (round 4) and while a change is in flight.
     final all = [
       for (final task in board.tasks)
-        withParentStatus((_pending[task.id] ?? const <_Pending>[])
-            .fold<TeamTask>(task, (value, change) => change.apply(value))),
+        (_pending[task.id] ?? const <_Pending>[])
+            .fold<TeamTask>(task, (value, change) => change.apply(value)),
     ];
     final mine = myTeamTaskRows(all, viewer.id);
     final now = _clock();
@@ -156,13 +151,17 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       viewer: viewer,
       all: all,
       mine: mine,
-      allGroups:
-          groupTeamTasks(applyTeamTaskFilter(all, _filter, eventCategoryById, now: now), now),
+      allGroups: groupTeamTasks(
+        applyTeamTaskFilter(all, _filter, eventCategoryById, now: now),
+        now,
+        categories: board.categories,
+      ),
       // "המשימות שלי" has no owner filter: they are all the viewer's.
       mineGroups: groupTeamTasks(
         applyTeamTaskFilter(mine, _filter.copyWith(ownerIds: const {}), eventCategoryById,
             now: now),
         now,
+        categories: board.categories,
       ),
       filter: _filter,
       canManage: canManageTeamTasks(viewer),
@@ -220,27 +219,9 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         title: edited.title,
         description: edited.description,
         link: () => edited.link,
-        assigneeIds: edited.subtasks.isEmpty ? edited.assigneeIds : const [],
-        // A subtask keeps its live status and log; an edit only brings what
-        // a manager edits (as the backend does).
-        subtasks: [
-          for (final subtask in edited.subtasks)
-            if (task.subtasks.where((old) => old.id == subtask.id).firstOrNull case final old?)
-              old.copyWith(
-                title: subtask.title,
-                description: subtask.description,
-                assigneeIds: subtask.assigneeIds,
-                contacts: subtask.contacts,
-                deadline: () => subtask.deadline,
-              )
-            else
-              subtask.copyWith(
-                status: TeamTaskStatus.open,
-                duplicateOfId: () => null,
-                updates: const [],
-                completedAt: () => null,
-              ),
-        ],
+        eventIds: edited.linkedEventIds,
+        urgency: edited.urgency,
+        assigneeIds: edited.assigneeIds,
         contacts: edited.contacts,
         deadline: () => edited.deadline,
         ownerIds: _ownerIds(edited),
@@ -254,32 +235,18 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
   Future<void> _onStatus(SetTeamTaskStatus event, Emitter<TeamTaskState> emit) {
     return _optimistic(
       event.id,
-      (task) => event.subtaskId != null
-          ? withSubtaskStatus(task, event.subtaskId!, event.status,
-              duplicateOfId: event.duplicateOfId)
-          : task.copyWith(
-              status: event.status,
-              duplicateOfId: () =>
-                  event.status == TeamTaskStatus.duplicate ? event.duplicateOfId : null,
-            ),
-      () => _repository.setStatus(event.id, event.status,
-          duplicateOfId: event.duplicateOfId, subtaskId: event.subtaskId),
+      (task) => task.copyWith(
+        status: event.status,
+        duplicateOfId: () =>
+            event.status == TeamTaskStatus.duplicate ? event.duplicateOfId : null,
+      ),
+      () => _repository.setStatus(event.id, event.status, duplicateOfId: event.duplicateOfId),
       event.completion,
       emit,
     );
   }
 
-  Future<void> _onToggle(ToggleTeamSubtask event, Emitter<TeamTaskState> emit) {
-    return _optimistic(
-      event.taskId,
-      (task) => withSubtaskTicked(task, event.subtaskId, event.isDone),
-      () => _repository.setSubtaskDone(event.taskId, event.subtaskId, event.isDone),
-      event.completion,
-      emit,
-    );
-  }
-
-  /// [task] with its owners, subtask owners and link target looked up in the
+  /// [task] with its owners and link targets looked up in the
   /// board's lists, so an edit shows names at once instead of "חבר צוות לא
   /// ידוע" until the stream brings the joined task back. Someone the task
   /// already had stays joined even when the board's member list lacks them.
@@ -288,20 +255,16 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     if (board == null) return task;
     final members = {
       for (final member in task.owners) member.id: member,
-      for (final subtask in task.subtasks)
-        for (final member in subtask.assignees) member.id: member,
       for (final member in board.members) member.id: member,
     };
     final link = task.link;
+    final events = {
+      for (final event in task.events) event.id: event,
+      for (final event in board.events) event.id: event,
+    };
     return task.copyWith(
       owners: task.ownerIds.map((id) => members[id]).whereType<TeamMember>().toList(),
-      subtasks: [
-        for (final subtask in task.subtasks)
-          subtask.copyWith(
-            assignees:
-                subtask.assigneeIds.map((id) => members[id]).whereType<TeamMember>().toList(),
-          ),
-      ],
+      events: task.linkedEventIds.map((id) => events[id]).whereType<Event>().toList(),
       event: () => link?.type == TaskLinkType.event
           ? board.events.where((e) => e.id == link!.id).firstOrNull ?? task.event
           : null,

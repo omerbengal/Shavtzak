@@ -7,10 +7,8 @@ import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
 import 'team_task_style.dart';
 
-/// The quick actions on one task, shared by the task screen, the rows of
-/// "המשימות שלי" and a parent's subtask list (Omer, round 4): change the
-/// status, add an update. A subtask view ([TeamTask.isSubtask]) acts on that
-/// subtask inside its parent.
+/// The quick actions on one task, shared by the task screen and the rows of
+/// "המשימות שלי" (Omer, round 4): change the status, add an update.
 
 /// Sets [task]'s status; "כפילות" first asks which task it duplicates. A
 /// refusal shows as a snackbar.
@@ -29,39 +27,23 @@ Future<void> changeTeamTaskStatus(
     if (original == null) return;
   }
   final completion = CrudActionCompleter();
-  bloc.add(task.isSubtask
-      ? SetTeamTaskStatus(task.parentId!, status,
-          subtaskId: task.id, duplicateOfId: original, completion: completion)
-      : SetTeamTaskStatus(task.id, status, duplicateOfId: original, completion: completion));
+  bloc.add(SetTeamTaskStatus(task.id, status, duplicateOfId: original, completion: completion));
   final result = await completion.future;
   if (!result.isSuccess) {
     messenger?.showSnackBar(SnackBar(content: Text(result.message ?? 'הפעולה נכשלה')));
   }
 }
 
-/// Which task [task] duplicates: a sister subtask (listed first) or another
-/// task. Null = cancelled.
+/// Which task [task] duplicates. Null = cancelled.
 Future<String?> pickDuplicateOriginal(
   BuildContext context,
   TeamTasksLoaded state,
   TeamTask task,
 ) {
-  final parent =
-      task.parentId == null ? null : state.all.where((t) => t.id == task.parentId).firstOrNull;
-  final sisters = [
-    if (parent != null)
-      for (final subtask in parent.subtasks)
-        if (subtask.id != task.id && subtask.status != TeamTaskStatus.duplicate)
-          TeamTask.subtaskView(parent, subtask),
-  ];
-  final others = [
-    ...sisters,
-    ...state.all
-        .where(
-            (t) => t.id != task.id && t.id != task.parentId && t.status != TeamTaskStatus.duplicate)
-        .toList()
-      ..sort((a, b) => a.title.compareTo(b.title)),
-  ];
+  final others = state.all
+      .where((t) => t.id != task.id && t.status != TeamTaskStatus.duplicate)
+      .toList()
+    ..sort((a, b) => a.title.compareTo(b.title));
   return showDialog<String>(
     context: context,
     builder: (context) => Directionality(
@@ -80,9 +62,7 @@ Future<String?> pickDuplicateOriginal(
                         key: Key('duplicate-original-${other.id}'),
                         dense: true,
                         title: Text(other.title),
-                        subtitle: Text(other.isSubtask
-                            ? 'תת-משימה של ${other.parentTitle}'
-                            : teamTaskLinkLabel(other)),
+                        subtitle: Text(teamTaskLinkLabel(other)),
                         onTap: () => Navigator.of(context).pop(other.id),
                       ),
                   ],
@@ -115,7 +95,7 @@ List<PopupMenuEntry<TeamTaskStatus>> teamTaskStatusMenuItems(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  TeamTaskStatusIcon(status: status, size: TeamTaskStyle.subtaskIconSize),
+                  TeamTaskStatusIcon(status: status, size: TeamTaskStyle.smallStatusIconSize),
                   const SizedBox(width: 8),
                   Text(status.hebrewLabel),
                 ],
@@ -124,35 +104,7 @@ List<PopupMenuEntry<TeamTaskStatus>> teamTaskStatusMenuItems(
           ),
     ];
 
-/// A task with subtasks: its status follows them (Omer, round 4 item 8).
-bool isTeamTaskParent(TeamTask task) => !task.isSubtask && task.subtasks.isNotEmpty;
-
-/// Tapping a parent's status (Omer, round 5): a small note that it updates by
-/// itself.
-Future<void> showParentStatusInfo(BuildContext context) {
-  return showDialog<void>(
-    context: context,
-    builder: (context) => Directionality(
-      textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        key: const Key('team-task-parent-status-info'),
-        content: const Text(
-          'הסטטוס של משימה שיש תחתיה תתי-משימות מתעדכן אוטומטית לפי הסטטוסים של תתי-המשימות.',
-        ),
-        actions: [
-          FilledButton(
-            key: const Key('team-task-parent-status-ok'),
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('הבנתי'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-/// [child] opening the status menu of [task]; for a parent, the note that its
-/// status updates by itself instead.
+/// [child] opening the status menu of [task].
 class TeamTaskStatusMenu extends StatelessWidget {
   const TeamTaskStatusMenu({super.key, required this.task, required this.child});
 
@@ -161,13 +113,6 @@ class TeamTaskStatusMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isTeamTaskParent(task)) {
-      return InkWell(
-        customBorder: const CircleBorder(),
-        onTap: () => showParentStatusInfo(context),
-        child: child,
-      );
-    }
     return PopupMenuButton<TeamTaskStatus>(
       tooltip: 'שינוי סטטוס',
       padding: EdgeInsets.zero,

@@ -15,8 +15,9 @@ class TeamTaskModel {
       title: _string(data['title']) ?? '',
       description: _string(data['description']) ?? '',
       link: TaskLink.fromJson(data['link']),
+      eventIds: _stringList(data['eventIds']),
+      urgency: TeamTaskUrgency.fromKey(data['urgency']),
       assigneeIds: _stringList(data['assigneeIds']),
-      subtasks: _subtasks(data['subtasks']),
       contacts: contactsFromJson(data['contacts']),
       deadline: _deadline(data['deadline']),
       status: status,
@@ -32,25 +33,18 @@ class TeamTaskModel {
   }
 
   /// The `task` of `teamTask.insert` / `teamTask.update`: only what a manager
-  /// edits. Status, ticks, the log and every timestamp have their own
-  /// operations or belong to the backend.
+  /// edits. Status, the log and every timestamp have their own operations or
+  /// belong to the backend. No `subtasks` key: the backend keeps an old
+  /// document's subtasks (removed from the app, 16/11/2026). `link` stays the
+  /// first event, so an older app version still sees it.
   static Map<String, dynamic> toMutationPayload(TeamTask task) => {
         'id': task.id,
         'title': task.title,
         'description': task.description,
         'link': task.link?.toJson(),
-        'assigneeIds': task.subtasks.isEmpty ? task.assigneeIds : <String>[],
-        'subtasks': [
-          for (final subtask in task.subtasks)
-            {
-              'id': subtask.id,
-              'title': subtask.title,
-              'description': subtask.description,
-              'assigneeIds': subtask.assigneeIds,
-              'contacts': contactsToJson(subtask.contacts),
-              'deadline': subtask.deadline,
-            },
-        ],
+        'eventIds': task.linkedEventIds,
+        'urgency': task.urgency.key,
+        'assigneeIds': task.assigneeIds,
         'contacts': contactsToJson(task.contacts),
         'deadline': task.deadline,
       };
@@ -94,39 +88,6 @@ class TeamTaskModel {
 
   static List<String> _stringList(Object? value) =>
       value is List ? value.whereType<String>().toList() : const [];
-
-  static List<TeamSubtask> _subtasks(Object? value) {
-    if (value is! List) return const [];
-    final subtasks = <TeamSubtask>[];
-    for (final entry in value) {
-      if (entry is! Map) continue;
-      final id = entry['id'];
-      final title = entry['title'];
-      if (id is! String || id.isEmpty || title is! String) continue;
-      // Before round 2 a subtask had one owner (`assigneeId`) and a tick
-      // (`isDone`); such a document still reads.
-      final legacyOwner = _string(entry['assigneeId']);
-      final status = entry.containsKey('status')
-          ? TeamTaskStatus.fromKey(entry['status'])
-          : (entry['isDone'] == true ? TeamTaskStatus.done : TeamTaskStatus.open);
-      subtasks.add(TeamSubtask(
-        id: id,
-        title: title,
-        description: _string(entry['description']) ?? '',
-        assigneeIds: entry['assigneeIds'] is List
-            ? _stringList(entry['assigneeIds'])
-            : [if (legacyOwner != null) legacyOwner],
-        contacts: contactsFromJson(entry['contacts']),
-        deadline: _deadline(entry['deadline']),
-        status: status,
-        duplicateOfId:
-            status == TeamTaskStatus.duplicate ? _string(entry['duplicateOfId']) : null,
-        updates: _updates(entry['updates']),
-        completedAt: _date(entry['completedAt']),
-      ));
-    }
-    return subtasks;
-  }
 
   static List<TaskUpdateEntry> _updates(Object? value) {
     if (value is! List) return const [];

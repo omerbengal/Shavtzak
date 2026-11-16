@@ -9,6 +9,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/israel_calendar.dart';
 import '../../../core/utils/team_task_rules.dart';
 import '../../../core/utils/team_task_spotlight.dart';
 import '../../../data/repositories/assignment_repository.dart';
@@ -306,8 +307,8 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
           TeamTaskFilterBar(state: state, showOwner: all),
           if (!all)
             _SpotlightBar(
-              count: spotlightQueue(groups.expand((g) => g.tasks)).length,
-              onStart: () => _spotlight([for (final g in groups) ...g.tasks]),
+              count: spotlightQueue(_uniqueTasks(groups)).length,
+              onStart: () => _spotlight(_uniqueTasks(groups)),
             ),
           const Divider(height: 1),
           Expanded(
@@ -326,7 +327,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
               flash: _flash,
               flashRound: _flashRound,
               onSpotlightGroup:
-                  all ? null : (group) => _spotlight(group.tasks, title: group.label),
+                  all ? null : (group) => _spotlight(group.allTasks, title: group.label),
             ),
           ),
         ],
@@ -359,6 +360,16 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
         ),
       ],
     );
+  }
+
+  /// Every task of [groups] once (a task of several events is on several).
+  static List<TeamTask> _uniqueTasks(List<TeamTaskGroup> groups) {
+    final seen = <String>{};
+    return [
+      for (final group in groups)
+        for (final task in group.allTasks)
+          if (seen.add(task.id)) task,
+    ];
   }
 
   /// The groups the list shows now (the tab).
@@ -415,10 +426,9 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   }
 }
 
-/// The list as design A (Omer, round 3): a card per link, as the דו יומי
-/// "המשימות שלי" stage cards (tinted header, white rows). In "כל המשימות" a
-/// parent's subtasks fold under it ("2/4 ▾"), closed until opened; while a
-/// search matches a subtask, its parent opens by itself.
+/// The list as design A (Omer, round 3): a card per group, as the דו יומי
+/// "המשימות שלי" stage cards (tinted header, white rows). A category's card
+/// holds its events as titled sections (16/11/2026, [groupTeamTasks]).
 class _GroupedList extends StatefulWidget {
   const _GroupedList({
     required this.groups,
@@ -459,8 +469,7 @@ class _GroupedList extends StatefulWidget {
   final TeamTasksLoaded state;
   final DateTime now;
 
-  /// "כל המשימות": subtasks nested under their parent, and a manager's
-  /// tap opens the editing view.
+  /// "כל המשימות": a manager's tap opens the editing view.
   final bool editing;
 
   @override
@@ -468,17 +477,6 @@ class _GroupedList extends StatefulWidget {
 }
 
 class _GroupedListState extends State<_GroupedList> {
-  /// The parents whose subtasks were opened by hand.
-  final Set<String> _open = {};
-
-  bool _isOpen(TeamTask task, List<TeamSubtask> shown) {
-    if (_open.contains(task.id)) return true;
-    // Searching: open where a subtask is what matched.
-    return widget.state.filter.searchText.isNotEmpty &&
-        shown.isNotEmpty &&
-        shown.length < task.subtasks.length;
-  }
-
   /// The event's "שיבוצים ל…" window with its share button, as the 👥 of
   /// every event in "מסך מנהלים" (Omer, round 10).
   Future<void> _showAssignments(Event event) async {
@@ -564,14 +562,16 @@ class _GroupedListState extends State<_GroupedList> {
     ));
   }
 
-  /// The small buttons on a card's header (round 10).
-  List<Widget> _headerButtons(TeamTaskGroup group) {
-    final link = group.tasks.firstOrNull?.link;
+  /// The small buttons on a card's header (round 10) or on an event's title
+  /// inside a category's card ([key] = that section's).
+  List<Widget> _headerButtons(TeamTaskGroup group, {String? key, TaskLink? link, Event? event}) {
+    link ??= group.link;
+    event ??= group.event;
+    key ??= group.key;
     if (link == null) return const [];
-    final event = group.tasks.first.event;
-    Widget button(String key, String tooltip, IconData icon, VoidCallback onPressed) =>
+    Widget button(String prefix, String tooltip, IconData icon, VoidCallback onPressed) =>
         IconButton(
-          key: Key('$key-${group.key}'),
+          key: Key('$prefix-$key'),
           tooltip: tooltip,
           visualDensity: VisualDensity.compact,
           padding: EdgeInsets.zero,
@@ -584,12 +584,12 @@ class _GroupedListState extends State<_GroupedList> {
     return [
       if (link.type == TaskLinkType.event && event != null && widget.showAssignments)
         button('team-task-group-assignments', 'שיבוצים', Icons.people_outline,
-            () => _showAssignments(event)),
+            () => _showAssignments(event!)),
       if (widget.editing && link.type == TaskLinkType.pendingEvent)
         button('team-task-group-link-pending', 'קישור לאירוע בשבצק', Icons.link,
-            () => _linkPending(group, link)),
+            () => _linkPending(group, link!)),
       if (widget.editing)
-        button('team-task-group-add', 'משימה חדשה כאן', Icons.add, () => _newTaskIn(link)),
+        button('team-task-group-add', 'משימה חדשה כאן', Icons.add, () => _newTaskIn(link!)),
     ];
   }
 
@@ -608,7 +608,7 @@ class _GroupedListState extends State<_GroupedList> {
         child: ListView(
           padding: const EdgeInsets.only(top: 4, bottom: 96),
           children: [
-            // A card per tab and link: switching to "המשימות שלי" builds its
+            // A card per tab and group: switching to "המשימות שלי" builds its
             // cards anew, so their rows just show, with no fold animation
             // from the other tab's height (Omer, msg 4024).
             for (final group in groups)
@@ -622,66 +622,123 @@ class _GroupedListState extends State<_GroupedList> {
     );
   }
 
-  Widget _card(BuildContext context, TeamTaskGroup group, TeamTasksLoaded state) {
-    final rows = <Widget>[];
-    for (final task in group.tasks) {
-      if (rows.isNotEmpty) {
-        rows.add(const Divider(height: 1, thickness: 1, color: TaskStyle.stageCardDivider));
-      }
-      final shown = widget.editing
-          ? visibleSubtasks(task, state.filter, now: widget.now)
-          : const <TeamSubtask>[];
-      final open = widget.editing && task.subtasks.isNotEmpty && _isOpen(task, shown);
-      rows.add(_flashed(task.id, TeamTaskRow(
-        task: task,
-        now: widget.now,
-        viewerId: widget.viewerId,
-        expanded: open,
-        onToggleSubtasks: widget.editing && task.subtasks.isNotEmpty
-            ? () => setState(() {
-                  if (!_open.remove(task.id)) _open.add(task.id);
-                })
-            : null,
-        // "המשימות שלי": the status and a new update without opening the
-        // task (Omer, round 4); every row there is the viewer's own.
-        selected: task.id == widget.selectedId,
-        canChangeStatus: !widget.editing,
-        onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
-        onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
-      )));
-      if (open && shown.isNotEmpty) {
-        rows.add(Padding(
-          key: Key('team-task-subtasks-${task.id}'),
-          padding: const EdgeInsetsDirectional.only(
-            start: 12 + TeamTaskStyle.statusIconSize + 8,
-            bottom: 8,
-          ),
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              border: BorderDirectional(
-                start: BorderSide(color: TaskStyle.rest, width: 2),
-              ),
-            ),
-            child: Column(
+  /// One task's row; [showEvents] adds the chips of a task of several
+  /// events (16/11/2026).
+  Widget _row(TeamTask task) => _flashed(
+        task.id,
+        TeamTaskRow(
+          task: task,
+          now: widget.now,
+          viewerId: widget.viewerId,
+          showEvents: task.hasSeveralEvents,
+          // "המשימות שלי": the status and a new update without opening the
+          // task (Omer, round 4); every row there is the viewer's own.
+          selected: task.id == widget.selectedId,
+          canChangeStatus: !widget.editing,
+          onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
+          onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
+        ),
+      );
+
+  static const Widget _rowDivider =
+      Divider(height: 1, thickness: 1, color: TaskStyle.stageCardDivider);
+
+  /// One event inside a category's card: its title row (name, days, 👥 and
+  /// "+"; a tap folds it) and its tasks.
+  List<Widget> _section(TeamTaskGroup group, TeamTaskSection section, TeamTasksLoaded state) {
+    final folded = widget.collapsed.contains(section.key) && state.filter.searchText.isEmpty;
+    final event = section.event;
+    // An event that ended reads a little fainter.
+    final past = event != null &&
+        DateTime(event.endDate.year, event.endDate.month, event.endDate.day)
+            .isBefore(IsraelCalendar.calendarDay(widget.now));
+    final days = event == null ? '' : _eventDays(event);
+    final count = section.tasks.length;
+    return [
+      Material(
+        color: TeamTaskStyle.sectionHeader,
+        child: InkWell(
+          key: Key('team-task-section-${section.key}'),
+          hoverColor: TeamTaskStyle.rowHover,
+          onTap: () => widget.onToggleGroup(section.key),
+          child: Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(12, 4, 6, 4),
+            child: Row(
               children: [
-                for (final subtask in shown)
-                  TeamTaskRow(
-                    task: TeamTask.subtaskView(task, subtask),
-                    now: widget.now,
-                    viewerId: widget.viewerId,
-                    nested: true,
-                    selected: subtask.id == widget.selectedId,
-                    onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.editing),
+                Icon(Icons.event_outlined,
+                    size: 16, color: past ? TaskStyle.faintText : TaskStyle.neutralText),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: section.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (days.isNotEmpty)
+                        TextSpan(
+                          text: '  $days',
+                          style: const TextStyle(
+                            fontSize: TaskStyle.rowMetaSize,
+                            color: TaskStyle.neutralText,
+                          ),
+                        ),
+                    ]),
+                    style: TextStyle(color: past ? TaskStyle.neutralText : null),
                   ),
+                ),
+                ..._headerButtons(
+                  group,
+                  key: section.key,
+                  link: TaskLink(TaskLinkType.event, section.eventId),
+                  event: event,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  count == 1 ? 'משימה אחת' : '$count משימות',
+                  style: const TextStyle(
+                    fontSize: TaskStyle.rowMetaSize,
+                    color: TaskStyle.neutralText,
+                  ),
+                ),
+                Icon(
+                  folded ? Icons.expand_more : Icons.expand_less,
+                  key: Key('team-task-section-fold-${section.key}'),
+                  size: 18,
+                  color: TaskStyle.neutralText,
+                ),
               ],
             ),
           ),
-        ));
-      }
+        ),
+      ),
+      if (!folded)
+        for (final (i, task) in section.tasks.indexed) ...[
+          if (i > 0) _rowDivider,
+          _row(task),
+        ],
+    ];
+  }
+
+  /// "15.11" or "15.11-17.11".
+  static String _eventDays(Event event) {
+    final start = shortDate(event.startDate);
+    final end = shortDate(event.endDate);
+    return start == end ? start : '$start-$end';
+  }
+
+  Widget _card(BuildContext context, TeamTaskGroup group, TeamTasksLoaded state) {
+    final rows = <Widget>[];
+    for (final task in group.tasks) {
+      if (rows.isNotEmpty) rows.add(_rowDivider);
+      rows.add(_row(task));
     }
-    final count = group.tasks.length;
-    // Folded by a tap on its header (round 7); a search opens it, as it
-    // opens a parent whose subtask matched.
+    for (final section in group.sections) {
+      if (rows.isNotEmpty) rows.add(_rowDivider);
+      rows.addAll(_section(group, section, state));
+    }
+    final count = group.allTasks.length;
+    // Folded by a tap on its header (round 7); a search opens it.
     final folded = widget.collapsed.contains(group.key) && state.filter.searchText.isEmpty;
     return Container(
       key: Key('team-task-card-${group.key}'),

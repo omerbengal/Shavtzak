@@ -47,30 +47,18 @@ class FakeTeamTaskRepository extends Fake implements TeamTaskRepository {
   Future<void> deleteTask(String id) => _record('delete:$id');
 
   @override
-  Future<void> setStatus(
-    String id,
-    TeamTaskStatus status, {
-    String? duplicateOfId,
-    String? subtaskId,
-  }) =>
-      _record('status:$id${subtaskId == null ? '' : '/$subtaskId'}:${status.key}'
-          '${duplicateOfId == null ? '' : ':$duplicateOfId'}');
+  Future<void> setStatus(String id, TeamTaskStatus status, {String? duplicateOfId}) =>
+      _record('status:$id:${status.key}${duplicateOfId == null ? '' : ':$duplicateOfId'}');
 
   @override
-  Future<void> setSubtaskDone(String id, String subtaskId, bool isDone) =>
-      _record('subtask:$id:$subtaskId:$isDone');
+  Future<void> addUpdate(String id, String text) => _record('log:$id:$text');
 
   @override
-  Future<void> addUpdate(String id, String text, {String? subtaskId}) =>
-      _record('log:$id${subtaskId == null ? '' : '/$subtaskId'}:$text');
+  Future<void> editUpdate(String id, String updateId, String text) =>
+      _record('editLog:$id:$updateId:$text');
 
   @override
-  Future<void> editUpdate(String id, String updateId, String text, {String? subtaskId}) =>
-      _record('editLog:$id${subtaskId == null ? '' : '/$subtaskId'}:$updateId:$text');
-
-  @override
-  Future<void> deleteUpdate(String id, String updateId, {String? subtaskId}) =>
-      _record('deleteLog:$id${subtaskId == null ? '' : '/$subtaskId'}:$updateId');
+  Future<void> deleteUpdate(String id, String updateId) => _record('deleteLog:$id:$updateId');
 
   @override
   Future<void> insertPendingEvent(TaskTopic pendingEvent) =>

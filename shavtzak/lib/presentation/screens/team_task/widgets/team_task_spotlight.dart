@@ -14,6 +14,7 @@ import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
 import '../../../widgets/rtl_arrow_keys.dart';
 import '../../task/task_style.dart';
+import 'task_link_picker.dart' show pendingEventLabel;
 import 'team_task_actions.dart';
 import 'team_task_style.dart';
 
@@ -432,9 +433,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     if (text.isEmpty || _leaving) return;
     Logger.action('tap:spotlightSend');
     final completion = CrudActionCompleter();
-    context.read<TeamTaskBloc>().add(task.isSubtask
-        ? AddTeamTaskUpdate(task.parentId!, text, subtaskId: task.id, completion: completion)
-        : AddTeamTaskUpdate(task.id, text, completion: completion));
+    context.read<TeamTaskBloc>().add(AddTeamTaskUpdate(task.id, text, completion: completion));
     // Take off right away, from where the field is now, before the keyboard
     // goes. Not after the save: Firestore shows the new update in the log
     // the moment it is written locally, while the save itself waits for the
@@ -501,10 +500,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
 
   Future<bool> _setStatus(TeamTask task, TeamTaskStatus status, {String? original}) async {
     final completion = CrudActionCompleter();
-    context.read<TeamTaskBloc>().add(task.isSubtask
-        ? SetTeamTaskStatus(task.parentId!, status,
-            subtaskId: task.id, duplicateOfId: original, completion: completion)
-        : SetTeamTaskStatus(task.id, status, duplicateOfId: original, completion: completion));
+    context
+        .read<TeamTaskBloc>()
+        .add(SetTeamTaskStatus(task.id, status, duplicateOfId: original, completion: completion));
     final result = await _await(completion);
     if (!mounted) return false;
     if (!result.isSuccess) _failed(result);
@@ -991,9 +989,10 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     final late = isTeamTaskLate(task, now);
     final owners = teamTaskOwnerChips(task);
     final linkKind = switch (task.link?.type) {
-      TaskLinkType.event => 'אירוע · ',
+      TaskLinkType.event => task.hasSeveralEvents ? 'אירועים · ' : 'אירוע · ',
       TaskLinkType.category => 'קטגוריה · ',
       TaskLinkType.topic => 'נושא · ',
+      TaskLinkType.pendingEvent => '$pendingEventLabel · ',
       null => '',
     };
     final meta = SpotlightStyle.metaSize * s;
@@ -1056,14 +1055,6 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 mainAxisSize: _fill ? MainAxisSize.max : MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (task.isSubtask)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        task.parentTitle ?? '',
-                        style: TextStyle(fontSize: meta, color: TaskStyle.neutralText),
-                      ),
-                    ),
                   Text(
                     task.title,
                     key: Key('spotlight-title-${task.id}'),
@@ -1080,6 +1071,15 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       _MorphStatusChip(status: task.status, scale: s),
+                      if (task.urgency != TeamTaskUrgency.normal)
+                        Transform.scale(
+                          scale: s,
+                          child: TeamTaskUrgencyChip(
+                            key: Key('spotlight-urgency-${task.id}'),
+                            urgency: task.urgency,
+                            dense: false,
+                          ),
+                        ),
                       if (deadline != null)
                         Text(
                           late ? 'באיחור · עד ${shortDate(deadline)}' : 'עד ${shortDate(deadline)}',

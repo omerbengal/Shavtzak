@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/team_task_rules.dart';
+import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/team_task.dart';
 
 import '../../support/task_fixtures.dart';
@@ -48,77 +49,100 @@ void main() {
   });
 
   test('isTeamTaskOwner reads ownerIds', () {
-    final task = buildTeamTask(subtasks: const [
-      TeamSubtask(id: 's1', title: 'x', assigneeIds: ['m2']),
-    ]);
+    final task = buildTeamTask(assigneeIds: ['m2']);
     expect(isTeamTaskOwner(task, 'm2'), isTrue);
     expect(isTeamTaskOwner(task, 'm1'), isFalse);
   });
 
-  group('teamTaskParentStatus (Omer, round 4)', () {
-    TeamSubtask sub(TeamTaskStatus status) =>
-        TeamSubtask(id: status.name, title: status.name, status: status);
-    const open = TeamTaskStatus.open;
-    const inProgress = TeamTaskStatus.inProgress;
-    const done = TeamTaskStatus.done;
-    const cancelled = TeamTaskStatus.cancelled;
-    const duplicate = TeamTaskStatus.duplicate;
-
-    test('his three rules, cancelled and duplicate not counted', () {
-      expect(teamTaskParentStatus([sub(open), sub(open), sub(cancelled)]), open);
-      expect(teamTaskParentStatus([sub(done), sub(duplicate)]), done);
-      expect(teamTaskParentStatus([sub(open), sub(inProgress), sub(done)]), inProgress);
-    });
-
-    test('open and done mixed = in progress; nothing left = cancelled', () {
-      expect(teamTaskParentStatus([sub(open), sub(done)]), inProgress);
-      expect(teamTaskParentStatus([sub(cancelled), sub(duplicate)]), cancelled);
-    });
-
-    test('withParentStatus overrides a stored parent status; a plain task keeps its own', () {
-      final parent = buildTeamTask(
-        status: done,
-        subtasks: [TeamSubtask(id: 's1', title: 'x', status: open)],
-      );
-      expect(withParentStatus(parent).status, open);
-      final plain = buildTeamTask(status: done);
-      expect(withParentStatus(plain).status, done);
-    });
-
-    test('withSubtaskStatus moves the parent with the subtask', () {
-      final parent = buildTeamTask(subtasks: const [
-        TeamSubtask(id: 's1', title: 'a'),
-        TeamSubtask(id: 's2', title: 'b'),
-      ]);
-      final moved = withSubtaskStatus(parent, 's1', inProgress);
-      expect(moved.status, inProgress);
-      final allDone = withSubtaskStatus(withSubtaskStatus(parent, 's1', done), 's2', done);
-      expect(allDone.status, done);
-    });
+  test('myTeamTaskRows: the tasks the viewer owns', () {
+    final tasks = [
+      buildTeamTask(id: 'a', assigneeIds: ['m1']),
+      buildTeamTask(id: 'b', assigneeIds: ['m2']),
+    ];
+    expect(myTeamTaskRows(tasks, 'm1').map((t) => t.id), ['a']);
   });
 
-  group('groupTeamTasks', () {
+  group('groupTeamTasks (16/11/2026)', () {
     final hanukkah = buildCategory();
+    final shows = buildCategory(id: 'c2', name: 'אירועי בית');
     final wives = buildTopic();
-    final event = buildEvent(id: 'e1', name: 'הדלקת נרות');
+    // now = 15.11: e1 is ongoing, e2 upcoming, e3 and e4 over.
+    final candles = buildEvent(
+        id: 'e1', name: 'הדלקת נרות', categoryId: 'c1',
+        startDate: DateTime(2026, 11, 14), endDate: DateTime(2026, 11, 16));
+    final party = buildEvent(
+        id: 'e2', name: 'מסיבה', categoryId: 'c1', startDate: DateTime(2026, 12, 20));
+    final older = buildEvent(
+        id: 'e3', name: 'ישן', categoryId: 'c1', startDate: DateTime(2026, 10, 1));
+    final recent = buildEvent(
+        id: 'e4', name: 'אחרון שעבר', categoryId: 'c1', startDate: DateTime(2026, 11, 10));
+    final concert = buildEvent(
+        id: 'e5', name: 'הופעה', categoryId: 'c2', startDate: DateTime(2026, 11, 25));
+    final loose = buildEvent(
+        id: 'e6', name: 'בלי קטגוריה', categoryId: null, startDate: DateTime(2026, 11, 22));
+    TeamTask onEvent(String id, Event event, {String? deadline}) => buildTeamTask(
+        id: id, title: id, deadline: deadline,
+        link: TaskLink(TaskLinkType.event, event.id), event: event, events: [event]);
 
-    test('groups by link, ordered by their nearest open deadline, none last', () {
+    test('a card per category by name; on top its own tasks; then its events, nearest first',
+        () {
       final tasks = [
-        buildTeamTask(id: 'a', title: 'א', deadline: '2026-12-10')
-            .copyWith(link: () => TaskLink(TaskLinkType.category, 'c1'), category: () => hanukkah),
-        buildTeamTask(id: 'b', title: 'ב', deadline: '2026-11-20')
-            .copyWith(link: () => TaskLink(TaskLinkType.topic, 'p1'), topic: () => wives),
-        buildTeamTask(id: 'c', title: 'ג'),
-        buildTeamTask(id: 'd', title: 'ד', deadline: '2026-11-30')
-            .copyWith(link: () => TaskLink(TaskLinkType.event, 'e1'), event: () => event),
-        buildTeamTask(id: 'e', title: 'ה')
-            .copyWith(link: () => TaskLink(TaskLinkType.topic, 'p1'), topic: () => wives),
+        onEvent('party', party),
+        onEvent('older', older),
+        onEvent('candles', candles),
+        onEvent('recent', recent),
+        buildTeamTask(id: 'cat', title: 'cat',
+            link: const TaskLink(TaskLinkType.category, 'c1'), category: hanukkah),
+        onEvent('concert', concert),
+        buildTeamTask(id: 'topic', title: 'topic')
+            .copyWith(link: () => const TaskLink(TaskLinkType.topic, 'p1'), topic: () => wives),
+        buildTeamTask(id: 'none', title: 'none'),
+        onEvent('loose', loose),
       ];
-      final groups = groupTeamTasks(tasks, now);
-      expect(groups.map((g) => g.label), ['נשות מגדים', 'הדלקת נרות', 'אירועי חנוכה', 'ללא שיוך']);
-      expect(groups.first.tasks.map((t) => t.id), ['b', 'e']);
-      expect(groups.first.type, TaskLinkType.topic);
+      final groups = groupTeamTasks(tasks, now, categories: [hanukkah, shows]);
+      expect(groups.map((g) => g.label),
+          ['אירועי בית', 'אירועי חנוכה', 'בלי קטגוריה', 'נשות מגדים', 'ללא שיוך']);
+      final card = groups[1];
+      expect(card.type, TaskLinkType.category);
+      expect(card.link, const TaskLink(TaskLinkType.category, 'c1'));
+      expect(card.tasks.map((t) => t.id), ['cat']);
+      // Ongoing first, then upcoming; then the past, the latest first.
+      expect(card.sections.map((s) => s.eventId), ['e1', 'e2', 'e4', 'e3']);
+      expect(card.sections.first.tasks.map((t) => t.id), ['candles']);
+      expect(card.allTasks.length, 5);
+      expect(groups[2].type, TaskLinkType.event);
+      expect(groups[2].event, loose);
       expect(groups.last.type, isNull);
+    });
+
+    test('a task of several events sits on top of each of their categories', () {
+      final both = buildTeamTask(
+        id: 'both',
+        link: const TaskLink(TaskLinkType.event, 'e1'),
+        eventIds: const ['e1', 'e2', 'e5'],
+        event: candles,
+        events: [candles, party, concert],
+      );
+      final groups = groupTeamTasks([both], now, categories: [hanukkah, shows]);
+      expect(groups.map((g) => g.label), ['אירועי בית', 'אירועי חנוכה']);
+      for (final group in groups) {
+        expect(group.tasks.map((t) => t.id), ['both']);
+        expect(group.sections, isEmpty);
+      }
+    });
+
+    test('a task of several events with no category shows on each event card', () {
+      final other = buildEvent(id: 'e7', name: 'עוד אחד', categoryId: null,
+          startDate: DateTime(2026, 11, 28));
+      final both = buildTeamTask(
+        id: 'both',
+        link: const TaskLink(TaskLinkType.event, 'e6'),
+        eventIds: const ['e6', 'e7'],
+        event: loose,
+        events: [loose, other],
+      );
+      final groups = groupTeamTasks([both], now, categories: [hanukkah]);
+      expect(groups.map((g) => g.label), ['בלי קטגוריה', 'עוד אחד']);
     });
 
     test('inside a group: deadline ascending, none last, done at the bottom, then title', () {
@@ -137,21 +161,30 @@ void main() {
 
     test('a task of a deleted event lands in the "אירוע שנמחק" group', () {
       final groups = groupTeamTasks([
-        buildTeamTask().copyWith(link: () => TaskLink(TaskLinkType.event, 'gone')),
-        buildTeamTask(id: 't2').copyWith(link: () => TaskLink(TaskLinkType.topic, 'gone')),
+        buildTeamTask().copyWith(link: () => const TaskLink(TaskLinkType.event, 'gone')),
+        buildTeamTask(id: 't2').copyWith(link: () => const TaskLink(TaskLinkType.topic, 'gone')),
       ], now);
-      expect(groups.map((g) => g.label).toSet(), {'אירוע שנמחק', 'נושא שנמחק'});
+      expect(groups.map((g) => g.label).toList(), ['אירוע שנמחק', 'נושא שנמחק']);
     });
 
     test('an archived category keeps its name as the group', () {
       final groups = groupTeamTasks([
         buildTeamTask().copyWith(
-          link: () => TaskLink(TaskLinkType.category, 'c1'),
+          link: () => const TaskLink(TaskLinkType.category, 'c1'),
           category: () => buildCategory(isArchived: true),
         ),
       ], now);
       expect(groups.single.label, 'אירועי חנוכה');
     });
+  });
+
+  test('compareEventsByNearest: ongoing and upcoming by start, then the past by end', () {
+    final past = buildEvent(id: 'p', startDate: DateTime(2026, 11, 1));
+    final ongoing = buildEvent(
+        id: 'o', startDate: DateTime(2026, 11, 14), endDate: DateTime(2026, 11, 15));
+    final next = buildEvent(id: 'n', startDate: DateTime(2026, 11, 16));
+    final events = [past, next, ongoing]..sort((a, b) => compareEventsByNearest(a, b, now));
+    expect(events.map((e) => e.id), ['o', 'n', 'p']);
   });
 
   group('TeamTaskFilter', () {
@@ -184,6 +217,35 @@ void main() {
           TeamTaskFilter.initial.copyWith(link: () => TaskLink(TaskLinkType.category, 'c1'));
       final shown = applyTeamTaskFilter(tasks, filter, const {'e1': 'c1', 'e2': 'c2'});
       expect(shown.map((t) => t.id), ['cat', 'ev']);
+    });
+
+    test('urgency filter; none ticked = every urgency', () {
+      final tasks = [
+        buildTeamTask(id: 'low', urgency: TeamTaskUrgency.low),
+        buildTeamTask(id: 'normal'),
+        buildTeamTask(id: 'high', urgency: TeamTaskUrgency.high),
+      ];
+      final high = TeamTaskFilter.initial.copyWith(urgencies: {TeamTaskUrgency.high});
+      expect(applyTeamTaskFilter(tasks, high, const {}).map((t) => t.id), ['high']);
+      expect(high.anyFilterSet, isTrue);
+      expect(applyTeamTaskFilter(tasks, TeamTaskFilter.initial, const {}).length, 3);
+    });
+
+    test('a task of several events matches each of its events and their categories', () {
+      final task = buildTeamTask(
+        id: 'both',
+        link: const TaskLink(TaskLinkType.event, 'e1'),
+        eventIds: const ['e1', 'e2'],
+      );
+      TeamTaskFilter by(TaskLink link) => TeamTaskFilter.initial.copyWith(link: () => link);
+      const categories = {'e1': 'c1', 'e2': 'c2'};
+      expect(applyTeamTaskFilter([task], by(const TaskLink(TaskLinkType.event, 'e2')), categories),
+          hasLength(1));
+      expect(
+          applyTeamTaskFilter([task], by(const TaskLink(TaskLinkType.category, 'c2')), categories),
+          hasLength(1));
+      expect(applyTeamTaskFilter([task], by(const TaskLink(TaskLinkType.event, 'e3')), categories),
+          isEmpty);
     });
 
     test('an event or topic link matches only itself', () {
@@ -227,26 +289,14 @@ void main() {
   });
 
   group('round 3: search and the status chip', () {
-    const sub1 = TeamSubtask(id: 's1', title: 'גנרטור ותאורה', assigneeIds: ['m1']);
-    const sub2 = TeamSubtask(id: 's2', title: 'שילוט', assigneeIds: ['m2']);
-    final parent = buildTeamTask(id: 'p', title: 'הכנת שטח', subtasks: const [sub1, sub2]);
-    final other = buildTeamTask(id: 'o', title: 'הזמנת אוטובוסים');
-
-    test('the search matches a title, or a subtask title', () {
-      final byTitle = applyTeamTaskFilter(
-          [parent, other], TeamTaskFilter.initial.copyWith(query: ' אוטובוס '), const {});
+    test('the search matches a title or a description', () {
+      final tasks = [
+        buildTeamTask(id: 'p', title: 'הכנת שטח'),
+        buildTeamTask(id: 'o', title: 'הזמנת אוטובוסים'),
+      ];
+      final byTitle =
+          applyTeamTaskFilter(tasks, TeamTaskFilter.initial.copyWith(query: ' אוטובוס '), const {});
       expect(byTitle.map((t) => t.id), ['o']);
-      final bySubtask = applyTeamTaskFilter(
-          [parent, other], TeamTaskFilter.initial.copyWith(query: 'שילוט'), const {});
-      expect(bySubtask.map((t) => t.id), ['p']);
-    });
-
-    test('nested subtasks: only the matching ones, unless the parent matches', () {
-      final filter = TeamTaskFilter.initial.copyWith(query: 'שילוט');
-      expect(visibleSubtasks(parent, filter).map((s) => s.id), ['s2']);
-      final byParent = TeamTaskFilter.initial.copyWith(query: 'הכנת');
-      expect(visibleSubtasks(parent, byParent).map((s) => s.id), ['s1', 's2']);
-      expect(visibleSubtasks(parent, TeamTaskFilter.initial).length, 2);
     });
 
     test('an owner filter does not mark the statuses as changed', () {
@@ -261,39 +311,18 @@ void main() {
   });
 
   group('round 7 filters', () {
-    test('"באיחור" keeps the late tasks, a parent through a late subtask', () {
+    test('"באיחור" keeps the late tasks', () {
       final tasks = [
         buildTeamTask(id: 'late', deadline: '2026-11-14'),
         buildTeamTask(id: 'today', deadline: '2026-11-15'),
         buildTeamTask(id: 'doneLate', deadline: '2026-11-01', status: TeamTaskStatus.done),
         buildTeamTask(id: 'none'),
-        buildTeamTask(id: 'parent', subtasks: const [
-          TeamSubtask(id: 's1', title: 'בזמן', deadline: '2026-11-20', assigneeIds: ['m1']),
-          TeamSubtask(id: 's2', title: 'מאחר', deadline: '2026-11-10', assigneeIds: ['m1']),
-        ]),
       ];
       final filter = TeamTaskFilter.initial.copyWith(lateOnly: true);
       expect(filter.anyFilterSet, isTrue);
       expect(filter.statusesChanged, isFalse);
       final shown = applyTeamTaskFilter(tasks, filter, const {}, now: now);
-      expect(shown.map((t) => t.id), ['late', 'parent']);
-      // Under the parent, only the late subtask.
-      expect(visibleSubtasks(tasks.last, filter, now: now).map((s) => s.id), ['s2']);
-      expect(visibleSubtasks(tasks.last, TeamTaskFilter.initial, now: now).length, 2);
-    });
-
-    test('a done subtask past its deadline does not make its parent late', () {
-      final parent = buildTeamTask(id: 'p', subtasks: const [
-        TeamSubtask(
-          id: 's1',
-          title: 'בוצעה',
-          deadline: '2026-11-10',
-          status: TeamTaskStatus.done,
-          assigneeIds: ['m1'],
-        ),
-        TeamSubtask(id: 's2', title: 'פתוחה', assigneeIds: ['m1']),
-      ]);
-      expect(isTeamTaskOrSubtaskLate(parent, now), isFalse);
+      expect(shown.map((t) => t.id), ['late']);
     });
 
     test('several owners: a task of any of them', () {

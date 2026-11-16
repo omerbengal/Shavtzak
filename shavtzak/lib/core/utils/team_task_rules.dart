@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import '../../domain/entities/category.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../domain/entities/team_task.dart';
@@ -46,93 +47,78 @@ List<String> teamTaskOwnerNames(TeamTask task) {
   return [for (final id in task.ownerIds) byId[id] ?? unknownMemberLabel];
 }
 
-/// The task's owners as the backend derives them (`deriveOwnerIds`): its own
-/// [TeamTask.assigneeIds] without subtasks, else every subtask owner, once.
-List<String> teamTaskOwnerIds(TeamTask task) {
-  if (task.subtasks.isEmpty) return task.assigneeIds.toSet().toList();
-  return {for (final subtask in task.subtasks) ...subtask.assigneeIds}.toList();
-}
+/// The task's owners as the backend derives them: its assignees, once each.
+List<String> teamTaskOwnerIds(TeamTask task) => task.assigneeIds.toSet().toList();
 
-/// A parent's status, computed from its subtasks as the backend does
-/// (`team_tasks.ts` deriveParentStatus; Omer, round 4: never set by hand).
-/// Cancelled and duplicate subtasks do not count; of the rest: every one open
-/// = open, every one done = done, anything else = in progress. Every subtask
-/// cancelled or a duplicate = cancelled.
-TeamTaskStatus teamTaskParentStatus(List<TeamSubtask> subtasks) {
-  final counted = [
-    for (final subtask in subtasks)
-      if (subtask.status != TeamTaskStatus.cancelled && subtask.status != TeamTaskStatus.duplicate)
-        subtask.status,
-  ];
-  if (counted.isEmpty) return TeamTaskStatus.cancelled;
-  if (counted.every((status) => status == TeamTaskStatus.open)) return TeamTaskStatus.open;
-  if (counted.every((status) => status == TeamTaskStatus.done)) return TeamTaskStatus.done;
-  return TeamTaskStatus.inProgress;
-}
-
-/// [task] with the status its subtasks give it; a task without subtasks
-/// keeps its own.
-TeamTask withParentStatus(TeamTask task) {
-  if (task.subtasks.isEmpty) return task;
-  final status = teamTaskParentStatus(task.subtasks);
-  if (status == task.status && task.duplicateOfId == null) return task;
-  return task.copyWith(status: status, duplicateOfId: () => null);
-}
-
-/// [task] with subtask [subtaskId] set to [status], and the parent's status
-/// that follows ([teamTaskParentStatus]).
-TeamTask withSubtaskStatus(
-  TeamTask task,
-  String subtaskId,
-  TeamTaskStatus status, {
-  String? duplicateOfId,
-}) {
-  if (!task.subtasks.any((subtask) => subtask.id == subtaskId)) return task;
-  final subtasks = [
-    for (final subtask in task.subtasks)
-      subtask.id == subtaskId
-          ? subtask.copyWith(
-              status: status,
-              duplicateOfId: () => status == TeamTaskStatus.duplicate ? duplicateOfId : null,
-            )
-          : subtask,
-  ];
-  return withParentStatus(task.copyWith(subtasks: subtasks));
-}
-
-/// The quick tick in the parent's list: done, or back to open.
-TeamTask withSubtaskTicked(TeamTask task, String subtaskId, bool isDone) =>
-    withSubtaskStatus(task, subtaskId, isDone ? TeamTaskStatus.done : TeamTaskStatus.open);
-
-/// What the "המשימות שלי" tab lists for [viewerId] (Omer, round 2): every task
-/// they own that has no subtasks, and every subtask they own as its own row
-/// ([TeamTask.subtaskView], the parent's title shown above it).
+/// What the "המשימות שלי" tab lists for [viewerId]: every task they own.
 List<TeamTask> myTeamTaskRows(List<TeamTask> tasks, String viewerId) => [
       for (final task in tasks)
-        if (task.subtasks.isEmpty) ...[
-          if (task.ownerIds.contains(viewerId)) task,
-        ] else
-          for (final subtask in task.subtasks)
-            if (subtask.assigneeIds.contains(viewerId)) TeamTask.subtaskView(task, subtask),
+        if (task.ownerIds.contains(viewerId)) task,
     ];
 
-/// One group of the list: the tasks of one event, category or topic, or the
-/// tasks with no link ("ללא שיוך", [type] null).
+/// One event inside a category's card (16/11/2026): its title row and the
+/// tasks linked to that event alone.
+class TeamTaskSection extends Equatable {
+  /// Unique in the list: the card's key and the event's.
+  final String key;
+  final String eventId;
+
+  /// The event, or null when it was deleted.
+  final Event? event;
+  final String label;
+  final List<TeamTask> tasks;
+
+  const TeamTaskSection({
+    required this.key,
+    required this.eventId,
+    required this.event,
+    required this.label,
+    required this.tasks,
+  });
+
+  @override
+  List<Object?> get props => [key, eventId, event, label, tasks];
+}
+
+/// One card of the list (16/11/2026). A category's card holds, on top, the
+/// tasks of the category itself and the tasks linked to several events of
+/// it ([tasks]), then a [sections] entry per event of the category. Any other
+/// card (an event with no category, a pending event, a topic, "ללא שיוך",
+/// [type] null) has only [tasks].
 class TeamTaskGroup extends Equatable {
   final String key;
   final String label;
   final TaskLinkType? type;
+
+  /// What a new task from the card's "+" is linked to; null for "ללא שיוך".
+  final TaskLink? link;
+
+  /// The card's own event (an event with no category), for its 👥 button.
+  final Event? event;
   final List<TeamTask> tasks;
+  final List<TeamTaskSection> sections;
 
   const TeamTaskGroup({
     required this.key,
     required this.label,
     required this.type,
     required this.tasks,
+    this.link,
+    this.event,
+    this.sections = const [],
   });
 
+  /// Every task on the card, once each.
+  List<TeamTask> get allTasks {
+    final seen = <String>{};
+    return [
+      for (final task in [...tasks, for (final section in sections) ...section.tasks])
+        if (seen.add(task.id)) task,
+    ];
+  }
+
   @override
-  List<Object?> get props => [key, label, type, tasks];
+  List<Object?> get props => [key, label, type, link, event, tasks, sections];
 }
 
 const String noLinkLabel = 'ללא שיוך';
@@ -144,6 +130,10 @@ String teamTaskLinkLabel(TeamTask task) {
   if (link == null) return noLinkLabel;
   switch (link.type) {
     case TaskLinkType.event:
+      // Several events (16/11/2026): every one still there, by name.
+      if (task.hasSeveralEvents && task.events.isNotEmpty) {
+        return task.events.map((event) => event.name).join(', ');
+      }
       return task.event?.name ?? 'אירוע שנמחק';
     case TaskLinkType.category:
       return task.category?.name ?? 'קטגוריה שנמחקה';
@@ -173,70 +163,182 @@ int _compareDeadlines(String? a, String? b) {
   return a.compareTo(b);
 }
 
-/// [tasks] grouped by link. Groups are ordered by their nearest deadline of a
-/// still-active task (none last), then by label; "ללא שיוך" is always last.
-List<TeamTaskGroup> groupTeamTasks(List<TeamTask> tasks, DateTime now) {
-  final byKey = <String, List<TeamTask>>{};
-  final labels = <String, String>{};
-  final types = <String, TaskLinkType?>{};
+/// The order of events (16/11/2026): the ones that have not ended yet (one
+/// going on now counts) first, the nearest start first; then the ones that
+/// ended, the latest end first. A deleted event (null) goes last.
+int compareEventsByNearest(Event? a, Event? b, DateTime now) {
+  if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
+  final today = IsraelCalendar.calendarDay(now);
+  DateTime day(DateTime d) => DateTime(d.year, d.month, d.day);
+  final pastA = day(a.endDate).isBefore(today);
+  final pastB = day(b.endDate).isBefore(today);
+  if (pastA != pastB) return pastA ? 1 : -1;
+  final byDate = pastA ? b.endDate.compareTo(a.endDate) : a.startDate.compareTo(b.startDate);
+  if (byDate != 0) return byDate;
+  return a.name.compareTo(b.name);
+}
+
+/// [tasks] as the list's cards (Omer, 16/11/2026):
+/// - a card per category, by name (א-ב): on top the tasks linked to the
+///   category itself and those linked to several events of it (such a task
+///   shows on top of every category of its events), then a section per event
+///   of the category with the tasks linked to it alone, ordered by
+///   [compareEventsByNearest];
+/// - an event with no category (or a deleted one) keeps a card of its own,
+///   after the categories, in the same event order; a task linked to several
+///   events shows on each such event's card;
+/// - then the pending events and the topics, each by name; "ללא שיוך" last.
+///
+/// [categories] name the categories of the tasks' events.
+List<TeamTaskGroup> groupTeamTasks(
+  List<TeamTask> tasks,
+  DateTime now, {
+  List<Category> categories = const [],
+}) {
+  final categoryById = {for (final category in categories) category.id: category};
+
+  final categoryLabels = <String, String>{};
+  final categoryTop = <String, List<TeamTask>>{};
+  final categorySections = <String, Map<String, List<TeamTask>>>{};
+  final sectionEvents = <String, Event?>{};
+  final sectionLabels = <String, String>{};
+  final otherCards = <String, List<TeamTask>>{};
+  final otherLabels = <String, String>{};
+  final otherTypes = <String, TaskLinkType?>{};
+  final otherLinks = <String, TaskLink?>{};
+  final otherEvents = <String, Event?>{};
+
+  void addOther(String key, TeamTask task, String label, TaskLinkType? type, TaskLink? link,
+      [Event? event]) {
+    final list = otherCards.putIfAbsent(key, () => []);
+    if (!list.any((t) => t.id == task.id)) list.add(task);
+    otherLabels[key] = label;
+    otherTypes[key] = type;
+    otherLinks[key] = link;
+    if (event != null) otherEvents[key] = event;
+  }
+
+  void addCategoryTop(String categoryId, String label, TeamTask task) {
+    categoryLabels[categoryId] = label;
+    final list = categoryTop.putIfAbsent(categoryId, () => []);
+    if (!list.any((t) => t.id == task.id)) list.add(task);
+  }
+
   for (final task in tasks) {
     final link = task.link;
-    final key = link == null ? 'none' : '${link.type.key}:${link.id}';
-    byKey.putIfAbsent(key, () => []).add(task);
-    labels[key] = teamTaskLinkLabel(task);
-    types[key] = link?.type;
-  }
-
-  String? nearest(List<TeamTask> group) {
-    String? best;
-    for (final task in group) {
-      if (!task.status.isActive || task.deadline == null) continue;
-      if (best == null || task.deadline!.compareTo(best) < 0) best = task.deadline;
+    if (link == null) {
+      addOther('none', task, noLinkLabel, null, null);
+      continue;
     }
-    return best;
+    switch (link.type) {
+      case TaskLinkType.category:
+        addCategoryTop(link.id, task.category?.name ?? 'קטגוריה שנמחקה', task);
+      case TaskLinkType.topic:
+      case TaskLinkType.pendingEvent:
+        addOther('${link.type.key}:${link.id}', task, teamTaskLinkLabel(task), link.type, link);
+      case TaskLinkType.event:
+        final eventsById = {for (final event in task.events) event.id: event};
+        if (task.event != null) eventsById[link.id] = task.event!;
+        final ids = task.linkedEventIds;
+        final several = ids.length > 1;
+        for (final id in ids) {
+          final event = eventsById[id];
+          final categoryId = event?.categoryId;
+          final category = categoryId == null ? null : categoryById[categoryId];
+          if (event != null && category != null) {
+            if (several) {
+              addCategoryTop(category.id, category.name, task);
+            } else {
+              categoryLabels[category.id] = category.name;
+              categorySections
+                  .putIfAbsent(category.id, () => {})
+                  .putIfAbsent(id, () => [])
+                  .add(task);
+              sectionEvents[id] = event;
+              sectionLabels[id] = event.name;
+            }
+          } else {
+            addOther('event:$id', task, event?.name ?? 'אירוע שנמחק', TaskLinkType.event,
+                TaskLink(TaskLinkType.event, id), event);
+          }
+        }
+    }
   }
 
-  final groups = [
-    for (final entry in byKey.entries)
+  final categoryCards = [
+    for (final categoryId in categoryLabels.keys)
       TeamTaskGroup(
-        key: entry.key,
-        label: labels[entry.key]!,
-        type: types[entry.key],
-        tasks: [...entry.value]..sort(compareTeamTasks),
+        key: 'category:$categoryId',
+        label: categoryLabels[categoryId]!,
+        type: TaskLinkType.category,
+        link: TaskLink(TaskLinkType.category, categoryId),
+        tasks: [...?categoryTop[categoryId]]..sort(compareTeamTasks),
+        sections: [
+          for (final entry in (categorySections[categoryId] ?? const <String, List<TeamTask>>{}).entries)
+            TeamTaskSection(
+              key: 'category:$categoryId/event:${entry.key}',
+              eventId: entry.key,
+              event: sectionEvents[entry.key],
+              label: sectionLabels[entry.key]!,
+              tasks: [...entry.value]..sort(compareTeamTasks),
+            ),
+        ]..sort((a, b) => compareEventsByNearest(a.event, b.event, now)),
+      ),
+  ]..sort((a, b) => a.label.compareTo(b.label));
+
+  final others = [
+    for (final key in otherCards.keys)
+      TeamTaskGroup(
+        key: key,
+        label: otherLabels[key]!,
+        type: otherTypes[key],
+        link: otherLinks[key],
+        event: otherEvents[key],
+        tasks: [...otherCards[key]!]..sort(compareTeamTasks),
       ),
   ];
-  final nearestByKey = {for (final group in groups) group.key: nearest(group.tasks)};
-  groups.sort((a, b) {
-    final noneA = a.type == null ? 1 : 0;
-    final noneB = b.type == null ? 1 : 0;
-    if (noneA != noneB) return noneA.compareTo(noneB);
-    final byDeadline = _compareDeadlines(nearestByKey[a.key], nearestByKey[b.key]);
-    if (byDeadline != 0) return byDeadline;
+  int rank(TaskLinkType? type) => switch (type) {
+        TaskLinkType.event => 0,
+        TaskLinkType.pendingEvent => 1,
+        TaskLinkType.topic => 2,
+        TaskLinkType.category => 2,
+        null => 3,
+      };
+  others.sort((a, b) {
+    final byRank = rank(a.type).compareTo(rank(b.type));
+    if (byRank != 0) return byRank;
+    if (a.type == TaskLinkType.event) {
+      final byEvent = compareEventsByNearest(a.event, b.event, now);
+      if (byEvent != 0) return byEvent;
+    }
     return a.label.compareTo(b.label);
   });
-  return groups;
+  return [...categoryCards, ...others];
 }
 
 /// What the list shows: a set of statuses, optionally some owners (any of
-/// them, round 7: several like the statuses), one link, only the late tasks
-/// ("באיחור", round 7) and a search text.
+/// them, round 7: several like the statuses), some urgencies (16/11/2026),
+/// one link, only the late tasks ("באיחור", round 7) and a search text.
 class TeamTaskFilter extends Equatable {
   final Set<TeamTaskStatus> statuses;
 
   /// The owners shown; empty = everyone.
   final Set<String> ownerIds;
+
+  /// The urgencies shown; empty = every one.
+  final Set<TeamTaskUrgency> urgencies;
   final TaskLink? link;
 
-  /// Only the tasks that are late ([isTeamTaskLate]); a parent counts when
-  /// it or one of its subtasks is.
+  /// Only the tasks that are late ([isTeamTaskLate]).
   final bool lateOnly;
 
-  /// Words looked up in a task's title, description and subtasks' titles.
+  /// Words looked up in a task's title and description.
   final String query;
 
   const TeamTaskFilter({
     required this.statuses,
     this.ownerIds = const {},
+    this.urgencies = const {},
     this.link,
     this.lateOnly = false,
     this.query = '',
@@ -255,8 +357,9 @@ class TeamTaskFilter extends Equatable {
   bool get statusesChanged =>
       statuses.length != initial.statuses.length || !statuses.containsAll(initial.statuses);
 
-  /// Whether any of the filters (status, owner, link, late) is set.
-  bool get anyFilterSet => statusesChanged || ownerIds.isNotEmpty || link != null || lateOnly;
+  /// Whether any of the filters (status, owner, urgency, link, late) is set.
+  bool get anyFilterSet =>
+      statusesChanged || ownerIds.isNotEmpty || urgencies.isNotEmpty || link != null || lateOnly;
 
   /// [query] trimmed and lower-cased; empty = no search.
   String get searchText => query.trim().toLowerCase();
@@ -264,6 +367,7 @@ class TeamTaskFilter extends Equatable {
   TeamTaskFilter copyWith({
     Set<TeamTaskStatus>? statuses,
     Set<String>? ownerIds,
+    Set<TeamTaskUrgency>? urgencies,
     TaskLink? Function()? link,
     bool? lateOnly,
     String? query,
@@ -271,6 +375,7 @@ class TeamTaskFilter extends Equatable {
       TeamTaskFilter(
         statuses: statuses ?? this.statuses,
         ownerIds: ownerIds ?? this.ownerIds,
+        urgencies: urgencies ?? this.urgencies,
         link: link != null ? link() : this.link,
         lateOnly: lateOnly ?? this.lateOnly,
         query: query ?? this.query,
@@ -280,20 +385,16 @@ class TeamTaskFilter extends Equatable {
   List<Object?> get props => [
         statuses.toList()..sort((a, b) => a.index - b.index),
         ownerIds.toList()..sort(),
+        urgencies.toList()..sort((a, b) => a.index - b.index),
         link,
         lateOnly,
         query,
       ];
 }
 
-/// Whether [task] or one of its subtasks still to be done is late: the
-/// "באיחור" filter (round 7).
-bool isTeamTaskOrSubtaskLate(TeamTask task, DateTime now) =>
-    isTeamTaskLate(task, now) ||
-    task.subtasks.any((subtask) => isTeamTaskLate(TeamTask.subtaskView(task, subtask), now));
-
-/// [tasks] that pass [filter]. A category link also matches the tasks linked
-/// to an event of that category ([eventCategoryById]: event id → category id).
+/// [tasks] that pass [filter]. An event link matches a task linked to that
+/// event among others; a category link also matches the tasks linked to an
+/// event of that category ([eventCategoryById]: event id → category id).
 /// [now] decides "באיחור" (default: the clock).
 List<TeamTask> applyTeamTaskFilter(
   List<TeamTask> tasks,
@@ -307,9 +408,14 @@ List<TeamTask> applyTeamTaskFilter(
     final link = task.link;
     if (link == null) return false;
     if (link == wanted) return true;
-    return wanted.type == TaskLinkType.category &&
-        link.type == TaskLinkType.event &&
-        (eventCategoryById[link.id] ?? task.event?.categoryId) == wanted.id;
+    if (link.type != TaskLinkType.event) return false;
+    final ids = task.linkedEventIds;
+    if (wanted.type == TaskLinkType.event) return ids.contains(wanted.id);
+    if (wanted.type != TaskLinkType.category) return false;
+    String? categoryOf(String id) =>
+        eventCategoryById[id] ??
+        task.events.where((event) => event.id == id).firstOrNull?.categoryId;
+    return ids.any((id) => categoryOf(id) == wanted.id);
   }
 
   final today = now ?? DateTime.now();
@@ -318,36 +424,16 @@ List<TeamTask> applyTeamTaskFilter(
     for (final task in tasks)
       if (filter.statuses.contains(task.status) &&
           (filter.ownerIds.isEmpty || task.ownerIds.any(filter.ownerIds.contains)) &&
+          (filter.urgencies.isEmpty || filter.urgencies.contains(task.urgency)) &&
           linkMatches(task) &&
-          (!filter.lateOnly || isTeamTaskOrSubtaskLate(task, today)) &&
-          (search.isEmpty ||
-              _textMatches(task.title, task.description, search) ||
-              task.subtasks.any((s) => _textMatches(s.title, s.description, search))))
+          (!filter.lateOnly || isTeamTaskLate(task, today)) &&
+          (search.isEmpty || _textMatches(task.title, task.description, search)))
         task,
   ];
 }
 
 bool _textMatches(String title, String description, String search) =>
     title.toLowerCase().contains(search) || description.toLowerCase().contains(search);
-
-/// The subtasks of [task] shown nested under it in "כל המשימות": those that
-/// pass the status and owner filters and, while searching, match the search
-/// themselves unless the task itself matches. With "באיחור", only the late
-/// subtasks unless the task itself is late.
-List<TeamSubtask> visibleSubtasks(TeamTask task, TeamTaskFilter filter, {DateTime? now}) {
-  final today = now ?? DateTime.now();
-  final search = filter.searchText;
-  final parentMatches = search.isEmpty || _textMatches(task.title, task.description, search);
-  final parentLate = !filter.lateOnly || isTeamTaskLate(task, today);
-  return [
-    for (final subtask in task.subtasks)
-      if (filter.statuses.contains(subtask.status) &&
-          (filter.ownerIds.isEmpty || subtask.assigneeIds.any(filter.ownerIds.contains)) &&
-          (parentLate || isTeamTaskLate(TeamTask.subtaskView(task, subtask), today)) &&
-          (parentMatches || _textMatches(subtask.title, subtask.description, search)))
-        subtask,
-  ];
-}
 
 /// The events a task can be linked to: those that have not ended before
 /// today's Israel date, the nearest first (Omer, round 2).

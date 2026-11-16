@@ -1,4 +1,5 @@
 import 'package:shavtzak/domain/entities/category.dart';
+import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/task_topic.dart';
 import 'package:shavtzak/domain/entities/team_task.dart';
 
@@ -9,28 +10,32 @@ TeamTask buildTeamTask({
   String id = 't1',
   String title = 'להזמין אולם',
   TaskLink? link,
+  List<String> eventIds = const [],
+  List<Event> events = const [],
+  Event? event,
+  Category? category,
+  TeamTaskUrgency urgency = TeamTaskUrgency.normal,
   List<String> assigneeIds = const ['m1'],
-  List<TeamSubtask> subtasks = const [],
   String? deadline,
   TeamTaskStatus status = TeamTaskStatus.open,
   String? duplicateOfId,
   List<String>? ownerIds,
   List<TaskUpdateEntry> updates = const [],
 }) {
-  final owners = ownerIds ??
-      (subtasks.isEmpty
-          ? assigneeIds
-          : {for (final s in subtasks) ...s.assigneeIds}.toList());
   return TeamTask(
     id: id,
     title: title,
     link: link,
-    assigneeIds: subtasks.isEmpty ? assigneeIds : const [],
-    subtasks: subtasks,
+    eventIds: eventIds,
+    events: events,
+    event: event,
+    category: category,
+    urgency: urgency,
+    assigneeIds: assigneeIds,
     deadline: deadline,
     status: status,
     duplicateOfId: duplicateOfId,
-    ownerIds: owners,
+    ownerIds: ownerIds ?? assigneeIds,
     updates: updates,
     createdAt: fixtureCreatedAt,
     updatedAt: fixtureCreatedAt,

@@ -14,9 +14,7 @@ import '../../task/task_style.dart';
 import '../../task/widgets/confirm_delete_dialog.dart';
 import 'deadline_picker.dart';
 import 'task_link_picker.dart';
-import 'new_team_task_dialog.dart';
 import 'team_task_actions.dart';
-import 'team_task_row.dart';
 import 'team_task_split_view.dart';
 import 'team_task_style.dart';
 import 'team_task_update_log.dart';
@@ -73,8 +71,8 @@ Future<void> showTeamTaskSheet(BuildContext context, String taskId, {bool manage
 }
 
 /// Everything about one task, live. A manager edits each value in place
-/// (saved at once); an owner changes the status, ticks their own subtasks and
-/// writes in the log; the rest is read-only.
+/// (saved at once); an owner changes the status and writes in the log; the
+/// rest is read-only.
 class TeamTaskSheet extends StatefulWidget {
   const TeamTaskSheet({
     super.key,
@@ -111,76 +109,14 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     });
   }
 
-  /// The task a subtask view belongs to, as it stands now.
-  TeamTask? _parentOf(TeamTask view) {
-    final state = _bloc.state;
-    if (state is! TeamTasksLoaded || view.parentId == null) return null;
-    return state.all.where((t) => t.id == view.parentId).firstOrNull;
-  }
-
-  /// Saves a manager's edit. A subtask is saved through its parent: the
-  /// parent with this subtask's new fields.
+  /// Saves a manager's edit.
   void _edit(TeamTask task) {
-    var toSave = task;
-    if (task.isSubtask) {
-      final parent = _parentOf(task);
-      if (parent == null) return;
-      final edited = task.toSubtask();
-      toSave = parent.copyWith(subtasks: [
-        for (final subtask in parent.subtasks) subtask.id == task.id ? edited : subtask,
-      ]);
-    }
     final completion = CrudActionCompleter();
-    _bloc.add(UpdateTeamTask(toSave, completion: completion));
+    _bloc.add(UpdateTeamTask(task, completion: completion));
     _report(completion);
   }
 
-  /// "+ תת-משימה" on a saved task: the first one on a task with owners asks
-  /// first (Omer, round 2); then the subtask form, saved into the task.
-  Future<void> _addSubtask(TeamTask task) async {
-    if (task.subtasks.isEmpty && task.assigneeIds.isNotEmpty) {
-      final split = await confirmFirstSubtask(context);
-      if (!split || !mounted) return;
-    }
-    final subtask = await showSubtaskFormDialog(context, parentTitle: task.title);
-    if (subtask == null || !mounted) return;
-    // The task as it stands now: it may have changed while the form was open.
-    final state = _bloc.state;
-    final parent = (state is TeamTasksLoaded ? state.taskById(task.id) : null) ?? task;
-    final subtasks = [...parent.subtasks, subtask];
-    _edit(parent.copyWith(
-      subtasks: subtasks,
-      assigneeIds: const [],
-      ownerIds: teamTaskOwnerIds(parent.copyWith(subtasks: subtasks)),
-    ));
-  }
-
   Future<void> _delete(TeamTask task) {
-    if (task.isSubtask) {
-      return showConfirmDeleteDialog(
-        context,
-        title: 'מחיקת תת-משימה',
-        message: 'למחוק את "${task.title}" לגמרי? אפשר במקום זה לסמן "לא רלוונטי/בוטל".',
-        keyPrefix: 'team-task-delete',
-        onDelete: () {
-          final parent = _parentOf(task);
-          if (parent == null) return Future.value(const CrudActionResult.success());
-          final subtasks = [
-            for (final subtask in parent.subtasks)
-              if (subtask.id != task.id) subtask,
-          ];
-          final completion = CrudActionCompleter();
-          _bloc.add(UpdateTeamTask(
-            parent.copyWith(
-              subtasks: subtasks,
-              ownerIds: teamTaskOwnerIds(parent.copyWith(subtasks: subtasks)),
-            ),
-            completion: completion,
-          ));
-          return completion.future;
-        },
-      );
-    }
     return showConfirmDeleteDialog(
       context,
       title: 'מחיקת משימה',
@@ -260,31 +196,13 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
-                // A subtask belongs where its parent does.
-                _section('שיוך', _linkValue(state, task, manage && !task.isSubtask)),
-                // A parent's status follows its subtasks; nobody sets it (round 4).
-                _section(
-                    'סטטוס', _statusValue(state, task, (manage || owner) && task.subtasks.isEmpty)),
+                _section('שיוך', _linkValue(state, task, manage)),
+                _section('סטטוס', _statusValue(state, task, manage || owner)),
+                _section('דחיפות', _urgencyValue(task, manage)),
                 _section('דד ליין', _deadlineValue(state, task, manage, late)),
-                // A subtask is one line of text (Omer, round 10): no
-                // description. One saved before keeps showing, read-only,
-                // until Omer decides what becomes of them.
-                if (!task.isSubtask)
-                  _section('תיאור', _descriptionValue(task, manage))
-                else if (task.description.isNotEmpty)
-                  _section(
-                    'תיאור (מלפני השינוי)',
-                    Text(task.description, key: const Key('team-task-legacy-description')),
-                  ),
+                _section('תיאור', _descriptionValue(task, manage)),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
                 _section('אנשי קשר', _contactsValue(task, manage)),
-                if (!task.isSubtask)
-                  _section(
-                    task.subtasks.isEmpty
-                        ? 'תתי-משימות'
-                        : 'תתי-משימות (${task.doneSubtasks}/${task.subtasks.length})',
-                    _subtasksValue(task, manage, viewerId),
-                  ),
                 _section(
                   'יומן עדכונים',
                   TeamTaskUpdateLog(
@@ -303,7 +221,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                       style: TextButton.styleFrom(foregroundColor: TaskStyle.delete),
                       onPressed: () => _delete(task),
                       icon: const Icon(Icons.delete_outline),
-                      label: Text(task.isSubtask ? 'מחיקת תת-המשימה' : 'מחיקת המשימה'),
+                      label: const Text('מחיקת המשימה'),
                     ),
                   ),
                 ],
@@ -320,10 +238,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       task.title,
       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
     );
-    // What this card is: a parent of subtasks, or a subtask (and of what).
-    final kind = task.isSubtask
-        ? 'תת-משימה של: ${task.parentTitle}'
-        : (task.subtasks.isNotEmpty ? 'משימת אב' : null);
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Row(
@@ -332,32 +246,12 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (kind != null)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(start: 8, top: 4),
-                    // A subtask's line opens its parent (a subtask owner
-                    // reaches the parent only from here).
-                    child: InkWell(
-                      key: const Key('team-task-kind'),
-                      onTap: task.isSubtask
-                          ? () => showTeamTaskSheet(context, task.parentId!, manage: widget.manage)
-                          : null,
-                      child: Text(
-                        kind,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: task.isSubtask ? TaskStyle.edit : TaskStyle.neutralText,
-                          decoration: task.isSubtask ? TextDecoration.underline : null,
-                        ),
-                      ),
-                    ),
-                  ),
                 manage
                     ? EditableValue<String>(
                         key: const Key('team-task-edit-title'),
                         value: task.title,
                         display: title,
-                        sheetTitle: task.isSubtask ? 'תת-המשימה' : 'שם המשימה',
+                        sheetTitle: 'שם המשימה',
                         wide: widget.wide,
                         validate: (draft) => draft.trim().isEmpty ? 'חובה להזין כותרת' : null,
                         editor: (context, draft, onChanged, onSubmit) => TextValueEditor(
@@ -420,7 +314,7 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
   Widget _linkValue(TeamTasksLoaded state, TeamTask task, bool manage) {
     final label = task.link == null ? noLinkLabel : teamTaskLinkLabel(task);
     final kind = switch (task.link?.type) {
-      TaskLinkType.event => 'אירוע: ',
+      TaskLinkType.event => task.hasSeveralEvents ? 'אירועים: ' : 'אירוע: ',
       TaskLinkType.category => 'קטגוריה: ',
       TaskLinkType.topic => 'נושא: ',
       TaskLinkType.pendingEvent => '$pendingEventLabel: ',
@@ -430,9 +324,15 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       key: const Key('team-task-edit-link'),
       enabled: manage,
       onTap: () async {
-        final choice = await showTaskLinkPicker(context, initial: task.link);
-        if (choice == null || choice.link == task.link) return;
-        _edit(task.copyWith(link: () => choice.link));
+        final choice = await showTaskLinkPicker(
+          context,
+          initial: task.link,
+          initialEventIds: task.linkedEventIds,
+        );
+        if (choice == null) return;
+        final eventIds = choice.linkedEventIds;
+        if (choice.link == task.link && _sameIds(eventIds, task.linkedEventIds)) return;
+        _edit(task.copyWith(link: () => choice.link, eventIds: eventIds));
       },
       child: Text('$kind$label'),
     );
@@ -449,20 +349,10 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // A parent's chip tells that its status updates by itself (round 5).
-        if (canChange || isTeamTaskParent(task))
+        if (canChange)
           TeamTaskStatusMenu(key: const Key('team-task-status'), task: task, child: chip)
         else
           chip,
-        if (task.subtasks.isNotEmpty)
-          const Padding(
-            key: Key('team-task-status-auto'),
-            padding: EdgeInsets.only(top: 2),
-            child: Text(
-              'נקבע אוטומטית לפי הסטטוסים של תתי-המשימות',
-              style: TextStyle(fontSize: 12, color: TaskStyle.faintText),
-            ),
-          ),
         if (task.status == TeamTaskStatus.duplicate)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -472,6 +362,26 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
             ),
           ),
       ],
+    );
+  }
+
+  static bool _sameIds(List<String> a, List<String> b) =>
+      a.length == b.length && a.toSet().containsAll(b);
+
+  /// The urgency (16/11/2026): a manager picks one of the three in place.
+  Widget _urgencyValue(TeamTask task, bool manage) {
+    if (!manage) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TeamTaskUrgencyChip(urgency: task.urgency, dense: false, showNormal: true),
+      );
+    }
+    return TeamTaskUrgencyPicker(
+      value: task.urgency,
+      showLabel: false,
+      onChanged: (urgency) {
+        if (urgency != task.urgency) _edit(task.copyWith(urgency: urgency));
+      },
     );
   }
 
@@ -548,19 +458,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                 ),
             ],
           );
-    if (task.subtasks.isNotEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          chips,
-          const SizedBox(height: 2),
-          const Text(
-            'במשימה עם תתי-משימות, האחראים הם האחראים על תתי-המשימות',
-            style: TextStyle(fontSize: 12, color: TaskStyle.faintText),
-          ),
-        ],
-      );
-    }
     if (!manage) return chips;
     return EditableValue<List<String>>(
       key: const Key('team-task-edit-owners'),
@@ -612,49 +509,6 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
       children: [
         for (final contact in contacts)
           _ContactLine(key: Key('$keyPrefix-${contact.id}'), contact: contact),
-      ],
-    );
-  }
-
-  /// The subtasks as rows like the list's (status, deadline, owners), each
-  /// opening its own task screen; its status circle opens the status menu
-  /// for a manager or the subtask's owner (Omer, round 4: a status, not a
-  /// tick). A manager adds one with "+ תת-משימה".
-  Widget _subtasksValue(TeamTask task, bool manage, String viewerId) {
-    final now = DateTime.now();
-    final rows = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final subtask in task.subtasks)
-          TeamTaskRow(
-            key: Key('team-subtask-row-${subtask.id}'),
-            task: TeamTask.subtaskView(task, subtask),
-            now: now,
-            viewerId: viewerId,
-            nested: true,
-            canChangeStatus: manage || subtask.assigneeIds.contains(viewerId),
-            onTap: () => showTeamTaskSheet(context, subtask.id, manage: widget.manage),
-          ),
-      ],
-    );
-    if (!manage) {
-      return task.subtasks.isEmpty
-          ? const Text('אין תתי-משימות', style: TextStyle(color: TaskStyle.faintText))
-          : rows;
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        rows,
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(
-            key: const Key('team-task-add-subtask'),
-            onPressed: () => _addSubtask(task),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('תת-משימה'),
-          ),
-        ),
       ],
     );
   }

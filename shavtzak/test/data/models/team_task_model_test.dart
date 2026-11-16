@@ -54,10 +54,9 @@ void main() {
     expect(task.title, 'להזמין אולם');
     expect(task.description, 'לחנוכה');
     expect(task.link, const TaskLink(TaskLinkType.topic, 'p1'));
-    expect(task.subtasks.first.isDone, isTrue);
-    expect(task.subtasks.first.assigneeIds, ['a']);
-    expect(task.subtasks.first.contacts.single.role, 'מנהל אולם');
-    expect(task.subtasks.last.assigneeIds, isEmpty);
+    // An old document's subtasks are no longer read (16/11/2026).
+    expect(task.urgency, TeamTaskUrgency.normal);
+    expect(task.eventIds, isEmpty);
     expect(task.contacts.single,
         const StageContact(id: 'c1', name: 'רונית', role: 'אולם', phone: '050-2'));
     expect(task.status, TeamTaskStatus.duplicate);
@@ -74,26 +73,10 @@ void main() {
     expect(payload['link'], {'type': 'topic', 'id': 'p1'});
     expect(payload['deadline'], '2026-12-01');
     expect(payload['assigneeIds'], <String>[]);
-    expect(payload['subtasks'], [
-      {
-        'id': 's1',
-        'title': 'מחיר',
-        'description': '',
-        'assigneeIds': ['a'],
-        'contacts': [
-          {'id': 'c2', 'name': 'משה', 'phone': '050-1', 'role': 'מנהל אולם'},
-        ],
-        'deadline': null,
-      },
-      {
-        'id': 's2',
-        'title': 'חוזה',
-        'description': '',
-        'assigneeIds': <String>[],
-        'contacts': <Object>[],
-        'deadline': null,
-      },
-    ]);
+    // No subtasks key: the backend keeps an old document's subtasks.
+    expect(payload.containsKey('subtasks'), isFalse);
+    expect(payload['urgency'], 'normal');
+    expect(payload['eventIds'], <String>[]);
     expect(payload['contacts'], [
       {'id': 'c1', 'name': 'רונית', 'phone': '050-2', 'role': 'אולם'},
     ]);
@@ -117,7 +100,6 @@ void main() {
       ],
     });
     expect(task.contacts, isEmpty);
-    expect(task.subtasks.single.contacts, isEmpty);
     expect(task.link, isNull);
     expect(task.updates, isEmpty);
   });
@@ -140,30 +122,29 @@ void main() {
     expect(topics.last.toJson()['name'], 'כללי');
   });
 
-  test('a subtask reads as a full task: description, owners, deadline, status, log', () {
+  test('several events and the urgency: read, and sent with the first event as the link', () {
     final task = TeamTaskModel.fromMap('t1', {
       'title': 'x',
-      'subtasks': [
-        {
-          'id': 's1',
-          'title': 'מחיר',
-          'description': 'שלוש הצעות',
-          'assigneeIds': ['a', 'b'],
-          'deadline': '2026-11-30',
-          'status': 'duplicate',
-          'duplicateOfId': 's2',
-          'updates': [
-            {'id': 'u1', 'text': 'ביקשתי', 'at': Timestamp.fromDate(DateTime(2026, 11, 15)), 'byId': 'a'},
-          ],
-        },
-      ],
+      'link': {'type': 'event', 'id': 'e1'},
+      'eventIds': ['e1', 'e2'],
+      'urgency': 'high',
     });
-    final sub = task.subtasks.single;
-    expect(sub.description, 'שלוש הצעות');
-    expect(sub.assigneeIds, ['a', 'b']);
-    expect(sub.deadline, '2026-11-30');
-    expect(sub.status, TeamTaskStatus.duplicate);
-    expect(sub.duplicateOfId, 's2');
-    expect(sub.updates.single.text, 'ביקשתי');
+    expect(task.eventIds, ['e1', 'e2']);
+    expect(task.linkedEventIds, ['e1', 'e2']);
+    expect(task.hasSeveralEvents, isTrue);
+    expect(task.urgency, TeamTaskUrgency.high);
+    final payload = TeamTaskModel.toMutationPayload(task);
+    expect(payload['link'], {'type': 'event', 'id': 'e1'});
+    expect(payload['eventIds'], ['e1', 'e2']);
+    expect(payload['urgency'], 'high');
+    // A document from before: its one event.
+    final old = TeamTaskModel.fromMap('t2', {
+      'title': 'y',
+      'link': {'type': 'event', 'id': 'e9'},
+      'urgency': 'weird',
+    });
+    expect(old.linkedEventIds, ['e9']);
+    expect(old.hasSeveralEvents, isFalse);
+    expect(old.urgency, TeamTaskUrgency.normal);
   });
 }

@@ -13,10 +13,19 @@ import '../../../widgets/rtl_arrow_keys.dart';
 import '../../task/task_style.dart';
 
 /// What the picker returns: a link, or "ללא שיוך" ([link] null). Null from
-/// the dialog itself = cancelled.
+/// the dialog itself = cancelled. For events, [eventIds] holds every event
+/// picked (16/11/2026: a task may belong to several), [link]'s first.
 class TaskLinkChoice {
-  const TaskLinkChoice(this.link);
+  const TaskLinkChoice(this.link, {this.eventIds = const []});
   final TaskLink? link;
+  final List<String> eventIds;
+
+  /// The events of the choice: [eventIds], or [link]'s event alone.
+  List<String> get linkedEventIds {
+    final link = this.link;
+    if (link == null || link.type != TaskLinkType.event) return const [];
+    return [link.id, ...eventIds.where((id) => id != link.id)];
+  }
 }
 
 /// The name of [link]'s target in [state], or null when it is gone.
@@ -43,12 +52,19 @@ const String pendingEventLabel = 'אירוע שעוד לא נוצר';
 /// there, and the existing ones are listed first.
 ///
 /// [eventsOnly]: only the app's real events, no segments ("קישור לאירוע
-/// בשבצק" of a placeholder).
+/// בשבצק" of a placeholder), one event.
+///
+/// Otherwise several events can be picked (16/11/2026): the box beside each
+/// event marks it, and "שיוך ל-N אירועים" confirms; a tap on an event's name
+/// with nothing marked picks that one alone, as before. [initialEventIds] =
+/// the events marked when it opens (a task linked to several).
 Future<TaskLinkChoice?> showTaskLinkPicker(
   BuildContext context, {
   TaskLink? initial,
+  List<String> initialEventIds = const [],
   bool allowNone = true,
   bool eventsOnly = false,
+  bool multiEvents = true,
   String? title,
 }) {
   return showDialog<TaskLinkChoice>(
@@ -59,8 +75,10 @@ Future<TaskLinkChoice?> showTaskLinkPicker(
         textDirection: TextDirection.rtl,
         child: _TaskLinkPicker(
           initial: initial,
+          initialEventIds: initialEventIds,
           allowNone: allowNone && !eventsOnly,
           eventsOnly: eventsOnly,
+          multiEvents: multiEvents && !eventsOnly,
           title: title,
         ),
       ),
@@ -71,14 +89,20 @@ Future<TaskLinkChoice?> showTaskLinkPicker(
 class _TaskLinkPicker extends StatefulWidget {
   const _TaskLinkPicker({
     this.initial,
+    this.initialEventIds = const [],
     required this.allowNone,
     this.eventsOnly = false,
+    this.multiEvents = true,
     this.title,
   });
 
   final TaskLink? initial;
+  final List<String> initialEventIds;
   final bool allowNone;
   final bool eventsOnly;
+
+  /// Several events can be marked (a task's link; not the filter's).
+  final bool multiEvents;
   final String? title;
 
   @override
@@ -98,6 +122,29 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
   bool _addingPending = false;
   String? _error;
   String? _pendingError;
+
+  /// The events marked for a task of several events, in the order marked.
+  late final List<String> _marked = [
+    if (widget.initialEventIds.length > 1) ...widget.initialEventIds,
+  ];
+
+  void _toggleMarked(String id) {
+    setState(() {
+      if (!_marked.remove(id)) _marked.add(id);
+    });
+  }
+
+  /// Confirms the marked events, in the list's order (nearest first).
+  void _confirmMarked(List<({TaskLinkType type, String id, String name, String? note})> options) {
+    final order = [for (final option in options) option.id];
+    final ids = [..._marked]..sort((a, b) {
+        final ia = order.indexOf(a);
+        final ib = order.indexOf(b);
+        return (ia < 0 ? order.length : ia).compareTo(ib < 0 ? order.length : ib);
+      });
+    Navigator.of(context)
+        .pop(TaskLinkChoice(TaskLink(TaskLinkType.event, ids.first), eventIds: ids));
+  }
 
   @override
   void dispose() {
@@ -224,7 +271,13 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
     switch (_type) {
       case TaskLinkType.event:
       case TaskLinkType.pendingEvent:
-        final events = linkableEvents(state.events, DateTime.now());
+        final linkable = linkableEvents(state.events, DateTime.now());
+        // An ended event the task already has stays on the list, marked.
+        final events = [
+          for (final event in state.events)
+            if (_marked.contains(event.id) && !linkable.contains(event)) event,
+          ...linkable,
+        ];
         return [
           // The placeholders first (round 10).
           if (!widget.eventsOnly)
@@ -269,6 +322,8 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
         .toList();
     final showPending =
         !widget.eventsOnly && _type == TaskLinkType.event && state.canManage && query.isEmpty;
+    final multi = widget.multiEvents && _type == TaskLinkType.event;
+    final allOptions = _options(state);
     return AlertDialog(
       title: Text(widget.title ?? 'שיוך המשימה'),
       content: SizedBox(
@@ -320,9 +375,18 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
                             key: Key('task-link-option-${option.id}'),
                             name: option.name,
                             note: option.note,
-                            current: widget.initial == TaskLink(option.type, option.id),
-                            onTap: () => Navigator.of(context)
-                                .pop(TaskLinkChoice(TaskLink(option.type, option.id))),
+                            current: _marked.isEmpty &&
+                                widget.initial == TaskLink(option.type, option.id),
+                            marked: multi && option.type == TaskLinkType.event
+                                ? _marked.contains(option.id)
+                                : null,
+                            onMark: () => _toggleMarked(option.id),
+                            onTap: multi && _marked.isNotEmpty
+                                ? (option.type == TaskLinkType.event
+                                    ? () => _toggleMarked(option.id)
+                                    : null)
+                                : () => Navigator.of(context)
+                                    .pop(TaskLinkChoice(TaskLink(option.type, option.id))),
                           ),
                       ],
                     ),
@@ -357,6 +421,12 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
         ),
       ),
       actions: [
+        if (multi && _marked.isNotEmpty)
+          FilledButton(
+            key: const Key('task-link-confirm-events'),
+            onPressed: () => _confirmMarked(allOptions),
+            child: Text(_marked.length == 1 ? 'שיוך לאירוע' : 'שיוך ל-${_marked.length} אירועים'),
+          ),
         if (widget.allowNone)
           TextButton(
             key: const Key('task-link-none'),
@@ -382,24 +452,40 @@ class _LinkOption extends StatelessWidget {
     required this.note,
     required this.current,
     required this.onTap,
+    this.marked,
+    this.onMark,
   });
 
   final String name;
   final String? note;
   final bool current;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+
+  /// An event of a task of several events: whether its box is marked; null
+  /// = no box.
+  final bool? marked;
+  final VoidCallback? onMark;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        padding: EdgeInsetsDirectional.fromSTEB(marked == null ? 12 : 0, 11, 12, 11),
         decoration: const BoxDecoration(
           border: Border(bottom: BorderSide(color: TaskStyle.editRowLine)),
         ),
         child: Row(
           children: [
+            if (marked != null)
+              Checkbox(
+                key: key is ValueKey<String>
+                    ? Key('${(key as ValueKey<String>).value}-mark')
+                    : null,
+                value: marked,
+                visualDensity: VisualDensity.compact,
+                onChanged: (_) => onMark?.call(),
+              ),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

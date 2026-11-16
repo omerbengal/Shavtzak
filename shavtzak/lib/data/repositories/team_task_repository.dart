@@ -68,6 +68,8 @@ class TeamTaskRepository {
           final link = task.link;
           return task.copyWith(
             event: () => link?.type == TaskLinkType.event ? eventsById[link!.id] : null,
+            // A deleted event drops out of the list, as from the card.
+            events: task.linkedEventIds.map((id) => eventsById[id]).whereType<Event>().toList(),
             category: () =>
                 link?.type == TaskLinkType.category ? categoriesById[link!.id] : null,
             topic: () => link?.type == TaskLinkType.topic ? topicsById[link!.id] : null,
@@ -76,15 +78,6 @@ class TeamTaskRepository {
             // A member who was deleted leaves a dangling id behind; it is kept
             // in ownerIds and simply not joined.
             owners: task.ownerIds.map((id) => membersById[id]).whereType<TeamMember>().toList(),
-            subtasks: [
-              for (final subtask in task.subtasks)
-                subtask.copyWith(
-                  assignees: subtask.assigneeIds
-                      .map((id) => membersById[id])
-                      .whereType<TeamMember>()
-                      .toList(),
-                ),
-            ],
           );
         }
 
@@ -106,28 +99,16 @@ class TeamTaskRepository {
 
   Future<void> deleteTask(String id) => _database.deleteTeamTask(id);
 
-  /// With [subtaskId], the status of that subtask of task [id].
-  Future<void> setStatus(
-    String id,
-    TeamTaskStatus status, {
-    String? duplicateOfId,
-    String? subtaskId,
-  }) =>
-      _database.setTeamTaskStatus(id, status,
-          duplicateOfId: duplicateOfId, subtaskId: subtaskId);
+  Future<void> setStatus(String id, TeamTaskStatus status, {String? duplicateOfId}) =>
+      _database.setTeamTaskStatus(id, status, duplicateOfId: duplicateOfId);
 
-  Future<void> setSubtaskDone(String id, String subtaskId, bool isDone) =>
-      _database.setTeamSubtaskDone(id, subtaskId, isDone);
+  Future<void> addUpdate(String id, String text) => _database.addTeamTaskUpdate(id, text);
 
-  /// With [subtaskId], into that subtask's own log.
-  Future<void> addUpdate(String id, String text, {String? subtaskId}) =>
-      _database.addTeamTaskUpdate(id, text, subtaskId: subtaskId);
+  Future<void> editUpdate(String id, String updateId, String text) =>
+      _database.editTeamTaskUpdate(id, updateId, text);
 
-  Future<void> editUpdate(String id, String updateId, String text, {String? subtaskId}) =>
-      _database.editTeamTaskUpdate(id, updateId, text, subtaskId: subtaskId);
-
-  Future<void> deleteUpdate(String id, String updateId, {String? subtaskId}) =>
-      _database.deleteTeamTaskUpdate(id, updateId, subtaskId: subtaskId);
+  Future<void> deleteUpdate(String id, String updateId) =>
+      _database.deleteTeamTaskUpdate(id, updateId);
 
   Future<void> insertPendingEvent(TaskTopic pendingEvent) =>
       _database.insertPendingEvent(pendingEvent);

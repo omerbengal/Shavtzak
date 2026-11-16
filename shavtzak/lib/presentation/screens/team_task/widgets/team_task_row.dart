@@ -7,16 +7,14 @@ import 'team_task_actions.dart';
 import 'team_task_style.dart';
 
 /// One task in the list (design A, Omer round 3): the status circle, the
-/// title, and under it the deadline (red when late) and the owners'
-/// initials. A subtask shown on its own ("המשימות שלי") has its parent's
-/// title above it; a [nested] one is a compact line under its parent.
-///
-/// [subtaskCount] (a parent in "כל המשימות") shows "done/all ▾" at the end;
-/// tapping it calls [onToggleSubtasks].
+/// title, and under it the urgency when not "רגילה", the deadline (red when
+/// late) and the owners' initials. With [showEvents] (a task linked to
+/// several events, on top of a category's card) the events' names show as
+/// small chips under the title (16/11/2026).
 ///
 /// [canChangeStatus] makes the status circle open the status menu, and
 /// [onAddUpdate] adds a button for a new update, both without opening the
-/// task (Omer, round 4: "המשימות שלי" and a parent's subtasks).
+/// task (Omer, round 4: "המשימות שלי").
 class TeamTaskRow extends StatelessWidget {
   const TeamTaskRow({
     super.key,
@@ -24,9 +22,7 @@ class TeamTaskRow extends StatelessWidget {
     required this.now,
     required this.viewerId,
     required this.onTap,
-    this.nested = false,
-    this.expanded = false,
-    this.onToggleSubtasks,
+    this.showEvents = false,
     this.canChangeStatus = false,
     this.onAddUpdate,
     this.selected = false,
@@ -41,18 +37,13 @@ class TeamTaskRow extends StatelessWidget {
   /// The room around a tappable status circle, so a finger can hit it.
   static const double _tapPadding = 6;
 
-  /// Under its parent's row (or in its parent's screen): one compact line,
-  /// without the parent's title above it.
-  final bool nested;
+  /// The task's events as chips (a task linked to several events).
+  final bool showEvents;
 
   final TeamTask task;
   final DateTime now;
   final String viewerId;
   final VoidCallback onTap;
-
-  /// Whether the subtasks under this row are open (the arrow's direction).
-  final bool expanded;
-  final VoidCallback? onToggleSubtasks;
 
   @override
   Widget build(BuildContext context) {
@@ -60,14 +51,13 @@ class TeamTaskRow extends StatelessWidget {
     return InkWell(
       key: Key('team-task-row-${task.id}'),
       onTap: onTap,
-      // Visible on a mouse hover (desktop) over every row, subtasks included
-      // (Omer, round 4).
+      // Visible on a mouse hover (desktop) over every row (Omer, round 4).
       hoverColor: TeamTaskStyle.rowHover,
       child: ColoredBox(
         color: selected ? TeamTaskStyle.rowSelected : Colors.transparent,
         child: Opacity(
           opacity: faded ? 0.6 : 1,
-          child: nested ? _nested() : _full(),
+          child: _full(),
         ),
       ),
     );
@@ -86,19 +76,7 @@ class TeamTaskRow extends StatelessWidget {
   /// The status circle, opening the status menu when [canChangeStatus].
   Widget _status(double size) {
     final icon = TeamTaskStatusIcon(status: task.status, size: size);
-    if (!canChangeStatus) {
-      // A parent's circle anywhere: the note that it updates by itself
-      // (Omer, round 5), with no extra room so the rows stay aligned.
-      if (!isTeamTaskParent(task)) return icon;
-      return Builder(
-        builder: (context) => InkWell(
-          key: Key('team-task-parent-status-tap-${task.id}'),
-          customBorder: const CircleBorder(),
-          onTap: () => showParentStatusInfo(context),
-          child: icon,
-        ),
-      );
-    }
+    if (!canChangeStatus) return icon;
     return TeamTaskStatusMenu(
       key: Key('team-task-status-tap-${task.id}'),
       task: task,
@@ -120,48 +98,18 @@ class TeamTaskRow extends StatelessWidget {
           ),
       ];
 
-  Widget _nested() {
-    return Padding(
-      padding: const EdgeInsetsDirectional.fromSTEB(8, 5, 12, 5),
-      child: Row(
-        children: [
-          _status(TeamTaskStyle.subtaskIconSize),
-          SizedBox(width: canChangeStatus ? 2 : 8),
-          Expanded(
-            child: Text(
-              task.title,
-              style: _titleStyle(TaskStyle.subtaskSize, FontWeight.w400),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Wrap(spacing: 4, children: _owners(TeamTaskStyle.subtaskAvatarSize)),
-        ],
-      ),
-    );
-  }
-
   Widget _full() {
     final late = isTeamTaskLate(task, now);
     final deadline = task.deadlineDate;
     final owners = _owners(TeamTaskStyle.avatarSize);
     final lead = _lead(TeamTaskStyle.statusIconSize);
+    final urgent = task.urgency != TeamTaskUrgency.normal;
+    final events = showEvents ? task.events : const [];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (task.isSubtask)
-            Padding(
-              padding: EdgeInsetsDirectional.only(start: lead, bottom: 2),
-              child: Text(
-                task.parentTitle ?? '',
-                key: Key('team-task-parent-${task.id}'),
-                style: const TextStyle(
-                  fontSize: TaskStyle.rowMetaSize,
-                  color: TaskStyle.neutralText,
-                ),
-              ),
-            ),
           Row(
             children: [
               _status(TeamTaskStyle.statusIconSize),
@@ -172,34 +120,6 @@ class TeamTaskRow extends StatelessWidget {
                   style: _titleStyle(TaskStyle.rowTitleSize, FontWeight.w600),
                 ),
               ),
-              if (task.subtasks.isNotEmpty)
-                InkWell(
-                  key: Key('team-task-progress-${task.id}'),
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: onToggleSubtasks,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${task.doneSubtasks}/${task.subtasks.length}',
-                          style: const TextStyle(
-                            fontSize: TaskStyle.rowMetaSize,
-                            color: TaskStyle.mine,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (onToggleSubtasks != null)
-                          Icon(
-                            expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down,
-                            size: 20,
-                            color: TaskStyle.mine,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
               if (onAddUpdate != null)
                 IconButton(
                   key: Key('team-task-quick-update-${task.id}'),
@@ -210,7 +130,17 @@ class TeamTaskRow extends StatelessWidget {
                 ),
             ],
           ),
-          if (deadline != null || owners.isNotEmpty)
+          if (events.isNotEmpty)
+            Padding(
+              padding: EdgeInsetsDirectional.only(start: lead, top: 4),
+              child: Wrap(
+                key: Key('team-task-events-${task.id}'),
+                spacing: 4,
+                runSpacing: 4,
+                children: [for (final event in events) TeamTaskEventChip(name: event.name)],
+              ),
+            ),
+          if (urgent || deadline != null || owners.isNotEmpty)
             Padding(
               padding: EdgeInsetsDirectional.only(start: lead, top: 5),
               child: Wrap(
@@ -218,6 +148,11 @@ class TeamTaskRow extends StatelessWidget {
                 runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  if (urgent)
+                    TeamTaskUrgencyChip(
+                      key: Key('team-task-urgency-${task.id}'),
+                      urgency: task.urgency,
+                    ),
                   if (deadline != null)
                     Text(
                       late ? 'באיחור · עד ${shortDate(deadline)}' : 'עד ${shortDate(deadline)}',

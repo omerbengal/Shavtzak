@@ -104,7 +104,6 @@ void main() {
     await repository.updateTask(task);
     await repository.deleteTask('t9');
     await repository.setStatus('t9', TeamTaskStatus.duplicate, duplicateOfId: 't1');
-    await repository.setSubtaskDone('t9', 's1', true);
     await repository.addUpdate('t9', 'עדכון');
     await repository.insertTopic(buildTopic());
     await repository.updateTopic(buildTopic());
@@ -116,7 +115,6 @@ void main() {
       'teamTask.update',
       'teamTask.delete',
       'teamTask.setStatus',
-      'teamTask.setSubtaskDone',
       'teamTask.addUpdate',
       'taskTopic.insert',
       'taskTopic.update',
@@ -127,10 +125,9 @@ void main() {
     expect(backend.calls[2].payload, {'id': 't9'});
     expect(backend.calls[3].payload,
         {'id': 't9', 'status': 'duplicate', 'duplicateOfId': 't1'});
-    expect(backend.calls[4].payload, {'id': 't9', 'subtaskId': 's1', 'isDone': true});
-    expect(backend.calls[5].payload, {'id': 't9', 'text': 'עדכון'});
-    expect(backend.calls[6].payload!['topic']['name'], 'נשות מגדים');
-    expect(backend.calls[8].payload, {'topicId': 'p1'});
+    expect(backend.calls[4].payload, {'id': 't9', 'text': 'עדכון'});
+    expect(backend.calls[5].payload!['topic']['name'], 'נשות מגדים');
+    expect(backend.calls[7].payload, {'topicId': 'p1'});
   });
 
   test('collection is test_teamTasks in test mode', () async {
