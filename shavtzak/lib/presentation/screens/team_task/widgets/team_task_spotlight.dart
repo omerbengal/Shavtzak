@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -104,6 +105,10 @@ abstract final class SpotlightStyle {
   static const Duration update = Duration(milliseconds: 760);
   static const double updateHold = 0.35;
 
+  /// Room around the card for its shadow (blur 28, 12 down), so the
+  /// picture of the card taken for its way out holds the whole shadow.
+  static const EdgeInsets cardShadowRoom = EdgeInsets.fromLTRB(52, 40, 52, 64);
+
   static const Duration confetti = Duration(milliseconds: 1600);
   static const Duration progress = Duration(milliseconds: 500);
 }
@@ -151,6 +156,13 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   final GlobalKey _landingKey = GlobalKey();
   final ScrollController _logScroll = ScrollController();
 
+  /// While "לא עכשיו" / "סיימתי" throw the card away it is painted from one
+  /// picture of it ([SnapshotWidget]): a turned or shrinking card with its
+  /// blurred shadow is costly to redraw on every frame, enough to halve the
+  /// frame rate in a browser tab (Omer, msg 3998 / 4001: only the installed
+  /// app was smooth). The picture is the same pixels, so it looks the same.
+  final SnapshotController _cardPicture = SnapshotController();
+
   /// The update ids the current card opened with: any other one is new and
   /// lands with the "sent" animation.
   Set<String> _seenUpdates = const {};
@@ -192,6 +204,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     _exit.dispose();
     _flight.dispose();
     _logScroll.dispose();
+    _cardPicture.dispose();
     _confetti.dispose();
     _update.dispose();
     _updateFocus.dispose();
@@ -215,6 +228,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       _exitKind = _Exit.none;
       _update.clear();
     });
+    _cardPicture.allowSnapshotting = false;
     _exit.value = 0;
     _flight.value = 0;
     _enter.forward(from: 0);
@@ -225,6 +239,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   /// Plays [kind]'s way out, then moves on.
   Future<void> _leaveCard(_Exit kind) async {
     setState(() => _exitKind = kind);
+    // Not for a sent update: its row still glows inside the card.
+    _cardPicture.allowSnapshotting = kind == _Exit.skip || kind == _Exit.done;
     _exit.duration = switch (kind) {
       _Exit.skip => SpotlightStyle.fling,
       _Exit.done => SpotlightStyle.done,
@@ -309,35 +325,57 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     context.read<TeamTaskBloc>().add(task.isSubtask
         ? AddTeamTaskUpdate(task.parentId!, text, subtaskId: task.id, completion: completion)
         : AddTeamTaskUpdate(task.id, text, completion: completion));
-    final result = await _await(completion);
-    if (!mounted) return;
-    if (!result.isSuccess) return _failed(result);
-    HapticFeedback.lightImpact();
-    // Take off from where the field is now, before the keyboard goes.
+    // Take off right away, from where the field is now, before the keyboard
+    // goes. Not after the save: Firestore shows the new update in the log
+    // the moment it is written locally, while the save itself waits for the
+    // server (long on the first send after the app opens), so waiting made
+    // the update just appear on top, with the flight late or never seen
+    // (Omer, msg 4004: no flight in the first Blitz).
     final field = _fieldKey.currentContext?.findRenderObject();
     final from = field is RenderBox && field.attached && field.hasSize
         ? field.localToGlobal(Offset.zero) & field.size
         : null;
     _updateFocus.unfocus();
     setState(() {
-      _tally = _tally.update(task.id);
       _echo = text;
       _update.clear();
       _exitKind = _Exit.update;
       _flightFrom = from;
       _flightText = text;
-      _landed = from == null;
+      _landed = false;
     });
     // Its place is the top of the log: bring the log back there.
     if (_logScroll.hasClients && _logScroll.offset > 0) _logScroll.jumpTo(0);
-    if (from != null) {
-      await _flight.forward(from: 0).orCancel.catchError((_) {});
-      if (!mounted || _exitKind != _Exit.update) return;
+    // It lands when the flight ends, even while the server still holds the
+    // save; the card moves on only once the save is confirmed.
+    final flown = (from == null
+            ? Future<void>.value()
+            : _flight.forward(from: 0).orCancel.catchError((_) {}))
+        .then((_) {
+      if (!mounted || _exitKind != _Exit.update || _echo != text) return;
       setState(() {
         _landed = true;
         _flightFrom = null;
       });
+    });
+    final result = await _await(completion);
+    if (!mounted) return;
+    if (!result.isSuccess) {
+      // Back to the field with the text, as if it never left.
+      _flight.value = 0;
+      setState(() {
+        _echo = null;
+        _exitKind = _Exit.none;
+        _flightFrom = null;
+        _landed = false;
+        _update.text = text;
+      });
+      return _failed(result);
     }
+    HapticFeedback.lightImpact();
+    await flown;
+    if (!mounted || _exitKind != _Exit.update) return;
+    setState(() => _tally = _tally.update(task.id));
     _leaveCard(_Exit.update);
   }
 
@@ -597,7 +635,17 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     // Their own layers: the card's move / fade / turn only composites the
     // cached picture instead of repainting the card (its blurred shadow, the
     // timeline) on every frame.
-    final card = RepaintBoundary(child: _card(task, s, logHeight));
+    final card = _ShadowRoom(
+      room: SpotlightStyle.cardShadowRoom,
+      child: SnapshotWidget(
+        controller: _cardPicture,
+        mode: SnapshotMode.permissive,
+        child: Padding(
+          padding: SpotlightStyle.cardShadowRoom,
+          child: RepaintBoundary(child: _card(task, s, logHeight)),
+        ),
+      ),
+    );
     final lower = RepaintBoundary(child: _composing ? _composer(task, s) : _actions(task, s));
     return AnimatedBuilder(
       animation: _motion,
@@ -1003,7 +1051,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           opacity: sent && !_landed ? 0 : 1,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: Color.lerp(Colors.transparent, TaskStyle.currentLight, glow),
+              // Fade the blue's own alpha: from Colors.transparent (black,
+              // alpha 0) the way passed through grey.
+              color: TaskStyle.currentLight.withValues(alpha: glow),
               borderRadius: BorderRadius.circular(10),
             ),
             child: child,
@@ -1523,4 +1573,91 @@ class _ConfettiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ConfettiPainter old) => old.t != t || old.pieces != pieces;
+}
+
+/// Lays [child] out [room] bigger on every side than its own box and paints it
+/// that much up and to the side, so the child can hold the paint that spills
+/// out of the card (its shadow) while the layout around sees only the card.
+class _ShadowRoom extends SingleChildRenderObjectWidget {
+  const _ShadowRoom({required this.room, required super.child});
+
+  final EdgeInsets room;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderShadowRoom(room);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderShadowRoom renderObject) {
+    renderObject.room = room;
+  }
+}
+
+class _RenderShadowRoom extends RenderProxyBox {
+  _RenderShadowRoom(this._room);
+
+  EdgeInsets _room;
+  EdgeInsets get room => _room;
+  set room(EdgeInsets value) {
+    if (value == _room) return;
+    _room = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    final inner = BoxConstraints(
+      minWidth: constraints.minWidth + room.horizontal,
+      maxWidth: constraints.maxWidth + room.horizontal,
+      minHeight: constraints.minHeight + room.vertical,
+      maxHeight: constraints.maxHeight + room.vertical,
+    );
+    child.layout(inner, parentUsesSize: true);
+    size = constraints.constrain(
+        Size(child.size.width - room.horizontal, child.size.height - room.vertical));
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      math.max(0, super.computeMinIntrinsicWidth(height + room.vertical) - room.horizontal);
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      math.max(0, super.computeMaxIntrinsicWidth(height + room.vertical) - room.horizontal);
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      math.max(0, super.computeMinIntrinsicHeight(width + room.horizontal) - room.vertical);
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      math.max(0, super.computeMaxIntrinsicHeight(width + room.horizontal) - room.vertical);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.smallest;
+
+  Offset get _shift => Offset(-room.left, -room.top);
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child != null) context.paintChild(child, offset + _shift);
+  }
+
+  @override
+  void applyPaintTransform(RenderObject child, Matrix4 transform) {
+    transform.translateByDouble(_shift.dx, _shift.dy, 0, 1);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final child = this.child;
+    if (child == null) return false;
+    return result.addWithPaintOffset(
+      offset: _shift,
+      position: position,
+      hitTest: (result, transformed) => child.hitTest(result, position: transformed),
+    );
+  }
 }
