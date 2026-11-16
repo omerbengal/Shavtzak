@@ -379,4 +379,81 @@ void main() {
     final updated = tester.widget<Text>(find.byKey(const Key('spotlight-stat-1')));
     expect(updated.data, '1');
   });
+
+  testWidgets('the status menu has no "בוצעה"; a new status turns "סיימתי" into "למשימה הבאה"',
+      (tester) async {
+    final harness = await open(tester);
+    await tester.tap(find.byKey(const Key('spotlight-status')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('team-task-status-option-בוצעה')), findsNothing);
+    expect(find.byKey(const Key('team-task-status-option-בטיפול')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')));
+    await tester.pumpAndSettle();
+    expect(harness.repository.calls, ['status:c:inProgress']);
+    // Still on the same card, with the next button instead of the green one.
+    expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-done')), findsNothing);
+    final next = tester.widget<FilledButton>(find.byKey(const Key('spotlight-next')));
+    expect(find.text('למשימה הבאה'), findsOneWidget);
+    expect(next.style!.backgroundColor!.resolve({}), isNot(const Color(0xFF2E7D32)));
+    await tester.tap(find.byKey(const Key('spotlight-next')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
+    expect(find.byKey(const Key('spotlight-done')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('spotlight-skip')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('spotlight-skip')));
+    await tester.pumpAndSettle();
+    expect(find.text('אחת עודכנה · 2 לפעם אחרת'), findsOneWidget);
+  });
+
+  testWidgets('a short phone screen (Safari with its bars) shows the whole card and every button',
+      (tester) async {
+    // As on Omer's screen (msg 4070): a short title, three lines of description.
+    final busy = task('c', 'לפתוח קישור', link: topic2, updates: [
+      for (var i = 1; i <= 8; i++) entry('u$i', DateTime.utc(2026, 11, i)),
+    ]).copyWith(description: 'בנגל: לפתוח קישור\nעומר: להפיץ\nיובל: שליחת לוז');
+    await pumpTeamTasks(tester,
+        user: dana, board: board([busy]), size: const Size(390, 664));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final screen = tester.getRect(find.byKey(const Key('spotlight-screen')));
+    for (final key in ['spotlight-update', 'spotlight-done', 'spotlight-skip', 'spotlight-status']) {
+      final rect = tester.getRect(find.byKey(Key(key)));
+      expect(rect.bottom, lessThanOrEqualTo(screen.bottom), reason: key);
+    }
+    // Nothing to scroll: it all fits, the log scrolls inside the card.
+    final page = tester.state<ScrollableState>(find.descendant(
+        of: find.byKey(const Key('spotlight-page-scroll')), matching: find.byType(Scrollable)).first);
+    expect(page.position.maxScrollExtent, 0);
+    final log = tester.state<ScrollableState>(find.descendant(
+        of: find.byKey(const Key('spotlight-updates-scroll-c')), matching: find.byType(Scrollable)).first);
+    expect(log.position.maxScrollExtent, greaterThan(0));
+    final card = tester.getRect(find.byKey(const Key('spotlight-card-c')));
+    expect(card.bottom, lessThan(tester.getRect(find.byKey(const Key('spotlight-done'))).top));
+  });
+
+  testWidgets('a very short screen keeps one update of the log in sight and scrolls instead',
+      (tester) async {
+    final busy = task('c', 'בנגל: לפתוח קישור למחזור 26-27/11 ולשלוח לכל הצוות', link: topic2, updates: [
+      for (var i = 1; i <= 8; i++) entry('u$i', DateTime.utc(2026, 11, i)),
+    ]).copyWith(description: 'שורה ראשונה\nשורה שנייה\nשורה שלישית\nשורה רביעית');
+    await pumpTeamTasks(tester, user: dana, board: board([busy]), size: const Size(390, 520));
+    await tester.tap(find.byKey(const Key('spotlight-start')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final log = tester.state<ScrollableState>(find.descendant(
+        of: find.byKey(const Key('spotlight-updates-scroll-c')), matching: find.byType(Scrollable)).first);
+    expect(log.position.viewportDimension, greaterThanOrEqualTo(83));
+    expect(find.text('שורה שלישית', findRichText: true), findsNothing);
+    final page = tester.state<ScrollableState>(find.descendant(
+        of: find.byKey(const Key('spotlight-page-scroll')), matching: find.byType(Scrollable)).first);
+    expect(page.position.maxScrollExtent, greaterThan(0));
+    await tester.drag(find.byKey(const Key('spotlight-page-scroll')), const Offset(0, -400));
+    await tester.pumpAndSettle();
+    final screen = tester.getRect(find.byKey(const Key('spotlight-screen')));
+    expect(tester.getRect(find.byKey(const Key('spotlight-status'))).bottom,
+        lessThanOrEqualTo(screen.bottom));
+  });
 }

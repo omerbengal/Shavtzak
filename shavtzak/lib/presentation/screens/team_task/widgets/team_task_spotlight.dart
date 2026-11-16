@@ -82,9 +82,7 @@ abstract final class SpotlightStyle {
   static const double buttonIcon = 24;
   static const double radius = 22;
 
-  /// The update log's height: this share of the room, between the bounds.
-  static const double logShare = 0.3;
-  static const double logMin = 130;
+  /// The update log's tallest: it takes the card's leftover room up to this.
   static const double logMax = 340;
 
   static const Duration enter = Duration(milliseconds: 300);
@@ -106,6 +104,29 @@ abstract final class SpotlightStyle {
   static const double skipHold = 0.08;
   static const double skipWindUpOffset = 0.28;
   static const Duration done = Duration(milliseconds: 520);
+
+  /// "למשימה הבאה" (after a status change): the card slides out forward, to
+  /// the left in Hebrew.
+  static const Duration next = Duration(milliseconds: 420);
+
+  /// Below this height the card and its buttons scroll together (a phone on
+  /// its side); above it they always fit, the updates log taking what is
+  /// left (Omer, msg 4070: Safari's bars cut the buttons off).
+  static const double fitFrom = 520;
+
+  /// Below this room (a small phone with the browser's bars) the description
+  /// keeps [compactDescriptionLines], to leave the log some room.
+  static const double compactBelow = 500;
+  static const int compactDescriptionLines = 2;
+
+  /// The log always shows at least this much of itself (its title and about
+  /// one update): when the room is shorter the page scrolls by the
+  /// difference instead.
+  static const double logMinVisible = 84;
+
+  /// While the update field is open the content is at least this tall and
+  /// scrolls, so the keyboard never squeezes the card.
+  static const double composeMin = 760;
 
   /// A sent update flies from the text field up to its place at the top of
   /// the log (Omer, msg 3969: "ממש יגיע משורת הטקסט למטה - ישר למעלה").
@@ -139,7 +160,7 @@ abstract final class SpotlightStyle {
 }
 
 /// How the current card leaves.
-enum _Exit { none, skip, done, update }
+enum _Exit { none, skip, done, update, next }
 
 class TeamTaskSpotlight extends StatefulWidget {
   const TeamTaskSpotlight({super.key, required this.taskIds, this.title, this.clock});
@@ -180,6 +201,12 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   final GlobalKey _fieldKey = GlobalKey();
   final GlobalKey _landingKey = GlobalKey();
   final ScrollController _logScroll = ScrollController();
+
+  /// The room of the page now, and what the current card adds to it so its
+  /// log shows at least [SpotlightStyle.logMinVisible] (zero when it fits).
+  double _room = 0;
+  double _logExtra = 0;
+  int _logExtraFor = -1;
 
   /// While "לא עכשיו" / "סיימתי" throw the card away it is painted from one
   /// picture of it ([SnapshotWidget]): a turned or shrinking card with its
@@ -277,10 +304,12 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   Future<void> _leaveCard(_Exit kind) async {
     setState(() => _exitKind = kind);
     // Not for a sent update: its row still glows inside the card.
-    _cardPicture.allowSnapshotting = kind == _Exit.skip || kind == _Exit.done;
+    _cardPicture.allowSnapshotting =
+        kind == _Exit.skip || kind == _Exit.done || kind == _Exit.next;
     _exit.duration = switch (kind) {
       _Exit.skip => SpotlightStyle.fling,
       _Exit.done => SpotlightStyle.done,
+      _Exit.next => SpotlightStyle.next,
       _Exit.update => SpotlightStyle.update,
       _Exit.none => Duration.zero,
     };
@@ -323,6 +352,15 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     HapticFeedback.selectionClick();
     setState(() => _tally = _tally.skip(id));
     _leaveCard(_Exit.skip);
+  }
+
+  /// "למשימה הבאה": the status already changed (counted as updated), on to
+  /// the next card.
+  void _goNext() {
+    if (_leaving) return;
+    Logger.action('tap:spotlightNext');
+    HapticFeedback.selectionClick();
+    _leaveCard(_Exit.next);
   }
 
   void _openComposer() {
@@ -455,7 +493,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     final at = _index;
     if (!await _setStatus(task, status, original: original) || !mounted) return;
     if (status.isActive) {
+      // It counts as updated, and "סיימתי" turns into "למשימה הבאה".
       HapticFeedback.selectionClick();
+      setState(() => _tally = _tally.update(task.id));
       return;
     }
     setState(() => _tally = _tally.close(task.id));
@@ -498,6 +538,18 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     ));
   }
 
+  /// After a layout: a log squeezed under [SpotlightStyle.logMinVisible]
+  /// (while it has more to show) makes the page that much taller, to scroll.
+  void _checkLogRoom() {
+    if (!mounted || _composing || _finished || _leaving || !_logScroll.hasClients) return;
+    final log = _logScroll.position;
+    if (!log.hasContentDimensions || !log.hasViewportDimension) return;
+    final want =
+        math.min(SpotlightStyle.logMinVisible, log.viewportDimension + log.maxScrollExtent);
+    final missing = want - log.viewportDimension;
+    if (missing > 1) setState(() => _logExtra += missing);
+  }
+
   // ---------------------------------------------------------------- build --
 
   double _scale(BuildContext context) =>
@@ -533,22 +585,40 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, box) {
-                      const pad = EdgeInsets.fromLTRB(16, 12, 16, 24);
-                      final logHeight = (box.maxHeight * SpotlightStyle.logShare)
-                          .clamp(SpotlightStyle.logMin, SpotlightStyle.logMax)
-                          .toDouble();
-                      return SingleChildScrollView(
-                        padding: pad,
+                      // The home bar's room in the installed app (zero in a tab).
+                      final pad = EdgeInsets.fromLTRB(
+                          16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom);
+                      final room = math.max(0.0, box.maxHeight - pad.vertical);
+                      if (room != _room || _logExtraFor != _index) {
+                        _room = room;
+                        _logExtra = 0;
+                        _logExtraFor = _index;
+                      }
+                      final page = Center(
                         child: ConstrainedBox(
-                          constraints:
-                              BoxConstraints(minHeight: math.max(0, box.maxHeight - pad.vertical)),
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: SpotlightStyle.maxWidth),
-                              child: _finished ? _summary(s) : _current(s, logHeight),
-                            ),
-                          ),
+                          constraints: const BoxConstraints(maxWidth: SpotlightStyle.maxWidth),
+                          child: _finished ? _summary(s) : _current(s),
                         ),
+                      );
+                      if (_finished) {
+                        return SingleChildScrollView(
+                          padding: pad,
+                          child: ConstrainedBox(
+                              constraints: BoxConstraints(minHeight: room), child: page),
+                        );
+                      }
+                      // A card is laid out in exactly the visible height, so
+                      // its buttons always show: the updates log inside the
+                      // card shrinks (and scrolls) to make room. Only a very
+                      // short screen, or the open update field, scrolls the
+                      // whole page.
+                      final height = math.max(room + _logExtra,
+                          _composing ? SpotlightStyle.composeMin : SpotlightStyle.fitFrom);
+                      WidgetsBinding.instance.addPostFrameCallback((_) => _checkLogRoom());
+                      return SingleChildScrollView(
+                        key: const Key('spotlight-page-scroll'),
+                        padding: pad,
+                        child: SizedBox(height: height, child: page),
                       );
                     },
                   ),
@@ -692,7 +762,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     );
   }
 
-  Widget _current(double s, double logHeight) {
+  Widget _current(double s) {
     return BlocBuilder<TeamTaskBloc, TeamTaskState>(
       builder: (context, state) {
         final id = widget.taskIds[_index];
@@ -703,7 +773,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         }
         return KeyedSubtree(
           key: ValueKey('spotlight-$_index-$id'),
-          child: task == null ? _gone(id) : _page(task, s, logHeight),
+          child: task == null ? _gone(id) : _page(task, s),
         );
       },
     );
@@ -729,7 +799,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     );
   }
 
-  Widget _page(TeamTask task, double s, double logHeight) {
+  Widget _page(TeamTask task, double s) {
     // Their own layers: the card's move / fade / turn only composites the
     // cached picture instead of repainting the card (its blurred shadow, the
     // timeline) on every frame.
@@ -740,7 +810,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         mode: SnapshotMode.permissive,
         child: Padding(
           padding: SpotlightStyle.cardShadowRoom,
-          child: RepaintBoundary(child: _card(task, s, logHeight)),
+          child: RepaintBoundary(child: _card(task, s)),
         ),
       ),
     );
@@ -778,6 +848,10 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             scale *= 1 - 0.18 * out;
             opacity *= 1 - out;
             lowerOpacity *= 1 - const Interval(0, 0.3).transform(e);
+          case _Exit.next:
+            dx = -1.15 * Curves.easeInCubic.transform(e);
+            opacity *= 1 - const Interval(0.5, 1).transform(e);
+            lowerOpacity *= 1 - const Interval(0, 0.35).transform(e);
           case _Exit.update:
             final out = _landed
                 ? Curves.easeInCubic.transform(Interval(SpotlightStyle.updateHold, 1).transform(e))
@@ -800,45 +874,48 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Opacity(
-              opacity: opacity.clamp(0.0, 1.0),
-              child: FractionalTranslation(
-                translation: Offset(dx, dy),
-                // The landing's jolt, in pixels.
-                child: Transform.translate(
-                  offset: jolt,
-                  child: Transform.rotate(
-                  angle: angle,
-                  child: Transform.scale(
-                    scale: scale,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        card,
-                        if (check > 0)
-                          Transform.scale(
-                            scale: check,
-                            child: Container(
-                              key: const Key('spotlight-done-check'),
-                              width: 96 * s,
-                              height: 96 * s,
-                              decoration: const BoxDecoration(
-                                color: TaskStyle.done,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                      color: Color(0x552E7D32),
-                                      blurRadius: 24,
-                                      offset: Offset(0, 8)),
-                                ],
+            // The card takes what the buttons leave, no more than it needs.
+            Flexible(
+              child: Opacity(
+                opacity: opacity.clamp(0.0, 1.0),
+                child: FractionalTranslation(
+                  translation: Offset(dx, dy),
+                  // The landing's jolt, in pixels.
+                  child: Transform.translate(
+                    offset: jolt,
+                    child: Transform.rotate(
+                    angle: angle,
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          card,
+                          if (check > 0)
+                            Transform.scale(
+                              scale: check,
+                              child: Container(
+                                key: const Key('spotlight-done-check'),
+                                width: 96 * s,
+                                height: 96 * s,
+                                decoration: const BoxDecoration(
+                                  color: TaskStyle.done,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                        color: Color(0x552E7D32),
+                                        blurRadius: 24,
+                                        offset: Offset(0, 8)),
+                                  ],
+                                ),
+                                child: Icon(Icons.check_rounded, color: Colors.white, size: 60 * s),
                               ),
-                              child: Icon(Icons.check_rounded, color: Colors.white, size: 60 * s),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                  ),
                 ),
               ),
             ),
@@ -856,7 +933,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     );
   }
 
-  Widget _card(TeamTask task, double s, double logHeight) {
+  Widget _card(TeamTask task, double s) {
     final now = _now;
     final quiet = teamTaskQuietDays(task, now);
     final isQuiet = quiet == null || quiet >= spotlightQuietDays;
@@ -882,6 +959,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
@@ -920,69 +998,74 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               ],
             ),
           ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(20 * s, 18 * s, 20 * s, 20 * s),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (task.isSubtask)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      task.parentTitle ?? '',
-                      style: TextStyle(fontSize: meta, color: TaskStyle.neutralText),
+          Flexible(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20 * s, 18 * s, 20 * s, 20 * s),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (task.isSubtask)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        task.parentTitle ?? '',
+                        style: TextStyle(fontSize: meta, color: TaskStyle.neutralText),
+                      ),
                     ),
-                  ),
-                Text(
-                  task.title,
-                  key: Key('spotlight-title-${task.id}'),
-                  style: TextStyle(
-                    fontSize: SpotlightStyle.titleSize * s,
-                    fontWeight: FontWeight.w800,
-                    height: 1.25,
-                  ),
-                ),
-                SizedBox(height: 12 * s),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _MorphStatusChip(status: task.status, scale: s),
-                    if (deadline != null)
-                      Text(
-                        late ? 'באיחור · עד ${shortDate(deadline)}' : 'עד ${shortDate(deadline)}',
-                        style: TextStyle(
-                          fontSize: meta,
-                          color: late ? TaskStyle.late : TaskStyle.neutralText,
-                          fontWeight: late ? FontWeight.w700 : FontWeight.normal,
-                        ),
-                      ),
-                    for (final owner in owners)
-                      MemberInitialsAvatar(
-                        memberId: owner.id,
-                        name: owner.name,
-                        highlight: owner.id == _viewerId(),
-                        size: 30 * s,
-                      ),
-                  ],
-                ),
-                if (task.description.trim().isNotEmpty) ...[
-                  SizedBox(height: 14 * s),
                   Text(
-                    task.description.trim(),
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
+                    task.title,
+                    key: Key('spotlight-title-${task.id}'),
                     style: TextStyle(
-                      fontSize: SpotlightStyle.bodySize * s,
-                      color: TaskStyle.neutralText,
-                      height: 1.35,
+                      fontSize: SpotlightStyle.titleSize * s,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
                     ),
                   ),
+                  SizedBox(height: 12 * s),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _MorphStatusChip(status: task.status, scale: s),
+                      if (deadline != null)
+                        Text(
+                          late ? 'באיחור · עד ${shortDate(deadline)}' : 'עד ${shortDate(deadline)}',
+                          style: TextStyle(
+                            fontSize: meta,
+                            color: late ? TaskStyle.late : TaskStyle.neutralText,
+                            fontWeight: late ? FontWeight.w700 : FontWeight.normal,
+                          ),
+                        ),
+                      for (final owner in owners)
+                        MemberInitialsAvatar(
+                          memberId: owner.id,
+                          name: owner.name,
+                          highlight: owner.id == _viewerId(),
+                          size: 30 * s,
+                        ),
+                    ],
+                  ),
+                  if (task.description.trim().isNotEmpty) ...[
+                    SizedBox(height: 14 * s),
+                    Text(
+                      task.description.trim(),
+                      maxLines: _room < SpotlightStyle.compactBelow
+                          ? SpotlightStyle.compactDescriptionLines
+                          : 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: SpotlightStyle.bodySize * s,
+                        color: TaskStyle.neutralText,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                  SizedBox(height: 16 * s),
+                  Flexible(child: _log(task, s)),
                 ],
-                SizedBox(height: 16 * s),
-                _log(task, s, logHeight),
-              ],
+              ),
             ),
           ),
         ],
@@ -993,7 +1076,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   /// Every update of [task], newest first, as a timeline that scrolls inside
   /// the card (round 2: "כל העדכונים, לא רק האחרון"). A new one (just sent)
   /// flies up into place with a highlight.
-  Widget _log(TeamTask task, double s, double maxHeight) {
+  Widget _log(TeamTask task, double s) {
     final fresh = [
       for (final entry in task.updates)
         if (!_seenUpdates.contains(entry.id)) entry.id,
@@ -1043,49 +1126,47 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         borderRadius: BorderRadius.circular(14),
       ),
       padding: EdgeInsets.fromLTRB(14 * s, 10 * s, 14 * s, 6 * s),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            count == 0 ? 'עדכונים' : 'עדכונים ($count)',
-            style: TextStyle(
-              fontSize: 13.5 * s,
-              fontWeight: FontWeight.w700,
-              color: TaskStyle.faintText,
-            ),
-          ),
-          SizedBox(height: 6 * s),
-          if (count == 0)
-            Padding(
-              padding: EdgeInsets.only(bottom: 8 * s),
-              child: Text('אין עדכון עדיין',
-                  style:
-                      TextStyle(fontSize: SpotlightStyle.bodySize * s, color: TaskStyle.faintText)),
-            )
-          else
-            ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight),
-              child: Scrollbar(
-                controller: _logScroll,
-                child: SingleChildScrollView(
-                  key: Key('spotlight-updates-scroll-${task.id}'),
-                  controller: _logScroll,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ...rows.take(still),
-                      _shaken(
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: rows.skip(still).toList(),
-                        ),
-                      ),
-                    ],
+      // The title scrolls with the updates: squeezed by a short screen the
+      // box shrinks as a whole and never overflows.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: SpotlightStyle.logMax),
+        child: Scrollbar(
+          controller: _logScroll,
+          child: SingleChildScrollView(
+            key: Key('spotlight-updates-scroll-${task.id}'),
+            controller: _logScroll,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  count == 0 ? 'עדכונים' : 'עדכונים ($count)',
+                  style: TextStyle(
+                    fontSize: 13.5 * s,
+                    fontWeight: FontWeight.w700,
+                    color: TaskStyle.faintText,
                   ),
                 ),
-              ),
+                SizedBox(height: 6 * s),
+                if (count == 0)
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 8 * s),
+                    child: Text('אין עדכון עדיין',
+                        style: TextStyle(
+                            fontSize: SpotlightStyle.bodySize * s, color: TaskStyle.faintText)),
+                  )
+                else ...[
+                  ...rows.take(still),
+                  _shaken(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: rows.skip(still).toList(),
+                    ),
+                  ),
+                ],
+              ],
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -1331,6 +1412,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     required Key key,
     required String label,
     IconData? icon,
+    IconData? trailingIcon,
     required Color background,
     required Color foreground,
     required double s,
@@ -1357,6 +1439,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               SizedBox(width: 8 * s),
             ],
             Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+            if (trailingIcon != null) ...[
+              SizedBox(width: 8 * s),
+              // Mirrored in Hebrew: points left, onwards.
+              Icon(trailingIcon, size: SpotlightStyle.buttonIcon * s),
+            ],
           ],
         ),
       ),
@@ -1382,15 +1469,27 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             ),
             gap,
             Expanded(
-              child: _bigButton(
-                key: const Key('spotlight-done'),
-                label: 'סיימתי',
-                icon: Icons.check_rounded,
-                background: TaskStyle.done,
-                foreground: Colors.white,
-                s: s,
-                onPressed: () => _changeStatus(task, TeamTaskStatus.done),
-              ),
+              // After a status change "סיימתי" gives way to "למשימה הבאה", not
+              // green (Omer, msg 4070).
+              child: _tally.updated.contains(task.id)
+                  ? _bigButton(
+                      key: const Key('spotlight-next'),
+                      label: 'למשימה הבאה',
+                      trailingIcon: Icons.arrow_forward_rounded,
+                      background: TaskStyle.mine,
+                      foreground: Colors.white,
+                      s: s,
+                      onPressed: _goNext,
+                    )
+                  : _bigButton(
+                      key: const Key('spotlight-done'),
+                      label: 'סיימתי',
+                      icon: Icons.check_rounded,
+                      background: TaskStyle.done,
+                      foreground: Colors.white,
+                      s: s,
+                      onPressed: () => _changeStatus(task, TeamTaskStatus.done),
+                    ),
             ),
           ],
         ),
@@ -1415,7 +1514,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 tooltip: 'שינוי סטטוס',
                 enabled: !_busy && !_leaving,
                 onSelected: (status) => _changeStatus(task, status),
-                itemBuilder: (context) => teamTaskStatusMenuItems(),
+                // No "בוצעה": "סיימתי" is right there (Omer, msg 4070).
+                itemBuilder: (context) =>
+                    teamTaskStatusMenuItems(without: const {TeamTaskStatus.done}),
                 child: Container(
                   height: SpotlightStyle.buttonHeight * s,
                   alignment: Alignment.center,

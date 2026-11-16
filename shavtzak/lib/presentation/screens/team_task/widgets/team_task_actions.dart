@@ -101,24 +101,27 @@ Future<String?> pickDuplicateOriginal(
 
 /// The status menu's options: the five statuses, each with its status circle
 /// at the start of the word (on its right, Omer round 5), the pair centred
-/// (round 4).
-List<PopupMenuEntry<TeamTaskStatus>> teamTaskStatusMenuItems() => [
+/// (round 4). [without] leaves options out (Blitz has its own "סיימתי").
+List<PopupMenuEntry<TeamTaskStatus>> teamTaskStatusMenuItems(
+        {Set<TeamTaskStatus> without = const {}}) =>
+    [
       for (final status in TeamTaskStatus.values)
-        PopupMenuItem(
-          key: Key('team-task-status-option-${status.hebrewLabel}'),
-          value: status,
-          child: Directionality(
-            textDirection: TextDirection.rtl,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TeamTaskStatusIcon(status: status, size: TeamTaskStyle.subtaskIconSize),
-                const SizedBox(width: 8),
-                Text(status.hebrewLabel),
-              ],
+        if (!without.contains(status))
+          PopupMenuItem(
+            key: Key('team-task-status-option-${status.hebrewLabel}'),
+            value: status,
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TeamTaskStatusIcon(status: status, size: TeamTaskStyle.subtaskIconSize),
+                  const SizedBox(width: 8),
+                  Text(status.hebrewLabel),
+                ],
+              ),
             ),
           ),
-        ),
     ];
 
 /// A task with subtasks: its status follows them (Omer, round 4 item 8).
