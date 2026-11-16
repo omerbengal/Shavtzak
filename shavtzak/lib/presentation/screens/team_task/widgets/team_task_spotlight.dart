@@ -111,15 +111,18 @@ abstract final class SpotlightStyle {
   /// [flightPeak] of the time, with a shadow that spreads as if it left the
   /// screen, then slams back down to its own size on its row (Omer, msg 4043:
   /// "יקפוץ ויתקרב למסך ... ינחת במקום שלו ב'בום!'").
-  static const Duration flight = Duration(milliseconds: 640);
+  /// Omer, msg 4055: "יותר איטית ... יתקרב למסך ... יותר אבק ויותר רעידה".
+  static const Duration flight = Duration(milliseconds: 880);
   static const double flightPeak = 0.5;
-  static const double flightScale = 1.32;
+  static const double flightScale = 1.65;
 
   /// The "בום" after it lands: the row squashes and springs back, the
   /// updates under it shake and a puff of dust bursts from its bottom corners.
-  static const Duration impact = Duration(milliseconds: 440);
-  static const double shakeOffset = 5;
-  static const int dustPieces = 22;
+  /// The whole card jolts too, less than the updates under the row.
+  static const Duration impact = Duration(milliseconds: 640);
+  static const double shakeOffset = 13;
+  static const double cardShakeOffset = 4;
+  static const int dustPieces = 46;
 
   /// After it lands: it glows a moment, then the card goes.
   static const Duration update = Duration(milliseconds: 760);
@@ -199,7 +202,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       AnimationController(vsync: this, duration: SpotlightStyle.flight);
   late final AnimationController _impact =
       AnimationController(vsync: this, duration: SpotlightStyle.impact);
-  late final Listenable _motion = Listenable.merge([_enter, _exit, _flight]);
+  late final Listenable _motion = Listenable.merge([_enter, _exit, _flight, _impact]);
   late final Listenable _landingMotion = Listenable.merge([_exit, _impact]);
   List<_ConfettiPiece> _pieces = const [];
 
@@ -639,12 +642,12 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       for (var i = 0; i < SpotlightStyle.dustPieces; i++)
         _DustPiece(
           left: i.isEven,
-          // Mostly sideways, between flat and 35 degrees up.
-          angle: _random.nextDouble() * 0.6,
-          speed: 90 + _random.nextDouble() * 170,
-          size: 2.5 + _random.nextDouble() * 4,
+          // Mostly sideways, between flat and 50 degrees up.
+          angle: _random.nextDouble() * 0.9,
+          speed: 140 + _random.nextDouble() * 280,
+          size: 3.5 + _random.nextDouble() * 6,
           color: colors[_random.nextInt(colors.length)],
-          rise: 10 + _random.nextDouble() * 22,
+          rise: 20 + _random.nextDouble() * 40,
         ),
     ];
   }
@@ -750,6 +753,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         var dx = 0.0, dy = 0.0, angle = 0.0, scale = 1.0, opacity = inT;
         var lowerOpacity = inT;
         double check = 0;
+        var jolt = Offset.zero;
         switch (_exitKind) {
           case _Exit.skip:
             // A slow wind-up to the right, a beat at the peak, then flung off
@@ -779,6 +783,13 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                 : 0.0;
             dy = -0.2 * out;
             opacity *= 1 - out;
+            // The "בום" jolts the whole card a little, dying out fast.
+            final b = _impact.value;
+            if (_landed && b > 0 && b < 1) {
+              final decay = math.pow(1 - b, 3).toDouble();
+              const a = SpotlightStyle.cardShakeOffset;
+              jolt = Offset(a * decay * math.sin(b * math.pi * 9), a * decay * math.sin(b * math.pi * 6).abs());
+            }
             // The field's row fades while the update flies out of it.
             lowerOpacity *= 1 - const Interval(0, 0.35).transform(math.max(_flight.value, e));
           case _Exit.none:
@@ -792,7 +803,10 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               opacity: opacity.clamp(0.0, 1.0),
               child: FractionalTranslation(
                 translation: Offset(dx, dy),
-                child: Transform.rotate(
+                // The landing's jolt, in pixels.
+                child: Transform.translate(
+                  offset: jolt,
+                  child: Transform.rotate(
                   angle: angle,
                   child: Transform.scale(
                     scale: scale,
@@ -823,6 +837,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                       ],
                     ),
                   ),
+                ),
                 ),
               ),
             ),
@@ -1088,8 +1103,8 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         return Transform.translate(
           key: const Key('spotlight-log-shake'),
           offset: Offset(
-            a * decay * math.sin(t * math.pi * 7),
-            a * 0.8 * decay * math.sin(t * math.pi * 5).abs(),
+            a * decay * math.sin(t * math.pi * 9),
+            a * 0.8 * decay * math.sin(t * math.pi * 6).abs(),
           ),
           child: child,
         );
@@ -1203,7 +1218,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         return Transform(
           key: const Key('spotlight-log-squash'),
           alignment: Alignment.bottomCenter,
-          transform: Matrix4.diagonal3Values(1 + 0.05 * squash, 1 - 0.1 * squash, 1),
+          transform: Matrix4.diagonal3Values(1 + 0.07 * squash, 1 - 0.14 * squash, 1),
           child: box,
         );
       },
@@ -1276,9 +1291,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                         // A fixed blur (no blur animation): only its strength
                         // and its drop grow as the box comes off the screen.
                         BoxShadow(
-                          color: Color.fromRGBO(10, 30, 60, 0.28 * lift),
-                          blurRadius: 24,
-                          offset: Offset(0, 4 + 18 * lift),
+                          color: Color.fromRGBO(10, 30, 60, 0.38 * lift),
+                          blurRadius: 30,
+                          offset: Offset(0, 4 + 30 * lift),
                         ),
                       ],
                     ),
@@ -1858,12 +1873,12 @@ class _DustPainter extends CustomPainter {
   final Rect at;
   final double t;
 
-  static const double _seconds = 0.44;
+  static final double _seconds = SpotlightStyle.impact.inMilliseconds / 1000;
 
   @override
   void paint(Canvas canvas, Size size) {
     final time = t * _seconds;
-    final drag = (1 - math.exp(-time * 7)) / 7;
+    final drag = (1 - math.exp(-time * 6)) / 6;
     final fade = 1 - Curves.easeIn.transform(t);
     final paint = Paint();
     for (final piece in pieces) {
@@ -1874,7 +1889,7 @@ class _DustPainter extends CustomPainter {
           Offset(side * (6 + math.cos(piece.angle) * travel),
               -math.sin(piece.angle) * travel - piece.rise * t);
       paint.color = piece.color.withValues(alpha: 0.85 * fade);
-      canvas.drawCircle(position, piece.size * (0.7 + 0.6 * t), paint);
+      canvas.drawCircle(position, piece.size * (0.7 + 0.8 * t), paint);
     }
   }
 
