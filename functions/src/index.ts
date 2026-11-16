@@ -16,6 +16,8 @@ import {
 import {onRequest} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {onTaskDispatched} from 'firebase-functions/v2/tasks';
+import {defineSecret} from 'firebase-functions/params';
+import webpush from 'web-push';
 import {
   canExecuteDriveAction,
   DriveExportValidationError,
@@ -55,6 +57,16 @@ import {
   planPendingEventLink,
 } from './pending_events';
 import {TeamTaskStore, runTeamTaskOperation} from './team_task_ops';
+import {
+  PUSH_SUBJECT,
+  PushSite,
+  PushStore,
+  StoredSubscription,
+  VAPID_PUBLIC_KEY,
+  parseSubscription,
+  sendTaskAssignedPush,
+  subscriptionDocId,
+} from './push';
 import {TeamTaskDoc, teamTaskAuditDetails} from './team_tasks';
 import {
   TaskActor,
@@ -111,6 +123,8 @@ import {
 initializeApp();
 
 const db = getFirestore();
+// The private half of the VAPID key pair (push.ts has the public half).
+const vapidPrivateKey = defineSecret('WEB_PUSH_VAPID_PRIVATE_KEY');
 const auth = getAuth();
 const app = express();
 
@@ -145,6 +159,7 @@ type Collections = {
   tasks: string;
   stages: string;
   teamTasks: string;
+  pushSubscriptions: string;
   calendarSync: string;
   eventCalendarSync: string;
   eventCalendarJobs: string;
@@ -254,6 +269,7 @@ function getCollections(environment: EnvironmentMode): Collections {
     tasks: `${prefix}tasks`,
     stages: `${prefix}stages`,
     teamTasks: `${prefix}teamTasks`,
+    pushSubscriptions: `${prefix}pushSubscriptions`,
     calendarSync: `${prefix}calendar_sync`,
     eventCalendarSync: `${prefix}event_calendar_sync`,
     eventCalendarJobs: `${prefix}event_calendar_jobs`,
@@ -3852,6 +3868,7 @@ async function executeMutation(
   collections: Collections,
   operation: string,
   payload: Record<string, unknown>,
+  site: PushSite = 'main',
 ): Promise<Record<string, unknown>> {
   switch (operation) {
     case 'teamMember.insert': {
@@ -6671,6 +6688,17 @@ async function executeMutation(
         shown == null ? result.details : teamTaskAuditDetails(shown, result.details),
         {before: result.before, after: result.after},
       );
+      if (operation === 'teamTask.insert' || operation === 'teamTask.update') {
+        // Awaited: on Cloud Run work left after the response is throttled.
+        // Never throws (sendTaskAssignedPush).
+        await sendTaskAssignedPush(pushStoreFor(collections), sendWebPush, {
+          before: result.before,
+          after: result.after,
+          actorId: actor.memberId,
+          site,
+          routePrefix: environment === 'test' ? '/test' : '',
+        });
+      }
       return {ok: true};
     }
 
@@ -7724,12 +7752,120 @@ app.post('/mutate', async (request: Request, response: Response) => {
       collections,
       operation,
       payload,
+      pushSiteOf(response),
     );
     response.json(result);
   } catch (error) {
     handleError(response, error);
   }
 });
+
+// Web Push ("שובצת למשימה", push.ts). A device subscribes after "הפעל
+// התראות" and again quietly on every sign-in; the document is keyed by the
+// subscription, so the member signed in on the device owns it.
+app.post('/push/subscribe', async (request: Request, response: Response) => {
+  try {
+    const {actor, environment, collections} = await authenticateRequest(request);
+    const subscription = parseSubscription(request.body?.subscription);
+    const device = typeof request.body?.device === 'string'
+      ? (request.body.device as string).slice(0, 200)
+      : null;
+    const origin = typeof request.body?.origin === 'string'
+      ? (request.body.origin as string).slice(0, 200)
+      : null;
+    const ref = db.collection(collections.pushSubscriptions)
+      .doc(subscriptionDocId(subscription.endpoint));
+    await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(ref);
+      const createdAt = existing.exists ? existing.get('createdAt') : null;
+      transaction.set(ref, {
+        memberId: actor.memberId,
+        endpoint: subscription.endpoint,
+        keys: subscription.keys,
+        site: pushSiteOf(response),
+        environment,
+        device,
+        origin,
+        createdAt: createdAt ?? Timestamp.now(),
+        lastSeenAt: Timestamp.now(),
+      });
+    });
+    response.json({ok: true});
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+// The device stops getting notifications: "כיבוי" in the settings, or a
+// sign-out (the next member signing in on it subscribes again).
+app.post('/push/unsubscribe', async (request: Request, response: Response) => {
+  try {
+    const {collections} = await authenticateRequest(request);
+    const endpoint = requireString(request.body?.endpoint, 'endpoint');
+    await db.collection(collections.pushSubscriptions).doc(subscriptionDocId(endpoint)).delete();
+    response.json({ok: true});
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+function pushSiteOf(response: Response): PushSite {
+  return response.locals['pushSite'] === 'preview' ? 'preview' : 'main';
+}
+
+function pushStoreFor(collections: Collections): PushStore {
+  return {
+    async members(ids) {
+      const found = new Map<string, Record<string, unknown>>();
+      if (ids.length === 0) return found;
+      const docs = await db.getAll(...ids.map((id) => db.collection(collections.teamMembers).doc(id)));
+      for (const doc of docs) if (doc.exists) found.set(doc.id, doc.data() ?? {});
+      return found;
+    },
+    async subscriptionsOf(memberIds, site) {
+      const subscriptions: StoredSubscription[] = [];
+      // `in` takes up to 30 values.
+      for (let i = 0; i < memberIds.length; i += 30) {
+        const snapshot = await db.collection(collections.pushSubscriptions)
+          .where('memberId', 'in', memberIds.slice(i, i + 30))
+          .get();
+        for (const doc of snapshot.docs) {
+          const data = doc.data();
+          const docSite: PushSite = data['site'] === 'preview' ? 'preview' : 'main';
+          if (docSite !== site) continue;
+          subscriptions.push({
+            id: doc.id,
+            memberId: data['memberId'],
+            site: docSite,
+            endpoint: data['endpoint'],
+            keys: data['keys'],
+          });
+        }
+      }
+      return subscriptions;
+    },
+    async deleteSubscription(id) {
+      await db.collection(collections.pushSubscriptions).doc(id).delete();
+    },
+  };
+}
+
+async function sendWebPush(subscription: StoredSubscription, payload: string): Promise<void> {
+  await webpush.sendNotification(
+    {endpoint: subscription.endpoint, keys: subscription.keys},
+    payload,
+    {
+      vapidDetails: {
+        subject: PUSH_SUBJECT,
+        publicKey: VAPID_PUBLIC_KEY,
+        privateKey: vapidPrivateKey.value(),
+      },
+      TTL: 24 * 60 * 60,
+      urgency: 'normal',
+      timeout: 5000,
+    },
+  );
+}
 
 function handleError(response: Response, error: unknown): void {
   if (error instanceof DriveExportValidationError) {
@@ -7766,8 +7902,25 @@ export const api = onRequest(
   {
     region: 'us-central1',
     invoker: 'public',
+    secrets: [vapidPrivateKey],
   },
   app,
+);
+
+// The same app under another name, called only by a preview build
+// (`--dart-define=SHAVTZAK_API_FUNCTION=apiPreview`), so a branch's backend can
+// be tried on production data while `api` keeps running main's code. Its push
+// subscriptions are marked `preview` (push.ts, PushSite).
+export const apiPreview = onRequest(
+  {
+    region: 'us-central1',
+    invoker: 'public',
+    secrets: [vapidPrivateKey],
+  },
+  (request, response) => {
+    response.locals['pushSite'] = 'preview';
+    app(request, response);
+  },
 );
 
 // Test-only re-exports. Not part of the public API; used by the *.test.ts files.

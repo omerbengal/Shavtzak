@@ -200,6 +200,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Web Push subscriptions: only the API reads and writes them.
+    match /pushSubscriptions/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test_pushSubscriptions/{document=**} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read: if false;
       allow write: if false;
