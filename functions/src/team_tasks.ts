@@ -31,6 +31,14 @@ export type TaskLinkType = 'event' | 'category' | 'topic' | 'pendingEvent';
 export type TaskLink = {type: TaskLinkType; id: string} | null;
 
 /**
+ * How urgent a task is (Omer, 16/11/2026: three levels). A stored task with
+ * no `urgency` reads as `normal`.
+ */
+export type TeamTaskUrgency = 'low' | 'normal' | 'high';
+
+export const TEAM_TASK_URGENCIES: readonly TeamTaskUrgency[] = ['low', 'normal', 'high'];
+
+/**
  * A subtask is a task of its own nested in its parent (Omer, round 2): title,
  * description, owners, contacts, deadline, the five statuses and its own
  * update log. It has no link (the parent's) and no subtasks.
@@ -69,6 +77,13 @@ export type TeamTaskDoc = {
   title: string;
   description: string;
   link: TaskLink;
+  /**
+   * Every event of a task linked to several events (16/11/2026), the link's
+   * own event first; empty unless [link] is an event. Older app versions read
+   * only [link], so they still see the first event.
+   */
+  eventIds: string[];
+  urgency: TeamTaskUrgency;
   /** The task's own owners; always empty when it has subtasks. */
   assigneeIds: string[];
   subtasks: TeamSubtask[];
@@ -100,6 +115,26 @@ const MAX_SUBTASK_UPDATES = 100;
 const DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const LINK_TYPES: readonly TaskLinkType[] = ['event', 'category', 'topic', 'pendingEvent'];
+const MAX_EVENTS = 50;
+
+/**
+ * The events of a task: [link]'s event first, then [ids] once each; none
+ * when [link] is not an event.
+ */
+export function normalizeEventIds(link: TaskLink, ids: readonly string[]): string[] {
+  if (link == null || link.type !== 'event') return [];
+  const result = [link.id];
+  for (const id of ids) {
+    if (!result.includes(id)) result.push(id);
+  }
+  return result;
+}
+
+function storedUrgency(value: unknown): TeamTaskUrgency {
+  return TEAM_TASK_URGENCIES.includes(value as TeamTaskUrgency)
+    ? value as TeamTaskUrgency
+    : 'normal';
+}
 
 // ---- owners and permissions ----
 
@@ -240,11 +275,14 @@ function storedUpdates(value: unknown): TaskUpdateEntry[] {
 
 export function teamTaskFromStored(id: string, raw: Record<string, unknown>): TeamTaskDoc {
   const status = storedStatus(raw['status']);
+  const link = storedLink(raw['link']);
   return {
     id,
     title: storedString(raw['title']) ?? '',
     description: storedString(raw['description']) ?? '',
-    link: storedLink(raw['link']),
+    link,
+    eventIds: normalizeEventIds(link, storedStringList(raw['eventIds'])),
+    urgency: storedUrgency(raw['urgency']),
     assigneeIds: storedStringList(raw['assigneeIds']),
     subtasks: storedSubtasks(raw['subtasks']),
     contacts: storedContacts(raw['contacts']),
@@ -266,8 +304,13 @@ type EditableFields = {
   title: string;
   description: string;
   link: TaskLink;
+  /** Null = the payload has no `eventIds` (an older app version). */
+  eventIds: string[] | null;
+  /** Null = the payload has no `urgency` (an older app version). */
+  urgency: TeamTaskUrgency | null;
   assigneeIds: string[];
-  subtasks: SubtaskFields[];
+  /** Null = the payload has no `subtasks` (this app version, 16/11/2026). */
+  subtasks: SubtaskFields[] | null;
   contacts: StageContact[];
   deadline: string | null;
 };
@@ -285,6 +328,29 @@ export function parseTaskLink(value: unknown): TaskLink {
     throw new TaskError(400, 'שיוך לא תקין');
   }
   return {type: type as TaskLinkType, id};
+}
+
+function parseEventIds(value: unknown): string[] | null {
+  if (value === undefined) return null;
+  if (value === null) return [];
+  if (!Array.isArray(value)) throw new TaskError(400, 'שיוך לא תקין');
+  const ids: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !ID_PATTERN.test(entry)) {
+      throw new TaskError(400, 'שיוך לא תקין');
+    }
+    if (!ids.includes(entry)) ids.push(entry);
+  }
+  if (ids.length > MAX_EVENTS) throw new TaskError(400, 'יותר מדי אירועים');
+  return ids;
+}
+
+export function parseTeamTaskUrgency(value: unknown): TeamTaskUrgency | null {
+  if (value === undefined || value === null) return null;
+  if (!TEAM_TASK_URGENCIES.includes(value as TeamTaskUrgency)) {
+    throw new TaskError(400, 'דחיפות לא תקינה');
+  }
+  return value as TeamTaskUrgency;
 }
 
 function parseDeadline(value: unknown): string | null {
@@ -363,13 +429,17 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
 
   const description = parseDescription(input['description']);
 
-  const subtasks = parseSubtasks(input['subtasks']);
+  const subtasks = input['subtasks'] === undefined ? null : parseSubtasks(input['subtasks']);
   return {
     title,
     description,
     link: parseTaskLink(input['link']),
+    eventIds: parseEventIds(input['eventIds']),
+    urgency: parseTeamTaskUrgency(input['urgency']),
     // A task with subtasks has no owners of its own (decision 6).
-    assigneeIds: subtasks.length > 0 ? [] : parseAssigneeIds(input['assigneeIds']),
+    assigneeIds: subtasks != null && subtasks.length > 0
+      ? []
+      : parseAssigneeIds(input['assigneeIds']),
     subtasks,
     contacts: parseContacts(input['contacts']),
     deadline: parseDeadline(input['deadline']),
@@ -434,7 +504,9 @@ export function buildNewTeamTask(input: Record<string, unknown>, ctx: Ctx): Team
   return finish({
     id,
     ...fields,
-    subtasks: fields.subtasks.map(newSubtask),
+    eventIds: normalizeEventIds(fields.link, fields.eventIds ?? []),
+    urgency: fields.urgency ?? 'normal',
+    subtasks: (fields.subtasks ?? []).map(newSubtask),
     status: 'open',
     duplicateOfId: null,
     updates: [],
@@ -455,15 +527,30 @@ export function applyTeamTaskEdit(
   if (input['id'] !== task.id) throw new TaskError(400, 'מזהה משימה לא תואם');
   const fields = parseEditableFields(input);
   const storedById = new Map(task.subtasks.map((subtask) => [subtask.id, subtask]));
+  // A payload without subtasks (this app version, which no longer shows
+  // them) keeps the stored ones; without the task's owners then.
+  const subtasks = fields.subtasks == null
+    ? task.subtasks
+    : fields.subtasks.map((subtask) => {
+      // A subtask keeps its status, log and completion; only what a manager
+      // edits comes from the payload.
+      const stored = storedById.get(subtask.id);
+      return stored == null ? newSubtask(subtask) : {...stored, ...subtask};
+    });
+  // An older app version sends no `eventIds`: the events stay while the
+  // link's event does.
+  const eventIds = fields.eventIds != null
+    ? normalizeEventIds(fields.link, fields.eventIds)
+    : (fields.link?.type === 'event' && task.link?.type === 'event' && fields.link.id === task.link.id
+      ? task.eventIds
+      : normalizeEventIds(fields.link, []));
   const next: TeamTaskDoc = {
     ...task,
     ...fields,
-    // A subtask keeps its status, log and completion; only what a manager
-    // edits comes from the payload.
-    subtasks: fields.subtasks.map((subtask) => {
-      const stored = storedById.get(subtask.id);
-      return stored == null ? newSubtask(subtask) : {...stored, ...subtask};
-    }),
+    eventIds,
+    urgency: fields.urgency ?? task.urgency,
+    subtasks,
+    assigneeIds: subtasks.length > 0 ? [] : fields.assigneeIds,
     updatedAt: ctx.now,
   };
   return finish(withAutoStatus(task, next, ctx));

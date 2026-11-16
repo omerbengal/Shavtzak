@@ -77,11 +77,24 @@ async function loadTask(store: TeamTaskStore, id: string): Promise<TeamTaskDoc> 
   return teamTaskFromStored(id, raw);
 }
 
+/** Every event of [next] not in [known] must exist. */
+async function requireEventsExist(
+  store: TeamTaskStore,
+  next: TeamTaskDoc,
+  known: readonly string[] = [],
+): Promise<void> {
+  for (const id of next.eventIds) {
+    if (known.includes(id)) continue;
+    if (!(await store.eventExists(id))) throw new TaskError(404, 'האירוע לא נמצא');
+  }
+}
+
 async function requireLinkExists(store: TeamTaskStore, next: TeamTaskDoc): Promise<void> {
   const link = next.link;
   if (link == null) return;
-  if (link.type === 'event' && !(await store.eventExists(link.id))) {
-    throw new TaskError(404, 'האירוע לא נמצא');
+  if (link.type === 'event') {
+    await requireEventsExist(store, next);
+    return;
   }
   if (link.type === 'category' && !(await store.categoryExists(link.id))) {
     throw new TaskError(404, 'הקטגוריה לא נמצאה');
@@ -145,7 +158,12 @@ export async function runTeamTaskOperation(
       const next = applyTeamTaskEdit(before, input, ctx);
       // Only a new link is checked: a task whose event was deleted since must
       // stay editable ("nothing is lost").
-      if (!sameLink(before.link, next.link)) await requireLinkExists(store, next);
+      if (!sameLink(before.link, next.link)) {
+        await requireLinkExists(store, next);
+      } else if (next.link?.type === 'event') {
+        // The same first event: only an event added beside it is checked.
+        await requireEventsExist(store, next, before.eventIds);
+      }
       await requireNewOwnersActive(store, before, next);
       await store.writeTask(next);
       return {entityId: next.id, before, after: next, details: {}};

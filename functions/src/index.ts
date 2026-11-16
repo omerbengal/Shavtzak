@@ -6766,7 +6766,11 @@ async function executeMutation(
       for (const doc of linked.docs) {
         if (!isLinkedToPendingEvent(doc.data(), plan.pendingEventId)) continue;
         moved.push(doc.id);
-        batch.update(doc.ref, {link: {type: 'event', id: plan.eventId}, updatedAt: now});
+        batch.update(doc.ref, {
+          link: {type: 'event', id: plan.eventId},
+          eventIds: [plan.eventId],
+          updatedAt: now,
+        });
       }
       batch.set(listsRef, {PendingEvents: plan.items}, {merge: true});
       await batch.commit();

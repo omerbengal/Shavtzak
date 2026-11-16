@@ -416,3 +416,57 @@ test('a task may link to a pending event (round 10)', () => {
   assert.deepEqual(teamTaskFromStored('x', {link: {type: 'pendingEvent', id: 'pe1'}}).link,
     {type: 'pendingEvent', id: 'pe1'});
 });
+
+// ---- several events and urgency (16/11/2026) ----
+
+test('several events: the link event first, once each; none for another link', () => {
+  const doc = buildNewTeamTask(
+    input({link: {type: 'event', id: 'e1'}, eventIds: ['e2', 'e1', 'e3', 'e2']}),
+    {now, actor: manager},
+  );
+  assert.deepEqual(doc.eventIds, ['e1', 'e2', 'e3']);
+  const topic = buildNewTeamTask(input({eventIds: ['e2']}), {now, actor: manager});
+  assert.deepEqual(topic.eventIds, []);
+});
+
+test('a stored task with one event link reads its event; no urgency reads normal', () => {
+  const doc = teamTaskFromStored('t1', {title: 'x', link: {type: 'event', id: 'e9'}});
+  assert.deepEqual(doc.eventIds, ['e9']);
+  assert.equal(doc.urgency, 'normal');
+});
+
+test('urgency: set on insert, kept by an edit without it, refused when unknown', () => {
+  const doc = buildNewTeamTask(input({urgency: 'high'}), {now, actor: manager});
+  assert.equal(doc.urgency, 'high');
+  assert.equal(buildNewTeamTask(input(), {now, actor: manager}).urgency, 'normal');
+  const edited = applyTeamTaskEdit(doc, input({title: 'אחר'}), {now: later, actor: manager});
+  assert.equal(edited.urgency, 'high');
+  const lowered = applyTeamTaskEdit(doc, input({urgency: 'low'}), {now: later, actor: manager});
+  assert.equal(lowered.urgency, 'low');
+  expectTaskError(() => buildNewTeamTask(input({urgency: 'urgent'}), {now, actor: manager}), 400);
+});
+
+test('an edit from an older app (no eventIds) keeps the events while the first stays', () => {
+  const doc = buildNewTeamTask(
+    input({link: {type: 'event', id: 'e1'}, eventIds: ['e1', 'e2']}),
+    {now, actor: manager},
+  );
+  const same = applyTeamTaskEdit(doc, input({link: {type: 'event', id: 'e1'}}), {now: later, actor: manager});
+  assert.deepEqual(same.eventIds, ['e1', 'e2']);
+  const moved = applyTeamTaskEdit(doc, input({link: {type: 'event', id: 'e5'}}), {now: later, actor: manager});
+  assert.deepEqual(moved.eventIds, ['e5']);
+  const cleared = applyTeamTaskEdit(
+    doc, input({link: {type: 'event', id: 'e1'}, eventIds: ['e1']}), {now: later, actor: manager},
+  );
+  assert.deepEqual(cleared.eventIds, ['e1']);
+});
+
+test('an edit with no subtasks key keeps the stored subtasks', () => {
+  const doc = withSubtasks();
+  const payload = input({title: 'חדש'});
+  delete payload['subtasks'];
+  const edited = applyTeamTaskEdit(doc, payload, {now: later, actor: manager});
+  assert.deepEqual(edited.subtasks.map((s) => s.id), ['s1', 's2']);
+  assert.deepEqual(edited.assigneeIds, []);
+  assert.deepEqual(edited.ownerIds, ['a', 'b']);
+});

@@ -180,3 +180,18 @@ test('editUpdate / deleteUpdate: the writer, or a manager (round 10)', async () 
     {id: 't1', updateId}, manager, now);
   assert.equal(deleted.after?.updates.length, 0);
 });
+
+test('several events: each one must exist; an update checks only the added ones', async () => {
+  const store = new MemoryStore();
+  store.events.add('e2');
+  await assert.rejects(insert(store, {eventIds: ['e1', 'nope']}), status(404, 'האירוע לא נמצא'));
+  const done = await insert(store, {eventIds: ['e1', 'e2']});
+  assert.deepEqual(done.after?.eventIds, ['e1', 'e2']);
+  // e2 deleted since: the task stays editable.
+  store.events.delete('e2');
+  const kept = await runTeamTaskOperation(store, 'teamTask.update',
+    {task: task({title: 'x', eventIds: ['e1', 'e2']})}, manager, now);
+  assert.deepEqual(kept.after?.eventIds, ['e1', 'e2']);
+  await assert.rejects(runTeamTaskOperation(store, 'teamTask.update',
+    {task: task({eventIds: ['e1', 'e7']})}, manager, now), status(404, 'האירוע לא נמצא'));
+});
