@@ -94,7 +94,12 @@ abstract final class SpotlightStyle {
   static const int logEntryMs = 250;
   static const int logMaxSteps = 4;
   static const Duration logIn = Duration(milliseconds: logStepMs * logMaxSteps + logEntryMs);
-  static const Duration fling = Duration(milliseconds: 560);
+  /// "לא עכשיו": a wind-up to the right over the first [skipWindUp] of the
+  /// time (by [skipWindUpOffset] of the card's width), then the fling left.
+  /// Omer, msg 4024: the wind-up further right and a little longer.
+  static const Duration fling = Duration(milliseconds: 640);
+  static const double skipWindUp = 0.28;
+  static const double skipWindUpOffset = 0.14;
   static const Duration done = Duration(milliseconds: 520);
 
   /// A sent update flies from the text field up to its place at the top of
@@ -659,10 +664,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         switch (_exitKind) {
           case _Exit.skip:
             // A small wind-up to the right, then flung off to the left.
-            if (e < 0.18) {
-              dx = 0.07 * Curves.easeOut.transform(e / 0.18);
+            const w = SpotlightStyle.skipWindUp, o = SpotlightStyle.skipWindUpOffset;
+            if (e < w) {
+              dx = o * Curves.easeOutCubic.transform(e / w);
             } else {
-              dx = 0.07 - 1.75 * Curves.easeInCubic.transform((e - 0.18) / 0.82);
+              dx = o - (1.75 + o) * Curves.easeInCubic.transform((e - w) / (1 - w));
             }
             angle = dx * 0.22;
             opacity *= 1 - const Interval(0.7, 1).transform(e);

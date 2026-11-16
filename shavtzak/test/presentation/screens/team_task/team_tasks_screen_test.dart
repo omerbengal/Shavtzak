@@ -47,6 +47,25 @@ void main() {
     expect(find.byKey(const Key('team-task-row-a')), findsNothing);
   });
 
+  testWidgets('switching to "המשימות שלי" shows its rows at once, with no animation',
+      (tester) async {
+    final theirs =
+        buildTeamTask(id: 'b', title: 'של יוסי', assigneeIds: ['m2']).copyWith(owners: [yossi]);
+    final own =
+        buildTeamTask(id: 'c', title: 'שלי', assigneeIds: ['mgr']).copyWith(owners: [manager]);
+    // One link card: three rows in "כל המשימות", one in "המשימות שלי".
+    await pumpTeamTasks(tester, user: manager, board: board([mine, theirs, own]));
+    await tester.tap(find.text('המשימות שלי'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(find.byKey(const Key('team-task-row-c')), findsOneWidget);
+    final cards = find.byType(AnimatedSize);
+    final early = [for (final e in cards.evaluate()) e.size!.height];
+    await tester.pumpAndSettle();
+    final settled = [for (final e in cards.evaluate()) e.size!.height];
+    expect(early, settled);
+  });
+
   testWidgets('tabs as in דו יומי: "המשימות שלי" on the right, the chosen one readable',
       (tester) async {
     await pumpTeamTasks(tester, user: manager, board: board([mine]));
