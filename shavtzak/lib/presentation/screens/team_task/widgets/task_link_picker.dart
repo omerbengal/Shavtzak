@@ -61,6 +61,16 @@ String? taskLinkName(TeamTasksLoaded state, TaskLink? link) {
 /// The label of a "אירוע שעוד לא נוצר" (round 10), in the picker and on a card.
 const String pendingEventLabel = 'אירוע שעוד לא נוצר';
 
+/// The kind before a card's name ("אירוע · ", "נושא · " ...), in the list
+/// and in the duplicate picker.
+String teamTaskGroupKind(TaskLinkType? type) => switch (type) {
+      TaskLinkType.event => 'אירוע · ',
+      TaskLinkType.category => 'קטגוריה · ',
+      TaskLinkType.topic => 'נושא · ',
+      TaskLinkType.pendingEvent => '$pendingEventLabel · ',
+      null => '',
+    };
+
 /// Picks what a task belongs to: an event, a category or a topic, in three
 /// segments, with a search and, for topics, "נושא חדש". The events segment
 /// opens with "אירוע שעוד לא נוצר" (round 10): a manager names a new one

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -120,6 +121,96 @@ String teamTaskCreatedLabel(TeamTask task) {
 /// The creation date's small, muted look.
 const TextStyle teamTaskCreatedStyle = TextStyle(fontSize: 12, color: TaskStyle.faintText);
 
+/// How long a task counts as new: a green dot beside its "נוצרה …" (Omer,
+/// msg 4581).
+const Duration teamTaskNewFor = Duration(hours: 2);
+
+/// Whether [task] was created less than [teamTaskNewFor] before [now].
+bool isTeamTaskNew(TeamTask task, DateTime now) {
+  final age = now.difference(task.createdAt);
+  return !age.isNegative && age < teamTaskNewFor;
+}
+
+/// The "נוצרה DD/MM, HH:mm" text, with a small green dot before it while the
+/// task is new ([isTeamTaskNew]). The dot goes by itself when the two hours
+/// end: a timer set to that moment rebuilds it, with no new data needed.
+class TeamTaskCreatedText extends StatefulWidget {
+  const TeamTaskCreatedText({super.key, required this.task, this.clock = DateTime.now});
+
+  final TeamTask task;
+
+  /// Injected by tests.
+  final DateTime Function() clock;
+
+  /// The dot and the gap after it: what the row adds to the text's width.
+  static const double dotSize = 8;
+  static const double dotGap = 4;
+
+  @override
+  State<TeamTaskCreatedText> createState() => _TeamTaskCreatedTextState();
+}
+
+class _TeamTaskCreatedTextState extends State<TeamTaskCreatedText> {
+  Timer? _expiry;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(TeamTaskCreatedText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.task.createdAt != widget.task.createdAt) _schedule();
+  }
+
+  void _schedule() {
+    _expiry?.cancel();
+    _expiry = null;
+    final now = widget.clock();
+    if (!isTeamTaskNew(widget.task, now)) return;
+    final left = widget.task.createdAt.add(teamTaskNewFor).difference(now);
+    // A moment past the end, so the check after it reads "not new".
+    _expiry = Timer(left + const Duration(milliseconds: 50), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _expiry?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isNew = isTeamTaskNew(widget.task, widget.clock());
+    final text = Text(
+      teamTaskCreatedLabel(widget.task),
+      style: teamTaskCreatedStyle,
+      maxLines: 1,
+    );
+    if (!isNew) return text;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Tooltip(
+          message: 'נוצרה בשעתיים האחרונות',
+          child: Container(
+            key: Key('team-task-new-dot-${widget.task.id}'),
+            width: TeamTaskCreatedText.dotSize,
+            height: TeamTaskCreatedText.dotSize,
+            decoration: const BoxDecoration(color: TaskStyle.done, shape: BoxShape.circle),
+          ),
+        ),
+        const SizedBox(width: TeamTaskCreatedText.dotGap),
+        text,
+      ],
+    );
+  }
+}
+
 /// `d.M HH:mm` in local time, for the update log.
 String logStamp(DateTime at) {
   final local = at.toLocal();
@@ -191,6 +282,8 @@ class TeamTaskUrgencyChip extends StatelessWidget {
           const SizedBox(width: 2),
           Text(
             'דחיפות ${urgency.hebrewLabel}',
+            maxLines: 1,
+            softWrap: false,
             style: TextStyle(
               fontSize: dense ? TaskStyle.rowMetaSize : 13,
               color: urgency == TeamTaskUrgency.normal
@@ -251,6 +344,9 @@ class TeamTaskUrgencyPicker extends StatelessWidget {
               : AppTheme.primaryDark,
           selectedForegroundColor: Colors.white,
           visualDensity: VisualDensity.compact,
+          // Less side padding than the default, so a phone keeps the
+          // three choices on one line at full size.
+          padding: const EdgeInsets.symmetric(horizontal: 6),
         ),
         segments: [
           for (final urgency in TeamTaskUrgency.values)
@@ -262,7 +358,17 @@ class TeamTaskUrgencyPicker extends StatelessWidget {
                 // On the selected (dark) segment the sign turns white.
                 color: urgency == value ? Colors.white : null,
               ),
-              label: Text(urgency.hebrewLabel, key: Key('team-task-urgency-${urgency.key}')),
+              // One line always (Omer, msg 4581: it wrapped on a phone):
+              // shrinks instead when a segment is too narrow.
+              label: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  urgency.hebrewLabel,
+                  key: Key('team-task-urgency-${urgency.key}'),
+                  maxLines: 1,
+                  softWrap: false,
+                ),
+              ),
             ),
         ],
         selected: {value},

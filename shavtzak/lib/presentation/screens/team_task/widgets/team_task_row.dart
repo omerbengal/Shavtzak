@@ -185,12 +185,7 @@ class TeamTaskRow extends StatelessWidget {
   /// the date goes under them, still at the left.
   Widget _withCreated(Widget meta) {
     if (!showCreated) return meta;
-    final created = Text(
-      teamTaskCreatedLabel(task),
-      key: Key('team-task-created-${task.id}'),
-      style: teamTaskCreatedStyle,
-      maxLines: 1,
-    );
+    final created = TeamTaskCreatedText(key: Key('team-task-created-${task.id}'), task: task);
     return LayoutBuilder(builder: (context, box) {
       final painter = TextPainter(
         text: TextSpan(text: teamTaskCreatedLabel(task), style: teamTaskCreatedStyle),
@@ -198,7 +193,9 @@ class TeamTaskRow extends StatelessWidget {
         textScaler: MediaQuery.textScalerOf(context),
         maxLines: 1,
       )..layout();
-      final dateWidth = painter.width;
+      // Room for the "new" dot too, so a row does not jump when it goes.
+      final dateWidth =
+          painter.width + TeamTaskCreatedText.dotSize + TeamTaskCreatedText.dotGap;
       painter.dispose();
       if (box.maxWidth - dateWidth - 8 < _minMetaWidth) {
         return Column(

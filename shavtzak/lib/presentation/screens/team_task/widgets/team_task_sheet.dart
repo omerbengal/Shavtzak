@@ -352,10 +352,9 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
               if (manage)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 12, top: 2),
-                  child: Text(
-                    teamTaskCreatedLabel(task),
+                  child: TeamTaskCreatedText(
                     key: const Key('team-task-sheet-created'),
-                    style: teamTaskCreatedStyle,
+                    task: task,
                   ),
                 ),
             ],

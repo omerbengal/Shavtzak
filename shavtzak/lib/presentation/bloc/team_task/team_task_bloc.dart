@@ -193,6 +193,8 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
             now: now, categoryNameById: categoryNameById),
         now,
         categories: board.categories,
+        // By urgency, then by owners (Omer, msg 4581): "כל המשימות" only.
+        compare: compareTeamTasksByOwners,
       )),
       // "המשימות שלי" has no owner filter: they are all the viewer's.
       mineGroups: drawn(groupTeamTasks(

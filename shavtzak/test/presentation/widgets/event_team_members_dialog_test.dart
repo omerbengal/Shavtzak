@@ -152,6 +152,8 @@ void main() {
   Future<void> pumpDialog(
     WidgetTester tester, {
     Size size = const Size(390, 844),
+    String? title,
+    bool canShare = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -164,6 +166,8 @@ void main() {
             event: event,
             currentUserId: 'me',
             assignmentBloc: assignmentBloc,
+            title: title ?? 'מי איתי באירוע?',
+            canShare: canShare,
           ),
         ),
       ),
@@ -337,5 +341,25 @@ void main() {
         tester, [assignmentFor('a1', memberFor('tm3', 'משה'))]);
     expect(find.text('דני'), findsNothing);
     expect(find.text('משה'), findsOneWidget);
+  });
+
+  testWidgets(
+    'the team tasks 👥 (Omer, msg 4581): the same live picture, titled with '
+    'the event, with a share button',
+    (tester) async {
+      await pumpDialog(tester, title: 'שיבוצים לאירוע בדיקה', canShare: true);
+      await emitAssignments(tester, [assignmentFor('a1', memberFor('tm1', 'דני'))]);
+      expect(find.text('שיבוצים לאירוע בדיקה'), findsOneWidget);
+      expect(find.text('מי איתי באירוע?'), findsNothing);
+      expect(find.byKey(const Key('who-is-with-me-picture')), findsOneWidget);
+      expect(find.byKey(const Key('event-team-members-share')), findsOneWidget);
+    },
+  );
+
+  testWidgets('"מי איתי באירוע?" keeps its title and has no share button', (tester) async {
+    await pumpDialog(tester);
+    await emitAssignments(tester, [assignmentFor('a1', memberFor('tm1', 'דני'))]);
+    expect(find.text('מי איתי באירוע?'), findsOneWidget);
+    expect(find.byKey(const Key('event-team-members-share')), findsNothing);
   });
 }

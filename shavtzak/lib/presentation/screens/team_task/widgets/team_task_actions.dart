@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/utils/crud_action_result.dart';
-import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
+import 'duplicate_picker_dialog.dart';
 import 'team_task_style.dart';
 
 /// The quick actions on one task, shared by the task screen and the rows of
@@ -34,50 +34,16 @@ Future<void> changeTeamTaskStatus(
   }
 }
 
-/// Which task [task] duplicates. Null = cancelled.
+/// Which task [task] duplicates ([DuplicatePickerDialog]). Null = cancelled.
 Future<String?> pickDuplicateOriginal(
   BuildContext context,
   TeamTasksLoaded state,
   TeamTask task,
-) {
-  final others = state.all
-      .where((t) => t.id != task.id && t.status != TeamTaskStatus.duplicate)
-      .toList()
-    ..sort((a, b) => a.title.compareTo(b.title));
-  return showDialog<String>(
-    context: context,
-    builder: (context) => Directionality(
-      textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: const Text('כפילות של איזו משימה?'),
-        content: SizedBox(
-          width: 360,
-          height: 360,
-          child: others.isEmpty
-              ? const Center(child: Text('אין משימות אחרות'))
-              : ListView(
-                  children: [
-                    for (final other in others)
-                      ListTile(
-                        key: Key('duplicate-original-${other.id}'),
-                        dense: true,
-                        title: Text(other.title),
-                        subtitle: Text(teamTaskLinkLabel(other)),
-                        onTap: () => Navigator.of(context).pop(other.id),
-                      ),
-                  ],
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
+) =>
+    showDialog<String>(
+      context: context,
+      builder: (_) => DuplicatePickerDialog(state: state, task: task),
+    );
 
 /// The status menu's options: the five statuses, each with its status circle
 /// at the start of the word (on its right, Omer round 5), the pair centred
