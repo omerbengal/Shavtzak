@@ -27,6 +27,27 @@ enum PushStatus {
   /// Refused in the browser's own window; only the phone's or the site's
   /// settings can undo it.
   blocked,
+
+  /// "הפעל התראות" only: the browser refused at once without showing its
+  /// window (Chrome's site settings then say "no permission"; Android,
+  /// 17/11/2026). Only the site's settings in Chrome can allow it.
+  noWindow,
+}
+
+/// Whose settings the "how to allow it" steps point at (17/11/2026: Chrome
+/// and Samsung Internet hide them in different places).
+enum PushBrowser { chrome, samsung, ios, other }
+
+/// [ua] is `navigator.userAgent`. Samsung Internet and most Android browsers
+/// also say "Chrome", so they are told apart first.
+PushBrowser pushBrowserFromUserAgent(String ua) {
+  if (ua.contains('SamsungBrowser')) return PushBrowser.samsung;
+  if (RegExp(r'iPhone|iPad|iPod').hasMatch(ua)) return PushBrowser.ios;
+  if (RegExp(r'EdgA?/|OPR/|YaBrowser|MiuiBrowser|UCBrowser|Firefox/|; wv\)').hasMatch(ua)) {
+    return PushBrowser.other;
+  }
+  if (ua.contains('Chrome/')) return PushBrowser.chrome;
+  return PushBrowser.other;
 }
 
 /// The server half: the API's `/push/subscribe` and `/push/unsubscribe`.
@@ -74,6 +95,8 @@ class PushNotificationService {
   final PushBackend _backend;
   final PushDeviceFlags _flags;
 
+  PushBrowser get browser => pushBrowserFromUserAgent(_bridge.userAgent());
+
   Future<PushStatus> status() async {
     switch (_bridge.permission()) {
       case 'unsupported':
@@ -100,7 +123,14 @@ class PushNotificationService {
   /// "הפעל התראות" (call it straight from the tap: iPhone asks only then).
   Future<PushStatus> enable() async {
     final json = await _bridge.subscribe(vapidPublicKey);
-    if (json == null) return status();
+    if (json == null) {
+      final now = await status();
+      if (now == PushStatus.notAsked && _bridge.askedWithoutWindow()) {
+        debugPrint('push: the browser refused without showing its window');
+        return PushStatus.noWindow;
+      }
+      return now;
+    }
     await _backend.subscribe(jsonDecode(json) as Map<String, dynamic>);
     await _flags.setTurnedOff(false);
     return PushStatus.enabled;

@@ -5,7 +5,7 @@ import 'package:shavtzak/presentation/widgets/push_prompt_dialog.dart';
 import 'package:shavtzak/presentation/widgets/push_settings_section.dart';
 
 import '../../core/services/push_notification_service_test.dart'
-    show FakeBackend, FakeBridge, FakeFlags;
+    show FakeBackend, FakeBridge, FakeFlags, samsungUa;
 
 void main() {
   late FakeBridge bridge;
@@ -100,6 +100,79 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: PushSettingsSection(service: service))));
     await tester.pumpAndSettle();
     expect(find.text('חסום בדפדפן'), findsOneWidget);
-    expect(find.text(pushUnblockSteps), findsOneWidget);
+    expect(find.text(pushAllowSteps(PushBrowser.chrome)), findsOneWidget);
+  });
+
+  testWidgets('popup: the browser answers without a "yes" = a message, never silence', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    await open(tester);
+    await tester.tap(find.byKey(const Key('push-prompt-enable')));
+    await tester.pumpAndSettle();
+    expect(backend.subscribed, isEmpty);
+    expect(find.text(pushNotEnabledText), findsOneWidget);
+  });
+
+  testWidgets('popup: a failure on the way says so', (tester) async {
+    backend.fail = true;
+    await open(tester);
+    await tester.tap(find.byKey(const Key('push-prompt-enable')));
+    await tester.pumpAndSettle();
+    expect(find.text('לא הצלחנו להפעיל התראות. אפשר לנסות שוב בהגדרות'), findsOneWidget);
+  });
+
+  testWidgets('settings: "הפעל התראות" with no "yes" from the browser = a message', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PushSettingsSection(service: service))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('push-settings-enable')));
+    await tester.pumpAndSettle();
+    expect(find.text(pushNotEnabledText), findsOneWidget);
+    expect(find.byKey(const Key('push-settings-enable')), findsOneWidget);
+  });
+
+  testWidgets('popup: Chrome refuses without its window = the way to allow it', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    bridge.refuseWithoutWindow = true;
+    await open(tester);
+    await tester.tap(find.byKey(const Key('push-prompt-enable')));
+    await tester.pump();
+    expect(find.text(pushNoWindowText(PushBrowser.chrome)), findsOneWidget);
+  });
+
+  testWidgets('settings: Chrome refuses without its window = the way to allow it, button kept', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    bridge.refuseWithoutWindow = true;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PushSettingsSection(service: service))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('push-settings-enable')));
+    await tester.pumpAndSettle();
+    expect(find.text(pushAllowSteps(PushBrowser.chrome)), findsOneWidget);
+    expect(find.byKey(const Key('push-settings-enable')), findsOneWidget);
+  });
+
+  testWidgets('Samsung Internet gets its own path, in the popup and in settings', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    bridge.refuseWithoutWindow = true;
+    bridge.ua = samsungUa;
+    await open(tester);
+    await tester.tap(find.byKey(const Key('push-prompt-enable')));
+    await tester.pump();
+    expect(find.text(pushNoWindowText(PushBrowser.samsung)), findsOneWidget);
+    expect(pushAllowSteps(PushBrowser.samsung), contains('Samsung Internet'));
+  });
+
+  testWidgets('settings: blocked in Samsung Internet shows its path', (tester) async {
+    bridge = FakeBridge(perm: 'denied')..ua = samsungUa;
+    service = PushNotificationService(bridge, backend, flags);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PushSettingsSection(service: service))));
+    await tester.pumpAndSettle();
+    expect(find.text(pushAllowSteps(PushBrowser.samsung)), findsOneWidget);
+  });
+
+  test('every browser gets a different path; iPhone keeps its own', () {
+    final texts = PushBrowser.values.map(pushAllowSteps).toSet();
+    expect(texts, hasLength(PushBrowser.values.length));
+    expect(pushAllowSteps(PushBrowser.ios), contains('אייפון'));
+    expect(pushAllowSteps(PushBrowser.other), contains('בהגדרות הדפדפן ← הרשאות אתר ← התראות'));
   });
 }

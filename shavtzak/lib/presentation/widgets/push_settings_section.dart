@@ -4,11 +4,6 @@ import '../../core/debug/logger.dart';
 import '../../core/services/push_notification_service.dart';
 import 'push_prompt_dialog.dart';
 
-/// How to undo a refusal in the browser's own window (the app cannot).
-const String pushUnblockSteps =
-    'איך לפתוח: אנדרואיד ← המנעול ליד הכתובת ← הרשאות ← התראות. '
-    'אייפון ← הגדרות ← עדכונים ← shavtzak, או למחוק ולהוסיף שוב למסך הבית.';
-
 /// The "התראות" row of the settings dialog: on (a switch to turn it off), off
 /// (a button), blocked (how to undo it), or an iPhone in the browser.
 /// [PushNotificationService] holds the rules; this only shows them.
@@ -45,7 +40,12 @@ class _PushSettingsSectionState extends State<PushSettingsSection> {
       final status = await step();
       if (!mounted) return;
       setState(() => _status = status);
-    } catch (_) {
+      if (status == PushStatus.notAsked || (action == 'tap:pushSettingsEnable' && status == PushStatus.off)) {
+        messenger?.showSnackBar(const SnackBar(content: Text(pushNotEnabledText)));
+      }
+    } catch (error) {
+      debugPrint('push: $action failed: $error');
+      Logger.warning('push:actionFailed', {'action': action, 'error': error.toString()});
       messenger?.showSnackBar(const SnackBar(content: Text('הפעולה נכשלה. נסה שוב')));
       await _refresh();
     } finally {
@@ -85,9 +85,14 @@ class _PushSettingsSectionState extends State<PushSettingsSection> {
         );
       case PushStatus.off:
       case PushStatus.notAsked:
+      case PushStatus.noWindow:
         body = Column(
           children: [
             const Text('כבוי'),
+            if (status == PushStatus.noWindow) ...[
+              const SizedBox(height: 6),
+              Text(pushAllowSteps(_push.browser), textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+            ],
             const SizedBox(height: 8),
             ElevatedButton.icon(
               key: const Key('push-settings-enable'),
@@ -102,7 +107,7 @@ class _PushSettingsSectionState extends State<PushSettingsSection> {
           children: [
             const Text('חסום בדפדפן', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            Text(pushUnblockSteps, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+            Text(pushAllowSteps(_push.browser), textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
           ],
         );
       case PushStatus.iosInstallNeeded:
