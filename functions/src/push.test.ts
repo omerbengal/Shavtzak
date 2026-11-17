@@ -60,11 +60,14 @@ test('addedOwnerIds: only owners the write added, never the actor', () => {
   assert.deepEqual(addedOwnerIds(task(['a']), null, 'me'), []);
 });
 
-test('canReceiveTaskPush: an active, unarchived admin only', () => {
+test('canReceiveTaskPush: every active, unarchived member', () => {
   assert.equal(canReceiveTaskPush(admin), true);
-  assert.equal(canReceiveTaskPush(member), false);
+  assert.equal(canReceiveTaskPush(member), true);
   assert.equal(canReceiveTaskPush({isAdmin: true, isActive: false}), false);
+  assert.equal(canReceiveTaskPush({isAdmin: false, isActive: false}), false);
   assert.equal(canReceiveTaskPush({isAdmin: true, isActive: true, isArchived: true}), false);
+  assert.equal(canReceiveTaskPush({isAdmin: false, isActive: true, isArchived: true}), false);
+  assert.equal(canReceiveTaskPush({}), false);
 });
 
 test('taskAssignedMessage: fixed title, the task title as body, no urgency', () => {
@@ -108,20 +111,20 @@ test('send: an edit that adds no owner sends nothing', async () => {
   assert.equal(result.sent, 0);
 });
 
-test('send: every device of each added admin, not a member, not the actor', async () => {
+test('send: every device of each added member, admin or not, never the actor or an archived one', async () => {
   const store = new FakeStore(
-    {a: admin, b: member, me: admin},
-    [sub('s1', 'a'), sub('s2', 'a'), sub('s3', 'b'), sub('s4', 'me')],
+    {a: admin, b: member, c: {isAdmin: false, isActive: true, isArchived: true}, me: admin},
+    [sub('s1', 'a'), sub('s2', 'a'), sub('s3', 'b'), sub('s4', 'me'), sub('s5', 'c')],
   );
   const {calls, send} = recorder();
   const result = await sendTaskAssignedPush(store, send, {
-    before: null, after: task(['a', 'b', 'me']), actorId: 'me', site: 'main', routePrefix: '',
+    before: null, after: task(['a', 'b', 'c', 'me']), actorId: 'me', site: 'main', routePrefix: '',
   });
-  assert.deepEqual(calls.map((c) => c.id).sort(), ['s1', 's2']);
+  assert.deepEqual(calls.map((c) => c.id).sort(), ['s1', 's2', 's3']);
   assert.deepEqual(calls[0].payload, {
     title: '📋 שובצת למשימה', body: 'הוספת סבב נוסף', tag: 'task-t1', path: '/team-tasks?task=t1',
   });
-  assert.equal(result.sent, 2);
+  assert.equal(result.sent, 3);
 });
 
 test('send: only the calling site\'s devices', async () => {

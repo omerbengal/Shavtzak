@@ -42,4 +42,14 @@ void main() {
       expect(teamTasksRedirect('/team-tasks-x', buildMember()), isNull);
     });
   });
+
+  test('task notifications: every active, unarchived member (17/11/2026)', () {
+    expect(canGetTeamTaskNotifications(buildMember()), isTrue);
+    expect(canGetTeamTaskNotifications(buildMember(isAdmin: true)), isTrue);
+    expect(canGetTeamTaskNotifications(buildMember(isActive: false)), isFalse);
+    expect(canGetTeamTaskNotifications(buildMember(isArchived: true)), isFalse);
+    expect(
+        canGetTeamTaskNotifications(buildMember(isAdmin: true, isArchived: true)),
+        isFalse);
+  });
 }

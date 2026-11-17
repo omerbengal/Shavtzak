@@ -10,9 +10,12 @@ import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../../widgets/settings_dialog.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
+import '../../widgets/push_prompt_dialog.dart';
+import '../team_task/team_tasks_place.dart';
 import '../../widgets/swipeable_page_view.dart' show BottomNavWithDebugTrigger;
 import '../../../core/debug/debug_logger.dart';
 import '../../../core/debug/logger.dart';
+import '../../../core/services/app_version_service.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/user_cache_service.dart';
 
@@ -75,6 +78,23 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
     }
   }
 
+  /// The notifications popup (push_prompt_dialog.dart), as on the admin
+  /// home: every member may get them (17/11/2026), after the passcode popup,
+  /// never both at once. Once per app session (maybeShowPushPrompt).
+  void _schedulePushPrompt() {
+    final state = context.read<UserSelectionBloc>().state;
+    if (state is! UserAuthenticated || !state.user.hasPasscode) return;
+    final user = state.user;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      maybeShowPushPrompt(
+        context,
+        canReceive: canGetTeamTaskNotifications(user),
+        appVersion: AppVersionService.instance.cachedVersion,
+      );
+    });
+  }
+
   void _checkAndShowPasscodeDialog(BuildContext context) {
     final state = context.read<UserSelectionBloc>().state;
     if (state is UserAuthenticated) {
@@ -114,6 +134,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
 
     // Check and show passcode dialog if user doesn't have one
     _checkAndShowPasscodeDialog(context);
+    _schedulePushPrompt();
 
     return Directionality(
       textDirection: TextDirection.rtl,
