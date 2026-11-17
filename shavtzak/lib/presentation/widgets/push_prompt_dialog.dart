@@ -11,6 +11,10 @@ const List<String> iosInstallSteps = [
   'לפתוח משם וללחוץ "הפעל"',
 ];
 
+/// After "הפעל התראות" when the browser gave no permission and did not block.
+const String pushNotEnabledText =
+    'ההתראות לא הופעלו: לא התקבל אישור מהדפדפן. אפשר לנסות שוב בהגדרות';
+
 /// The text after "הפעל התראות", or null when there is nothing to say.
 String? pushEnableResultText(PushStatus status) {
   switch (status) {
@@ -18,6 +22,11 @@ String? pushEnableResultText(PushStatus status) {
       return '🔔 ההתראות הופעלו במכשיר הזה';
     case PushStatus.blocked:
       return 'ההתראות נחסמו בדפדפן. אפשר לפתוח אותן בהגדרות';
+    case PushStatus.notAsked:
+    case PushStatus.off:
+      // The browser answered without a "yes" (its window closed, or it never
+      // showed one): never leave the tap without a word.
+      return pushNotEnabledText;
     default:
       return null;
   }
@@ -139,6 +148,8 @@ Future<void> maybeShowPushPrompt(
           final text = pushEnableResultText(status);
           if (text != null) messenger?.showSnackBar(SnackBar(content: Text(text)));
         }).catchError((Object error) {
+          debugPrint('push: enable from the popup failed: $error');
+          Logger.warning('push:enableFailed', {'error': error.toString()});
           messenger?.showSnackBar(
             const SnackBar(content: Text('לא הצלחנו להפעיל התראות. אפשר לנסות שוב בהגדרות')),
           );

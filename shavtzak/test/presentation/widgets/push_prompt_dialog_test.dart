@@ -102,4 +102,31 @@ void main() {
     expect(find.text('חסום בדפדפן'), findsOneWidget);
     expect(find.text(pushUnblockSteps), findsOneWidget);
   });
+
+  testWidgets('popup: the browser answers without a "yes" = a message, never silence', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    await open(tester);
+    await tester.tap(find.byKey(const Key('push-prompt-enable')));
+    await tester.pumpAndSettle();
+    expect(backend.subscribed, isEmpty);
+    expect(find.text(pushNotEnabledText), findsOneWidget);
+  });
+
+  testWidgets('popup: a failure on the way says so', (tester) async {
+    backend.fail = true;
+    await open(tester);
+    await tester.tap(find.byKey(const Key('push-prompt-enable')));
+    await tester.pumpAndSettle();
+    expect(find.text('לא הצלחנו להפעיל התראות. אפשר לנסות שוב בהגדרות'), findsOneWidget);
+  });
+
+  testWidgets('settings: "הפעל התראות" with no "yes" from the browser = a message', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PushSettingsSection(service: service))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('push-settings-enable')));
+    await tester.pumpAndSettle();
+    expect(find.text(pushNotEnabledText), findsOneWidget);
+    expect(find.byKey(const Key('push-settings-enable')), findsOneWidget);
+  });
 }

@@ -45,7 +45,12 @@ class _PushSettingsSectionState extends State<PushSettingsSection> {
       final status = await step();
       if (!mounted) return;
       setState(() => _status = status);
-    } catch (_) {
+      if (status == PushStatus.notAsked || (action == 'tap:pushSettingsEnable' && status == PushStatus.off)) {
+        messenger?.showSnackBar(const SnackBar(content: Text(pushNotEnabledText)));
+      }
+    } catch (error) {
+      debugPrint('push: $action failed: $error');
+      Logger.warning('push:actionFailed', {'action': action, 'error': error.toString()});
       messenger?.showSnackBar(const SnackBar(content: Text('הפעולה נכשלה. נסה שוב')));
       await _refresh();
     } finally {
