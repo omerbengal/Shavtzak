@@ -90,6 +90,34 @@ void main() {
     expect(find.byKey(const Key('team-task-update-sending')), findsNothing);
   });
 
+  testWidgets('on a phone the update field stays above the keyboard', (tester) async {
+    final logged = other.copyWith(updates: [
+      for (var i = 0; i < 6; i++)
+        TaskUpdateEntry(
+            id: 'u$i', text: 'עדכון $i', at: DateTime(2026, 11, 2 + i), byId: 'm1', byName: 'דנה'),
+    ]);
+    await pumpTeamTasks(tester, user: dana, board: board([logged]));
+    await openTask(tester, 'o');
+    final field = find.byKey(const Key('team-task-update-field'));
+    // Scrolled to the bottom of the sheet, as on a phone.
+    unawaited(Scrollable.ensureVisible(tester.element(field), alignment: 1));
+    await tester.pumpAndSettle();
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    // The web reports the open keyboard as a bottom inset.
+    const keyboard = 500.0;
+    tester.view.viewInsets = const FakeViewPadding(bottom: keyboard);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+    final visibleBottom = tester.view.physicalSize.height / tester.view.devicePixelRatio - keyboard;
+    final rect = tester.getRect(field);
+    expect(rect.bottom, lessThanOrEqualTo(visibleBottom));
+    expect(rect.top, greaterThanOrEqualTo(0));
+    // The send button with it.
+    expect(tester.getRect(find.byKey(const Key('team-task-update-send'))).bottom,
+        lessThanOrEqualTo(visibleBottom));
+  });
+
   testWidgets('adding an update shows it first', (tester) async {
     final logged = other.copyWith(updates: [
       TaskUpdateEntry(id: 'u0', text: 'ישן', at: DateTime(2026, 11, 2), byId: 'm1', byName: 'דנה'),
