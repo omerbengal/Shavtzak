@@ -719,4 +719,18 @@ void main() {
       });
     }
   });
+
+  testWidgets('the progress bar fills left to right; the counter stays on its left (msg 4512)',
+      (tester) async {
+    await open(tester);
+    final bar = find.byKey(const Key('spotlight-progress'));
+    final barContext = tester.element(bar);
+    // A left-to-right bar starts its fill on the left edge.
+    expect(Directionality.of(barContext), TextDirection.ltr);
+    final counter = tester.getRect(find.text('1/3'));
+    expect(counter.right, lessThanOrEqualTo(tester.getRect(bar).left));
+    // The rest of the screen is still Hebrew, right to left.
+    expect(Directionality.of(tester.element(find.byKey(const Key('spotlight-skip')))),
+        TextDirection.rtl);
+  });
 }

@@ -179,19 +179,48 @@ class TeamTaskRow extends StatelessWidget {
 
   /// [meta] with the creation date at the row's end (left in Hebrew), on its
   /// last line, when [showCreated].
+  ///
+  /// When the line is too narrow to keep [_minMetaWidth] for the chips beside
+  /// the date ("נוצרה DD/MM, HH:mm" is longer than the old "d.M", msg 4516),
+  /// the date goes under them, still at the left.
   Widget _withCreated(Widget meta) {
     if (!showCreated) return meta;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(child: meta),
-        const SizedBox(width: 8),
-        Text(
-          teamTaskCreatedLabel(task, now),
-          key: Key('team-task-created-${task.id}'),
-          style: teamTaskCreatedStyle,
-        ),
-      ],
+    final created = Text(
+      teamTaskCreatedLabel(task),
+      key: Key('team-task-created-${task.id}'),
+      style: teamTaskCreatedStyle,
+      maxLines: 1,
     );
+    return LayoutBuilder(builder: (context, box) {
+      final painter = TextPainter(
+        text: TextSpan(text: teamTaskCreatedLabel(task), style: teamTaskCreatedStyle),
+        textDirection: TextDirection.rtl,
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      final dateWidth = painter.width;
+      painter.dispose();
+      if (box.maxWidth - dateWidth - 8 < _minMetaWidth) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            meta,
+            const SizedBox(height: 2),
+            Align(alignment: AlignmentDirectional.centerEnd, child: created),
+          ],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(child: meta),
+          const SizedBox(width: 8),
+          created,
+        ],
+      );
+    });
   }
+
+  /// The least room the chips keep beside the creation date.
+  static const double _minMetaWidth = 170;
 }

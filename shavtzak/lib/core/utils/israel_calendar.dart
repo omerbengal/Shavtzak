@@ -27,6 +27,11 @@ class IsraelCalendar {
     return DateTime(parts.year, parts.month, parts.day);
   }
 
+  /// [instant] on Israel's wall clock: a UTC DateTime whose fields (date,
+  /// hour, minute) read as the time in Israel at that moment.
+  static DateTime wallClock(DateTime instant) =>
+      instant.toUtc().add(Duration(minutes: _offsetMinutes(instant)));
+
   /// Israel UTC offset (minutes) at the given UTC instant.
   static int _offsetMinutes(DateTime instant) {
     final utc = instant.toUtc();

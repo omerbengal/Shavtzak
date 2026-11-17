@@ -730,13 +730,18 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                   tween: Tween(end: value),
                   duration: SpotlightStyle.progress,
                   curve: Curves.easeOutCubic,
-                  builder: (context, v, _) => LinearProgressIndicator(
-                    key: const Key('spotlight-progress'),
-                    value: v,
-                    minHeight: 10 * s,
-                    borderRadius: BorderRadius.circular(999),
-                    backgroundColor: TaskStyle.rest,
-                    color: TaskStyle.done,
+                  // The green fills left to right, the way the cards move
+                  // (Omer, msg 4512); the counter stays on the left.
+                  builder: (context, v, _) => Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: LinearProgressIndicator(
+                      key: const Key('spotlight-progress'),
+                      value: v,
+                      minHeight: 10 * s,
+                      borderRadius: BorderRadius.circular(999),
+                      backgroundColor: TaskStyle.rest,
+                      color: TaskStyle.done,
+                    ),
                   ),
                 ),
               ),
