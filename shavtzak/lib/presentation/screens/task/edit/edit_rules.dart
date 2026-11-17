@@ -214,12 +214,11 @@ bool sameTaskField(TaskItem a, TaskItem b, TaskField field) {
   }
 }
 
-/// Whether [from] may hand its [field] to [to]: another task of the same
-/// stage, with something to hand over.
+/// Whether [from] may hand its [field] to [to]: any other task of the event
+/// (the screen shows one event), in its stage or another, with something to
+/// hand over.
 bool canCopyField(TaskItem from, TaskItem to, TaskField field) =>
-    from.id != to.id &&
-    from.stageId == to.stageId &&
-    !isTaskFieldEmpty(from, field);
+    from.id != to.id && !isTaskFieldEmpty(from, field);
 
 /// [to] with [from]'s [field] in place of its own. Copied subtasks are new
 /// ones ([newId] for each) and not ticked, so ticking one never ticks the

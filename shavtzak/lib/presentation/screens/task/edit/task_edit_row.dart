@@ -19,7 +19,7 @@ class _TaskValues {
   final EditContext ctx;
 
   /// [field] can be dragged onto the same value of another task of the
-  /// stage, and takes one dropped from another. With [drag] false it only
+  /// event, in any stage, and takes one dropped from another. With [drag] false it only
   /// takes one: on a phone the time sits in the line whose long press picks
   /// up the whole task.
   Widget Function(Widget child) _draggable(TaskField field,

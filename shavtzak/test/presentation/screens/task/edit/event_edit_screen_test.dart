@@ -525,16 +525,80 @@ void main() {
     expect(saved.subtasks.single.isDone, isFalse);
   });
 
-  testWidgets('a value is not copied into a task of another stage',
+  testWidgets(
+      'wide: a mouse drag on the drag handle in the open editor reorders '
+      'the subtasks, and a click outside saves the new order',
+      (tester) async {
+    final three = twin.copyWith(subtasks: const [
+      Subtask(id: 'a', title: 'אחת', isDone: true),
+      Subtask(id: 'b', title: 'שתיים'),
+      Subtask(id: 'c', title: 'שלוש'),
+    ]);
+    final repo = await pump(tester, tasks: [...sampleTasks, three]);
+    final value = find.byKey(const Key('edit-task-subtasks-ws-twin'));
+    await tester.ensureVisible(value);
+    await tester.pumpAndSettle();
+    await tester.tap(value);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-value-editor')), findsOneWidget);
+
+    final handle = find.descendant(
+      of: find.byKey(const Key('edit-value-editor')),
+      matching: find.byIcon(Icons.drag_indicator),
+    );
+    final rowHeight =
+        tester.getSize(find.byKey(const Key('edit-subtask-0'))).height;
+    final gesture = await tester.startGesture(
+      tester.getCenter(handle.first),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(Offset(0, rowHeight * 0.2));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-value-editor')), findsOneWidget);
+
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(
+      [for (final s in repo.updatedTasks.single.subtasks) s.id],
+      ['b', 'a', 'c'],
+    );
+  });
+
+  testWidgets('a value is copied into a task of another stage too',
       (tester) async {
     final repo = await pump(tester, tasks: withTwin());
+    await dragTo(
+      tester,
+      find.byKey(const Key('edit-field-drag-subtasks-ws-twin')),
+      tester.getCenter(
+          find.byKey(const Key('edit-task-subtasks-dinner-guests'))),
+    );
+    final saved = repo.updatedTasks.single;
+    expect(saved.id, 'dinner-guests');
+    expect(saved.stageId, 'dinner');
+    expect(saved.subtasks.single.title, 'ספירה');
+    expect(saved.subtasks.single.isDone, isFalse);
+  });
+
+  testWidgets('on a phone a long press copies a value into another stage',
+      (tester) async {
+    final repo = await pump(tester,
+        tasks: withTwin(), size: const Size(400, 6000));
     await dragTo(
       tester,
       find.byKey(const Key('edit-field-drag-description-ws-twin')),
       tester.getCenter(
           find.byKey(const Key('edit-task-description-dinner-guests'))),
+      longPress: true,
     );
-    expect(repo.updatedTasks, isEmpty);
+    final saved = repo.updatedTasks.single;
+    expect(saved.id, 'dinner-guests');
+    expect(saved.description, 'מהקבלה');
   });
 
   testWidgets('a click on a value still edits it', (tester) async {
