@@ -26,7 +26,12 @@ class TeamTaskRow extends StatelessWidget {
     this.canChangeStatus = false,
     this.onAddUpdate,
     this.selected = false,
+    this.showCreated = false,
   });
+
+  /// "כל המשימות" (msg 4480): the creation date in the row's bottom-left
+  /// corner.
+  final bool showCreated;
 
   /// Its task is the one open in the side panel (wide window, round 7).
   final bool selected;
@@ -140,10 +145,10 @@ class TeamTaskRow extends StatelessWidget {
                 children: [for (final event in events) TeamTaskEventChip(name: event.name)],
               ),
             ),
-          if (urgent || deadline != null || owners.isNotEmpty)
+          if (urgent || deadline != null || owners.isNotEmpty || showCreated)
             Padding(
               padding: EdgeInsetsDirectional.only(start: lead, top: 5),
-              child: Wrap(
+              child: _withCreated(Wrap(
                 spacing: 6,
                 runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -165,10 +170,28 @@ class TeamTaskRow extends StatelessWidget {
                     ),
                   ...owners,
                 ],
-              ),
+              )),
             ),
         ],
       ),
+    );
+  }
+
+  /// [meta] with the creation date at the row's end (left in Hebrew), on its
+  /// last line, when [showCreated].
+  Widget _withCreated(Widget meta) {
+    if (!showCreated) return meta;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(child: meta),
+        const SizedBox(width: 8),
+        Text(
+          teamTaskCreatedLabel(task, now),
+          key: Key('team-task-created-${task.id}'),
+          style: teamTaskCreatedStyle,
+        ),
+      ],
     );
   }
 }

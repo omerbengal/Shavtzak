@@ -326,18 +326,39 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
               ],
             ),
           ),
-          if (manage)
-            IconButton(
-              key: const Key('team-task-delete'),
-              tooltip: 'מחיקת המשימה',
-              icon: const Icon(Icons.delete_outline, color: TaskStyle.delete),
-              onPressed: () => _delete(task),
-            ),
-          IconButton(
-            key: const Key('team-task-close'),
-            tooltip: 'סגירה',
-            icon: const Icon(Icons.close),
-            onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
+          // "כל המשימות" (a manager's view) also shows when the task was
+          // created, under ✕ and 🗑, left of the description (msg 4480).
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (manage)
+                    IconButton(
+                      key: const Key('team-task-delete'),
+                      tooltip: 'מחיקת המשימה',
+                      icon: const Icon(Icons.delete_outline, color: TaskStyle.delete),
+                      onPressed: () => _delete(task),
+                    ),
+                  IconButton(
+                    key: const Key('team-task-close'),
+                    tooltip: 'סגירה',
+                    icon: const Icon(Icons.close),
+                    onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              if (manage)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 12, top: 2),
+                  child: Text(
+                    teamTaskCreatedLabel(task, DateTime.now()),
+                    key: const Key('team-task-sheet-created'),
+                    style: teamTaskCreatedStyle,
+                  ),
+                ),
+            ],
           ),
         ],
       ),

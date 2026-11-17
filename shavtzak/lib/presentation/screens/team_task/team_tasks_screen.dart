@@ -761,6 +761,8 @@ class _GroupedListState extends State<_GroupedList> {
           // task (Omer, round 4); every row there is the viewer's own.
           selected: task.id == widget.selectedId,
           canChangeStatus: !widget.editing,
+          // "כל המשימות" only (msg 4480).
+          showCreated: widget.editing,
           onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
           onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
         ),

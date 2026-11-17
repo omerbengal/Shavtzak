@@ -194,6 +194,7 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
                             textInputAction: TextInputAction.next,
                             decoration: InputDecoration(
                               labelText: 'כותרת',
+                              prefixIcon: const Icon(Icons.title),
                               errorText: _titleError,
                               border: const OutlineInputBorder(),
                               counterText: '',
@@ -212,6 +213,7 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
                               maxLines: 5,
                               decoration: const InputDecoration(
                                 labelText: 'תיאור',
+                                prefixIcon: Icon(Icons.notes),
                                 border: OutlineInputBorder(),
                                 alignLabelWithHint: true,
                               ),
@@ -224,9 +226,19 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
                         const SizedBox(height: 16),
                         _deadlineField(state),
                         const SizedBox(height: 16),
-                        TeamTaskUrgencyPicker(
-                          value: _urgency,
-                          onChanged: (urgency) => setState(() => _urgency = urgency),
+                        InputDecorator(
+                          key: const Key('new-team-task-urgency'),
+                          decoration: const InputDecoration(
+                            labelText: 'דחיפות',
+                            prefixIcon: Icon(Icons.flag_outlined),
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsetsDirectional.fromSTEB(0, 14, 12, 10),
+                          ),
+                          child: TeamTaskUrgencyPicker(
+                            value: _urgency,
+                            showLabel: false,
+                            onChanged: (urgency) => setState(() => _urgency = urgency),
+                          ),
                         ),
                         const SizedBox(height: 20),
                         _contactsSection(theme),
@@ -283,7 +295,8 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
     required String? value,
     required VoidCallback onTap,
     VoidCallback? onClear,
-    IconData icon = Icons.arrow_drop_down,
+    required IconData icon,
+    IconData? trailing = Icons.arrow_drop_down,
   }) {
     return InkWell(
       key: key,
@@ -294,13 +307,17 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
+          // The field's own icon on the right (the start, in Hebrew).
+          prefixIcon: Icon(icon),
           suffixIcon: value != null && onClear != null
               ? IconButton(
                   tooltip: 'ניקוי',
                   icon: const Icon(Icons.close, size: 18),
                   onPressed: onClear,
                 )
-              : Icon(icon),
+              : trailing == null
+                  ? null
+                  : Icon(trailing),
         ),
         child: value == null ? null : Text(value),
       ),
@@ -311,6 +328,7 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
     return _pickerField(
       key: const Key('new-team-task-link'),
       label: 'שיוך: אירוע (אחד או יותר), קטגוריה או נושא',
+      icon: Icons.label_outline,
       value: _eventIds.length > 1
           ? _eventIds
               .map((id) => taskLinkName(state, TaskLink(TaskLinkType.event, id)) ?? 'אירוע שנמחק')
@@ -338,7 +356,9 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
       key: const Key('new-team-task-deadline'),
       label: 'דד ליין (לא חובה)',
       value: _deadline == null ? null : fullDate(_deadline!),
+      // The calendar moved from the left to the right (msg 4480).
       icon: Icons.event,
+      trailing: null,
       onTap: () async {
         final picked = await pickTeamTaskDeadline(
           context,
@@ -368,6 +388,7 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
             isEmpty: _owners.isEmpty,
             decoration: InputDecoration(
               labelText: 'אחראים',
+              prefixIcon: const Icon(Icons.group_outlined),
               border: const OutlineInputBorder(),
               suffixIcon: Icon(_ownersOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down),
             ),
@@ -414,7 +435,14 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('אנשי קשר', style: theme.textTheme.titleSmall),
+        Row(
+          key: const Key('new-team-task-contacts-title'),
+          children: [
+            const Icon(Icons.contact_phone_outlined, size: 20),
+            const SizedBox(width: 8),
+            Text('אנשי קשר', style: theme.textTheme.titleSmall),
+          ],
+        ),
         const SizedBox(height: 4),
         if (_showContacts)
           ContactsEditor(
