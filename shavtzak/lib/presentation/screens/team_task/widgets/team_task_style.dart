@@ -109,13 +109,12 @@ String shortDate(DateTime date) => '${date.day}.${date.month}';
 /// `d.M.yyyy`.
 String fullDate(DateTime date) => '${date.day}.${date.month}.${date.year}';
 
-/// When [task] was created, as the team writes a date: `d.M`, with the
-/// year when it is not [now]'s (Israel days). "כל המשימות" shows it (Omer's
-/// boss, msg 4480).
-String teamTaskCreatedLabel(TeamTask task, DateTime now) {
-  final day = IsraelCalendar.calendarDay(task.createdAt);
-  final sameYear = day.year == IsraelCalendar.calendarDay(now).year;
-  return 'נוצרה ${sameYear ? shortDate(day) : fullDate(day)}';
+/// When [task] was created, on Israel's clock: "נוצרה DD/MM, HH:mm", zero
+/// padded, 24 hours (Omer, msg 4516; "כל המשימות" shows it, msg 4480).
+String teamTaskCreatedLabel(TeamTask task) {
+  final at = IsraelCalendar.wallClock(task.createdAt);
+  String two(int n) => n.toString().padLeft(2, '0');
+  return 'נוצרה ${two(at.day)}/${two(at.month)}, ${two(at.hour)}:${two(at.minute)}';
 }
 
 /// The creation date's small, muted look.

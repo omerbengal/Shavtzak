@@ -21,6 +21,7 @@ TeamTask buildTeamTask({
   String? duplicateOfId,
   List<String>? ownerIds,
   List<TaskUpdateEntry> updates = const [],
+  DateTime? createdAt,
 }) {
   return TeamTask(
     id: id,
@@ -37,8 +38,8 @@ TeamTask buildTeamTask({
     duplicateOfId: duplicateOfId,
     ownerIds: ownerIds ?? assigneeIds,
     updates: updates,
-    createdAt: fixtureCreatedAt,
-    updatedAt: fixtureCreatedAt,
+    createdAt: createdAt ?? fixtureCreatedAt,
+    updatedAt: createdAt ?? fixtureCreatedAt,
   );
 }
 

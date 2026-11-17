@@ -13,8 +13,14 @@ import '../../../support/team_tasks_harness.dart';
 void main() {
   final manager = buildMember(id: 'mgr', name: 'מנהלת', isAdmin: true);
   const topic = TaskLink(TaskLinkType.topic, 'p1');
-  final mine = buildTeamTask(id: 'a', title: 'להזמין אולם', link: topic, assigneeIds: ['mgr'])
-      .copyWith(owners: [manager]);
+  // 07:05 UTC on 7 November = 09:05 in Israel (winter, UTC+2).
+  final mine = buildTeamTask(
+    id: 'a',
+    title: 'להזמין אולם',
+    link: topic,
+    assigneeIds: ['mgr'],
+    createdAt: DateTime.utc(2026, 11, 7, 7, 5),
+  ).copyWith(owners: [manager]);
 
   TeamTaskBoard board() => TeamTaskBoard(
         tasks: [mine],
@@ -34,8 +40,8 @@ void main() {
       await tester.pumpAndSettle();
       final created = find.byKey(const Key('team-task-created-a'));
       expect(created, findsOneWidget);
-      // fixtureCreatedAt: 1.10.2026, the same year as the clock (15.11.2026).
-      expect(tester.widget<Text>(created).data, 'נוצרה 1.10');
+      // "נוצרה DD/MM, HH:mm", Israel time (msg 4516).
+      expect(tester.widget<Text>(created).data, 'נוצרה 07/11, 09:05');
       final row = tester.getRect(find.byKey(const Key('team-task-row-a')));
       final date = tester.getRect(created);
       expect(date.left - row.left, lessThan(40));
@@ -50,6 +56,7 @@ void main() {
       await tap(tester, find.byKey(const Key('team-task-row-a')));
       final created = find.byKey(const Key('team-task-sheet-created'));
       expect(created, findsOneWidget);
+      expect(tester.widget<Text>(created).data, 'נוצרה 07/11, 09:05');
       final close = tester.getRect(find.byKey(const Key('team-task-close')));
       final trash = tester.getRect(find.byKey(const Key('team-task-delete')));
       final date = tester.getRect(created);
