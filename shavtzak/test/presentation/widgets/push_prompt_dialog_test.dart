@@ -129,4 +129,24 @@ void main() {
     expect(find.text(pushNotEnabledText), findsOneWidget);
     expect(find.byKey(const Key('push-settings-enable')), findsOneWidget);
   });
+
+  testWidgets('popup: Chrome refuses without its window = the way to allow it', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    bridge.refuseWithoutWindow = true;
+    await open(tester);
+    await tester.tap(find.byKey(const Key('push-prompt-enable')));
+    await tester.pump();
+    expect(find.text(pushNoWindowText), findsOneWidget);
+  });
+
+  testWidgets('settings: Chrome refuses without its window = the way to allow it, button kept', (tester) async {
+    bridge.grantOnSubscribe = 'default';
+    bridge.refuseWithoutWindow = true;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PushSettingsSection(service: service))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('push-settings-enable')));
+    await tester.pumpAndSettle();
+    expect(find.text(pushChromeAllowSteps), findsOneWidget);
+    expect(find.byKey(const Key('push-settings-enable')), findsOneWidget);
+  });
 }

@@ -6,7 +6,7 @@ import 'push_prompt_dialog.dart';
 
 /// How to undo a refusal in the browser's own window (the app cannot).
 const String pushUnblockSteps =
-    'איך לפתוח: אנדרואיד ← המנעול ליד הכתובת ← הרשאות ← התראות. '
+    'איך לפתוח: אנדרואיד ← לפתוח את האתר ב-Chrome ← הסמל שליד הכתובת ← הרשאות ← התראות. '
     'אייפון ← הגדרות ← עדכונים ← shavtzak, או למחוק ולהוסיף שוב למסך הבית.';
 
 /// The "התראות" row of the settings dialog: on (a switch to turn it off), off
@@ -90,9 +90,14 @@ class _PushSettingsSectionState extends State<PushSettingsSection> {
         );
       case PushStatus.off:
       case PushStatus.notAsked:
+      case PushStatus.noWindow:
         body = Column(
           children: [
             const Text('כבוי'),
+            if (status == PushStatus.noWindow) ...[
+              const SizedBox(height: 6),
+              Text(pushChromeAllowSteps, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+            ],
             const SizedBox(height: 8),
             ElevatedButton.icon(
               key: const Key('push-settings-enable'),

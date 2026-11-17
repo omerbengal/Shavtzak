@@ -15,6 +15,12 @@ class FakeBridge implements WebPushBridge {
   String? grantOnSubscribe = 'granted';
   int subscribeCalls = 0;
 
+  /// The browser refuses at once, without its window (Chrome, 17/11/2026).
+  bool refuseWithoutWindow = false;
+
+  @override
+  bool askedWithoutWindow() => refuseWithoutWindow && perm != 'granted';
+
   @override
   String permission() => perm;
 
@@ -154,6 +160,18 @@ void main() {
     bridge.grantOnSubscribe = 'denied';
     expect(await service().enable(), PushStatus.blocked);
     expect(backend.subscribed, isEmpty);
+  });
+
+  test('enable refused by the browser without its window = noWindow', () async {
+    bridge.grantOnSubscribe = 'default';
+    bridge.refuseWithoutWindow = true;
+    expect(await service().enable(), PushStatus.noWindow);
+    expect(backend.subscribed, isEmpty);
+  });
+
+  test('a window closed by the person stays notAsked', () async {
+    bridge.grantOnSubscribe = 'default';
+    expect(await service().enable(), PushStatus.notAsked);
   });
 
   test('disable unsubscribes, deletes on the server and remembers it', () async {

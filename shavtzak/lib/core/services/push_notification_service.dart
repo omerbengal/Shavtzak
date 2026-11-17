@@ -27,6 +27,11 @@ enum PushStatus {
   /// Refused in the browser's own window; only the phone's or the site's
   /// settings can undo it.
   blocked,
+
+  /// "הפעל התראות" only: the browser refused at once without showing its
+  /// window (Chrome's site settings then say "no permission"; Android,
+  /// 17/11/2026). Only the site's settings in Chrome can allow it.
+  noWindow,
 }
 
 /// The server half: the API's `/push/subscribe` and `/push/unsubscribe`.
@@ -100,7 +105,14 @@ class PushNotificationService {
   /// "הפעל התראות" (call it straight from the tap: iPhone asks only then).
   Future<PushStatus> enable() async {
     final json = await _bridge.subscribe(vapidPublicKey);
-    if (json == null) return status();
+    if (json == null) {
+      final now = await status();
+      if (now == PushStatus.notAsked && _bridge.askedWithoutWindow()) {
+        debugPrint('push: the browser refused without showing its window');
+        return PushStatus.noWindow;
+      }
+      return now;
+    }
     await _backend.subscribe(jsonDecode(json) as Map<String, dynamic>);
     await _flags.setTurnedOff(false);
     return PushStatus.enabled;

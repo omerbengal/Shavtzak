@@ -11,6 +11,15 @@ const List<String> iosInstallSteps = [
   'לפתוח משם וללחוץ "הפעל"',
 ];
 
+/// How to allow the notifications when Chrome no longer shows its window
+/// (the path in Chrome on Android, checked on Matan's phone 17/11/2026).
+const String pushChromeAllowSteps =
+    'כדי לאפשר: לפתוח את האתר ב-Chrome ← הסמל שליד הכתובת ← הרשאות ← התראות ← "הרשמה" '
+    '(או "איפוס הרשאות"), ואז שוב "הפעל התראות".';
+
+/// After "הפעל התראות" when Chrome refused without showing its window.
+const String pushNoWindowText = 'הדפדפן לא הציג חלון אישור. $pushChromeAllowSteps';
+
 /// After "הפעל התראות" when the browser gave no permission and did not block.
 const String pushNotEnabledText =
     'ההתראות לא הופעלו: לא התקבל אישור מהדפדפן. אפשר לנסות שוב בהגדרות';
@@ -22,6 +31,8 @@ String? pushEnableResultText(PushStatus status) {
       return '🔔 ההתראות הופעלו במכשיר הזה';
     case PushStatus.blocked:
       return 'ההתראות נחסמו בדפדפן. אפשר לפתוח אותן בהגדרות';
+    case PushStatus.noWindow:
+      return pushNoWindowText;
     case PushStatus.notAsked:
     case PushStatus.off:
       // The browser answered without a "yes" (its window closed, or it never
@@ -146,7 +157,12 @@ Future<void> maybeShowPushPrompt(
         Navigator.of(dialogContext).pop();
         result.then((status) {
           final text = pushEnableResultText(status);
-          if (text != null) messenger?.showSnackBar(SnackBar(content: Text(text)));
+          if (text == null) return;
+          messenger?.showSnackBar(SnackBar(
+            content: Text(text),
+            // Steps to follow need time to read.
+            duration: Duration(seconds: status == PushStatus.noWindow ? 15 : 4),
+          ));
         }).catchError((Object error) {
           debugPrint('push: enable from the popup failed: $error');
           Logger.warning('push:enableFailed', {'error': error.toString()});

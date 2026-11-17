@@ -7,6 +7,7 @@ extension type _ShavtzakPush._(JSObject _) implements JSObject {
   external JSString permission();
   external JSBoolean iosNotInstalled();
   external JSPromise<JSString?> subscribe(JSString publicKey);
+  external JSBoolean askedWithoutWindow();
   external JSPromise<JSString?> current();
   external JSPromise<JSString?> unsubscribe();
 }
@@ -38,6 +39,15 @@ class _BrowserWebPush implements WebPushBridge {
     final push = _push;
     if (push == null) return null;
     return (await push.subscribe(vapidPublicKey.toJS).toDart)?.toDart;
+  }
+
+  @override
+  bool askedWithoutWindow() {
+    try {
+      return _push?.askedWithoutWindow().toDart ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override

@@ -12,6 +12,9 @@ class _NoWebPush implements WebPushBridge {
   Future<String?> subscribe(String vapidPublicKey) async => null;
 
   @override
+  bool askedWithoutWindow() => false;
+
+  @override
   Future<String?> current() async => null;
 
   @override

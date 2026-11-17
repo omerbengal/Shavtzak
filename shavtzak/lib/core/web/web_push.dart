@@ -14,6 +14,11 @@ abstract class WebPushBridge {
   /// device; the subscription's JSON, or null without permission.
   Future<String?> subscribe(String vapidPublicKey);
 
+  /// The last [subscribe] was refused by the browser at once, without
+  /// showing its window (Chrome stops asking a site whose window was closed a
+  /// few times). Never on an iPhone.
+  bool askedWithoutWindow();
+
   /// This device's subscription's JSON, or null; never asks anything.
   Future<String?> current();
 

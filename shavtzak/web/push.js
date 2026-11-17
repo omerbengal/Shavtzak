@@ -39,7 +39,17 @@
     return navigator.serviceWorker.ready;
   }
 
+  // Faster than this = the browser answered without asking the person.
+  const NO_WINDOW_MS = 1000;
+  let noWindow = false;
+
   window.shavtzakPush = {
+    // The last subscribe() was refused by the browser without its window
+    // (not on iPhone, whose settings are elsewhere).
+    askedWithoutWindow() {
+      return noWindow;
+    },
+
     // iPhone / iPad in the browser rather than the home-screen app.
     iosNotInstalled() {
       return isIos() && !isStandalone();
@@ -55,10 +65,21 @@
     // The subscription as JSON, or null when permission was not given.
     async subscribe(publicKey) {
       if (!supported()) return null;
+      noWindow = false;
+      const startedAt = Date.now();
       const asked = Notification.permission === 'granted'
         ? Promise.resolve('granted')
         : Notification.requestPermission();
-      if ((await asked) !== 'granted') return null;
+      const answer = await asked;
+      if (answer !== 'granted') {
+        // No person answers in under a second: the browser refused without
+        // showing its window (Chrome stops asking a site whose window was
+        // closed a few times, and its site settings then say "no
+        // permission"). Seen on Android, 17/11/2026.
+        noWindow = !isIos() && Date.now() - startedAt < NO_WINDOW_MS;
+        console.warn('push: permission not granted:', answer, noWindow ? '(no window shown)' : '');
+        return null;
+      }
       const reg = await registration();
       let sub = await reg.pushManager.getSubscription();
       if (!sub) {
