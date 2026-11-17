@@ -15,6 +15,9 @@ class _NoWebPush implements WebPushBridge {
   bool askedWithoutWindow() => false;
 
   @override
+  String userAgent() => '';
+
+  @override
   Future<String?> current() async => null;
 
   @override

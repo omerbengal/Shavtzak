@@ -34,6 +34,22 @@ enum PushStatus {
   noWindow,
 }
 
+/// Whose settings the "how to allow it" steps point at (17/11/2026: Chrome
+/// and Samsung Internet hide them in different places).
+enum PushBrowser { chrome, samsung, ios, other }
+
+/// [ua] is `navigator.userAgent`. Samsung Internet and most Android browsers
+/// also say "Chrome", so they are told apart first.
+PushBrowser pushBrowserFromUserAgent(String ua) {
+  if (ua.contains('SamsungBrowser')) return PushBrowser.samsung;
+  if (RegExp(r'iPhone|iPad|iPod').hasMatch(ua)) return PushBrowser.ios;
+  if (RegExp(r'EdgA?/|OPR/|YaBrowser|MiuiBrowser|UCBrowser|Firefox/|; wv\)').hasMatch(ua)) {
+    return PushBrowser.other;
+  }
+  if (ua.contains('Chrome/')) return PushBrowser.chrome;
+  return PushBrowser.other;
+}
+
 /// The server half: the API's `/push/subscribe` and `/push/unsubscribe`.
 abstract class PushBackend {
   Future<void> subscribe(Map<String, dynamic> subscription);
@@ -78,6 +94,8 @@ class PushNotificationService {
   final WebPushBridge _bridge;
   final PushBackend _backend;
   final PushDeviceFlags _flags;
+
+  PushBrowser get browser => pushBrowserFromUserAgent(_bridge.userAgent());
 
   Future<PushStatus> status() async {
     switch (_bridge.permission()) {

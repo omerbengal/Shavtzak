@@ -19,6 +19,9 @@ abstract class WebPushBridge {
   /// few times). Never on an iPhone.
   bool askedWithoutWindow();
 
+  /// `navigator.userAgent` (which browser's settings to point at).
+  String userAgent();
+
   /// This device's subscription's JSON, or null; never asks anything.
   Future<String?> current();
 

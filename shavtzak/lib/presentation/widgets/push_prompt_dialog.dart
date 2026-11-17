@@ -11,28 +11,45 @@ const List<String> iosInstallSteps = [
   'לפתוח משם וללחוץ "הפעל"',
 ];
 
-/// How to allow the notifications when Chrome no longer shows its window
-/// (the path in Chrome on Android, checked on Matan's phone 17/11/2026).
-const String pushChromeAllowSteps =
-    'כדי לאפשר: לפתוח את האתר ב-Chrome ← הסמל שליד הכתובת ← הרשאות ← התראות ← "הרשמה" '
-    '(או "איפוס הרשאות"), ואז שוב "הפעל התראות".';
+/// How to allow the notifications in [browser]'s own settings, after a
+/// refusal or when it no longer shows its window. Chrome: checked on Matan's
+/// phone (17/11/2026). Samsung Internet: its menus differ between versions
+/// (Settings ← Notifications, or Sites and downloads ← Site permissions),
+/// so the text names both.
+String pushAllowSteps(PushBrowser browser) {
+  switch (browser) {
+    case PushBrowser.chrome:
+      return 'כדי לאפשר: לפתוח את האתר ב-Chrome ← הסמל שליד הכתובת ← הרשאות ← התראות ← "הרשמה" '
+          '(או "איפוס הרשאות"), ואז שוב "הפעל התראות".';
+    case PushBrowser.samsung:
+      return 'כדי לאפשר ב-Samsung Internet: התפריט ☰ בסרגל התחתון ← הגדרות ← "התראות" '
+          '(או "אתרים והורדות" ← "הרשאות אתר" ← "התראות") ← למצוא את האתר ולאפשר. '
+          'וגם בהגדרות הטלפון ← אפליקציות ← Samsung Internet ← התראות צריכות להיות פעילות. '
+          'ואז שוב "הפעל התראות".';
+    case PushBrowser.ios:
+      return 'באייפון: הגדרות ← עדכונים ← shavtzak, או למחוק ולהוסיף שוב למסך הבית.';
+    case PushBrowser.other:
+      return 'כדי לאפשר: בהגדרות הדפדפן ← הרשאות אתר ← התראות ← לאפשר את האתר, '
+          'ואז שוב "הפעל התראות".';
+  }
+}
 
-/// After "הפעל התראות" when Chrome refused without showing its window.
-const String pushNoWindowText = 'הדפדפן לא הציג חלון אישור. $pushChromeAllowSteps';
+/// After "הפעל התראות" when the browser refused without showing its window.
+String pushNoWindowText(PushBrowser browser) => 'הדפדפן לא הציג חלון אישור. ${pushAllowSteps(browser)}';
 
 /// After "הפעל התראות" when the browser gave no permission and did not block.
 const String pushNotEnabledText =
     'ההתראות לא הופעלו: לא התקבל אישור מהדפדפן. אפשר לנסות שוב בהגדרות';
 
 /// The text after "הפעל התראות", or null when there is nothing to say.
-String? pushEnableResultText(PushStatus status) {
+String? pushEnableResultText(PushStatus status, [PushBrowser browser = PushBrowser.other]) {
   switch (status) {
     case PushStatus.enabled:
       return '🔔 ההתראות הופעלו במכשיר הזה';
     case PushStatus.blocked:
       return 'ההתראות נחסמו בדפדפן. אפשר לפתוח אותן בהגדרות';
     case PushStatus.noWindow:
-      return pushNoWindowText;
+      return pushNoWindowText(browser);
     case PushStatus.notAsked:
     case PushStatus.off:
       // The browser answered without a "yes" (its window closed, or it never
@@ -156,7 +173,7 @@ Future<void> maybeShowPushPrompt(
         final result = push.enable();
         Navigator.of(dialogContext).pop();
         result.then((status) {
-          final text = pushEnableResultText(status);
+          final text = pushEnableResultText(status, push.browser);
           if (text == null) return;
           messenger?.showSnackBar(SnackBar(
             content: Text(text),

@@ -55,6 +55,11 @@
       return isIos() && !isStandalone();
     },
 
+    // For the app's "how to allow it" steps, which differ per browser.
+    userAgent() {
+      return navigator.userAgent || '';
+    },
+
     // 'default' | 'granted' | 'denied' | 'unsupported'
     permission() {
       if (!supported()) return 'unsupported';

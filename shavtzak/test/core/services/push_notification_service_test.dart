@@ -4,6 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/services/push_notification_service.dart';
 import 'package:shavtzak/core/web/web_push.dart';
 
+const chromeAndroidUa =
+    'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36';
+const samsungUa =
+    'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36';
+
 const _sub = '{"endpoint":"https://push.example/1","keys":{"p256dh":"p","auth":"a"}}';
 
 class FakeBridge implements WebPushBridge {
@@ -17,6 +22,11 @@ class FakeBridge implements WebPushBridge {
 
   /// The browser refuses at once, without its window (Chrome, 17/11/2026).
   bool refuseWithoutWindow = false;
+
+  String ua = chromeAndroidUa;
+
+  @override
+  String userAgent() => ua;
 
   @override
   bool askedWithoutWindow() => refuseWithoutWindow && perm != 'granted';
@@ -172,6 +182,46 @@ void main() {
   test('a window closed by the person stays notAsked', () async {
     bridge.grantOnSubscribe = 'default';
     expect(await service().enable(), PushStatus.notAsked);
+  });
+
+  group('pushBrowserFromUserAgent', () {
+    test('Samsung Internet (its user agent also says Chrome)', () {
+      expect(pushBrowserFromUserAgent(samsungUa), PushBrowser.samsung);
+    });
+
+    test('Chrome on Android and on a computer', () {
+      expect(pushBrowserFromUserAgent(chromeAndroidUa), PushBrowser.chrome);
+      expect(
+        pushBrowserFromUserAgent(
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36'),
+        PushBrowser.chrome,
+      );
+    });
+
+    test('iPhone and iPad', () {
+      expect(
+        pushBrowserFromUserAgent(
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1'),
+        PushBrowser.ios,
+      );
+      expect(
+        pushBrowserFromUserAgent(
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0 Mobile/15E148 Safari/604.1'),
+        PushBrowser.ios,
+      );
+    });
+
+    test('other Android browsers and unknown ones', () {
+      for (final ua in [
+        'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36 EdgA/130.0.0.0',
+        'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36 OPR/85.0.0.0',
+        'Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0',
+        'Mozilla/5.0 (Linux; U; Android 13; K) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/116.0.0.0 Mobile Safari/537.36 XiaoMi/MiuiBrowser/14.0',
+        '',
+      ]) {
+        expect(pushBrowserFromUserAgent(ua), PushBrowser.other, reason: ua);
+      }
+    });
   });
 
   test('disable unsubscribes, deletes on the server and remembers it', () async {
