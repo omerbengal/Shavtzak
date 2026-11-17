@@ -39,6 +39,9 @@ class EventTeamMembersDialog extends StatefulWidget {
   /// ([EventAssignmentsSharePreviewDialog]), as the old list had.
   final bool canShare;
 
+  /// What an event with nobody else shows.
+  final String emptyText;
+
   static const double _inset = 6;
   static const double _maxWidth = 620;
 
@@ -55,6 +58,7 @@ class EventTeamMembersDialog extends StatefulWidget {
     this.assignmentBloc,
     this.title = 'מי איתי באירוע?',
     this.canShare = false,
+    this.emptyText = 'אין חברי צוות נוספים באירוע',
   });
 
   String get eventId => event.id;
@@ -206,7 +210,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   Widget _buildEmptyState() {
     return Center(
       child: Text(
-        'אין חברי צוות נוספים באירוע',
+        widget.emptyText,
         style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
       ),
     );

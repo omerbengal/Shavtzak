@@ -619,6 +619,7 @@ class _GroupedListState extends State<_GroupedList> {
         eventItems: context.read<EventItemBloc>().state.catalogue,
         title: 'שיבוצים ל${event.name}',
         canShare: true,
+        emptyText: 'אין עדיין שיבוצים לאירוע',
       ),
     );
   }

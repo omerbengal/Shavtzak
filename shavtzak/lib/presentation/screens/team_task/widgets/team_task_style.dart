@@ -346,27 +346,34 @@ class TeamTaskUrgencyPicker extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           // Less side padding than the default, so a phone keeps the
           // three choices on one line at full size.
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
         ),
         segments: [
           for (final urgency in TeamTaskUrgency.values)
             ButtonSegment(
               value: urgency,
-              icon: TeamTaskUrgencyIcon(
-                urgency: urgency,
-                size: 16,
-                // On the selected (dark) segment the sign turns white.
-                color: urgency == value ? Colors.white : null,
-              ),
-              // One line always (Omer, msg 4581: it wrapped on a phone):
-              // shrinks instead when a segment is too narrow.
+              // The sign and the word in one line, close together (Omer,
+              // msg 4581: it wrapped on a phone); a segment too narrow even
+              // for that shrinks the pair instead of wrapping.
               label: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text(
-                  urgency.hebrewLabel,
-                  key: Key('team-task-urgency-${urgency.key}'),
-                  maxLines: 1,
-                  softWrap: false,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TeamTaskUrgencyIcon(
+                      urgency: urgency,
+                      size: 15,
+                      // On the selected (dark) segment the sign turns white.
+                      color: urgency == value ? Colors.white : null,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      urgency.hebrewLabel,
+                      key: Key('team-task-urgency-${urgency.key}'),
+                      maxLines: 1,
+                      softWrap: false,
+                    ),
+                  ],
                 ),
               ),
             ),
