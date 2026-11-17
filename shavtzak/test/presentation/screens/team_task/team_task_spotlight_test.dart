@@ -523,4 +523,169 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('3/3'), findsOneWidget);
   });
+
+  group('back to the tasks already seen (Omer, msg 4455)', () {
+    Future<void> skip(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('spotlight-skip')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> back(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('spotlight-back')));
+      await tester.pumpAndSettle();
+    }
+
+    String current() => ['a', 'b', 'c']
+        .firstWhere((id) => find.byKey(Key('spotlight-card-$id')).evaluate().isNotEmpty);
+
+    testWidgets('one card at a time down to the first, with no way back from it', (tester) async {
+      await open(tester);
+      bool backEnabled() =>
+          tester.widget<FilledButton>(find.byKey(const Key('spotlight-back'))).onPressed != null;
+      expect(backEnabled(), isFalse);
+      await skip(tester);
+      expect(backEnabled(), isTrue);
+      await skip(tester);
+      expect(current(), 'a');
+      expect(find.text('3/3'), findsOneWidget);
+      await back(tester);
+      expect(current(), 'b');
+      expect(find.text('2/3'), findsOneWidget);
+      await back(tester);
+      expect(current(), 'c');
+      expect(find.text('1/3'), findsOneWidget);
+      expect(backEnabled(), isFalse);
+    });
+
+    testWidgets('forward again keeps the order: nothing skipped, nothing twice', (tester) async {
+      await open(tester);
+      final seen = [current()];
+      await skip(tester);
+      seen.add(current());
+      await back(tester);
+      seen.add(current());
+      await skip(tester);
+      seen.add(current());
+      await skip(tester);
+      seen.add(current());
+      expect(seen, ['c', 'b', 'c', 'b', 'a']);
+      await skip(tester);
+      expect(find.byKey(const Key('spotlight-summary')), findsOneWidget);
+      expect(find.text('עברת על 3 משימות'), findsOneWidget);
+      // Skipped twice, counted once.
+      expect(find.text('3 לפעם אחרת'), findsOneWidget);
+    });
+
+    testWidgets('the card it returns to shows its updates now and takes another one',
+        (tester) async {
+      final harness = await open(tester);
+      await tester.tap(find.byKey(const Key('spotlight-update')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('spotlight-update-field')), 'דיברתי עם הספק');
+      await tester.ensureVisible(find.byKey(const Key('spotlight-send')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('spotlight-send')));
+      await tester.pumpAndSettle();
+      expect(current(), 'b');
+      // The stream brings the saved update.
+      final saved = task('c', 'מוזמנים', link: topic2, updates: [
+        TaskUpdateEntry(
+            id: 'n1',
+            text: 'דיברתי עם הספק',
+            at: DateTime.utc(2026, 11, 15, 8),
+            byId: 'm1',
+            byName: 'דנה'),
+      ]);
+      await harness.deliver(tester, board([recent, quiet, saved, closed]));
+      await tester.pumpAndSettle();
+      await back(tester);
+      expect(current(), 'c');
+      expect(find.byKey(const Key('spotlight-log-n1')), findsOneWidget);
+      expect(find.text('דיברתי עם הספק'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('spotlight-update')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('spotlight-update-field')), 'הספק אישר');
+      await tester.ensureVisible(find.byKey(const Key('spotlight-send')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('spotlight-send')));
+      await tester.pumpAndSettle();
+      expect(harness.repository.calls, ['log:c:דיברתי עם הספק', 'log:c:הספק אישר']);
+      expect(current(), 'b');
+      expect(find.text('2/3'), findsOneWidget);
+    });
+
+    testWidgets('a task closed on the way stays in its place, shown closed, and can reopen',
+        (tester) async {
+      final harness = await open(tester);
+      await tester.tap(find.byKey(const Key('spotlight-done')));
+      await tester.pumpAndSettle();
+      expect(current(), 'b');
+      await back(tester);
+      expect(current(), 'c');
+      expect(
+          find.descendant(
+              of: find.byKey(const Key('spotlight-status-chip')), matching: find.text('בוצעה')),
+          findsOneWidget);
+      // "סיימתי" would change nothing: it moves on instead.
+      expect(find.byKey(const Key('spotlight-done')), findsNothing);
+      expect(find.byKey(const Key('spotlight-next')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('spotlight-status')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')));
+      await tester.pumpAndSettle();
+      expect(harness.repository.calls, ['status:c:done', 'status:c:inProgress']);
+      expect(current(), 'c');
+      await tester.tap(find.byKey(const Key('spotlight-next')));
+      await tester.pumpAndSettle();
+      expect(current(), 'b');
+      await skip(tester);
+      await skip(tester);
+      // Reopened: no longer counted as closed, counted as updated.
+      expect(find.text('אחת עודכנה · 2 לפעם אחרת'), findsOneWidget);
+    });
+
+    testWidgets('the card leaves backwards, to the right, the mirror of "למשימה הבאה"',
+        (tester) async {
+      await open(tester);
+      await skip(tester);
+      final start = tester.getCenter(find.byKey(const Key('spotlight-card-b'))).dx;
+      await tester.tap(find.byKey(const Key('spotlight-back')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+          tester.getCenter(find.byKey(const Key('spotlight-card-b'))).dx, greaterThan(start + 40));
+      await tester.pumpAndSettle();
+      expect(current(), 'c');
+      expect(find.byKey(const Key('spotlight-card-b')), findsNothing);
+    });
+
+    // Geometry only: the test font draws every letter as a full square, far
+    // wider than Rubik, so whether the words fit is checked in a browser.
+    for (final width in [400.0, 1280.0]) {
+      testWidgets(
+          '"אחורה" sits right of the four buttons, centred on them, adding no height '
+          '(${width.round()} px)', (tester) async {
+        await pumpTeamTasks(tester,
+            user: dana, board: board([recent, quiet, never, closed]), size: Size(width, 800));
+        await tester.tap(find.byKey(const Key('spotlight-start')));
+        await tester.pumpAndSettle();
+        await skip(tester);
+        expect(tester.takeException(), isNull);
+        final back = tester.getRect(find.byKey(const Key('spotlight-back')));
+        final update = tester.getRect(find.byKey(const Key('spotlight-update')));
+        final done = tester.getRect(find.byKey(const Key('spotlight-done')));
+        final skipRect = tester.getRect(find.byKey(const Key('spotlight-skip')));
+        final status = tester.getRect(find.byKey(const Key('spotlight-status')));
+        // On the screen's right (RTL start), beside the whole block.
+        for (final r in [update, done, skipRect, status]) {
+          expect(back.left, greaterThan(r.right));
+        }
+        // Centred on the two rows.
+        expect((back.center.dy - (update.top + status.bottom) / 2).abs(), lessThan(1));
+        // No more height than the two rows.
+        expect(back.height, lessThanOrEqualTo(status.bottom - update.top));
+        expect(back.width, lessThan(update.width));
+      });
+    }
+  });
 }

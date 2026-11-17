@@ -76,9 +76,21 @@ class TeamTaskSection extends Equatable {
     required this.tasks,
   });
 
+  /// The same section with [task] drawn in place of its own version.
+  TeamTaskSection withTask(TeamTask task) => TeamTaskSection(
+        key: key,
+        eventId: eventId,
+        event: event,
+        label: label,
+        tasks: _swapTask(tasks, task),
+      );
+
   @override
   List<Object?> get props => [key, eventId, event, label, tasks];
 }
+
+List<TeamTask> _swapTask(List<TeamTask> tasks, TeamTask task) =>
+    [for (final t in tasks) t.id == task.id ? task : t];
 
 /// One card of the list (16/11/2026). A category's card holds, on top, the
 /// tasks of the category itself ([tasks]), then, as a list of their own, the
@@ -126,6 +138,19 @@ class TeamTaskGroup extends Equatable {
         if (seen.add(task.id)) task,
     ];
   }
+
+  /// The same card with [task] drawn in place of its own version, where it
+  /// is (the task held in its place, TeamTaskHoldPlace).
+  TeamTaskGroup withTask(TeamTask task) => TeamTaskGroup(
+        key: key,
+        label: label,
+        type: type,
+        link: link,
+        event: event,
+        tasks: _swapTask(tasks, task),
+        severalEventTasks: _swapTask(severalEventTasks, task),
+        sections: [for (final section in sections) section.withTask(task)],
+      );
 
   @override
   List<Object?> get props =>

@@ -58,6 +58,11 @@ class TeamTasksScreen extends StatefulWidget {
   /// "שובצת למשימה" notification opens (web/sw.js).
   final String? openTaskId;
 
+  /// "כל המשימות" opens with its cards folded (Omer, msg 4466). Tests of
+  /// other things on that tab turn it off to reach the rows at once.
+  @visibleForTesting
+  static bool foldAllTabByDefault = true;
+
   @override
   State<TeamTasksScreen> createState() => _TeamTasksScreenState();
 }
@@ -70,9 +75,29 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// null = closed.
   String? _panelTaskId;
 
-  /// The link cards folded to their header (round 7), by group key; kept
-  /// while the screen is open, across both tabs.
-  final Set<String> _collapsed = {};
+  /// The cards (and event sections) the viewer folded or opened by hand,
+  /// by key, against each tab's default; kept while the screen is open.
+  /// "המשימות שלי" opens with every card open (round 7), "כל המשימות" with
+  /// every card folded to its header (Omer, msg 4466), so a tap there
+  /// opens one: [_collapsedIn].
+  final Set<String> _toggledMine = {};
+  final Set<String> _toggledAll = {};
+
+  /// Whether the list shown is "כל המשימות" (a manager's first tab).
+  bool _onAll(bool canManage) => canManage && _showAll;
+
+  /// The keys folded now in the tab of [groups] ([all] = "כל המשימות"):
+  /// the tab's default, flipped wherever the viewer tapped.
+  Set<String> _collapsedIn(List<TeamTaskGroup> groups, {required bool all}) {
+    final toggled = all ? _toggledAll : _toggledMine;
+    final byDefault = all && TeamTasksScreen.foldAllTabByDefault
+        ? {for (final group in groups) group.key}
+        : const <String>{};
+    return {
+      ...byDefault.difference(toggled),
+      ...toggled.difference(byDefault),
+    };
+  }
 
   /// The rows a "בליץ" pass just changed: they flash green for a moment on
   /// the way back to the list; [_flashRound] restarts the flash.
@@ -133,6 +158,15 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       if (canManage && _showAll && state.mine.any((task) => task.id == id)) {
         setState(() => _showAll = false);
       }
+      // "כל המשימות" opens with its cards folded (Omer, msg 4466): the card
+      // holding the task opens, so its row shows beside the open task.
+      if (_onAll(canManage)) {
+        final holding = [
+          for (final group in state.allGroups)
+            if (group.allTasks.any((task) => task.id == id)) group.key,
+        ];
+        setState(() => _setFolded(holding, fold: false, all: true));
+      }
       if (_splitting(context)) {
         _openPanel(id);
       } else {
@@ -144,24 +178,54 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   void _openPanel(String taskId) {
     Logger.action('tap:teamTaskPanelOpen');
     setState(() => _panelTaskId = taskId);
+    _holdPlace(taskId);
   }
 
   void _closePanel() {
     Logger.action('tap:teamTaskPanelClose');
     setState(() => _panelTaskId = null);
+    _holdPlace(null);
   }
 
-  void _toggleGroup(String key) {
-    Logger.action('tap:teamTaskGroupFold', {'group': key});
+  /// The task open in the side panel keeps its place in the list until the
+  /// panel closes, another task opens or the tab changes (Omer, msg 4476):
+  /// [TeamTaskHoldPlace].
+  TeamTaskBloc? _bloc;
+
+  void _holdPlace(String? taskId) {
+    final bloc = _bloc;
+    if (bloc != null && !bloc.isClosed) bloc.add(TeamTaskHoldPlace(taskId));
+  }
+
+  void _toggleGroup(String key, {required bool all}) {
+    Logger.action('tap:teamTaskGroupFold', {'group': key, 'all': all});
+    final toggled = all ? _toggledAll : _toggledMine;
     setState(() {
-      if (!_collapsed.remove(key)) _collapsed.add(key);
+      if (!toggled.remove(key)) toggled.add(key);
     });
+  }
+
+  /// Folds ([fold]) or opens the cards [keys] of one tab, whatever that
+  /// tab's default.
+  void _setFolded(Iterable<String> keys, {required bool fold, required bool all}) {
+    final toggled = all ? _toggledAll : _toggledMine;
+    // "כל המשימות" folds a card by default: there opening it is the flip.
+    final foldedByDefault = all && TeamTasksScreen.foldAllTabByDefault;
+    for (final key in keys) {
+      final flipped = foldedByDefault ? !fold : fold;
+      if (flipped) {
+        toggled.add(key);
+      } else {
+        toggled.remove(key);
+      }
+    }
   }
 
   /// "סגירת כל השיוכים" / "פתיחת כל השיוכים" (round 7): one button that
   /// folds every card, then opens them all again.
-  Widget _foldAllButton(List<TeamTaskGroup> groups) {
-    final allClosed = groups.isNotEmpty && groups.every((g) => _collapsed.contains(g.key));
+  Widget _foldAllButton(List<TeamTaskGroup> groups, {required bool all}) {
+    final collapsed = _collapsedIn(groups, all: all);
+    final allClosed = groups.isNotEmpty && groups.every((g) => collapsed.contains(g.key));
     return IconButton(
       key: const Key('team-tasks-fold-all'),
       tooltip: allClosed ? 'פתיחת כל השיוכים' : 'סגירת כל השיוכים',
@@ -170,13 +234,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
           ? null
           : () {
               Logger.action('tap:teamTasksFoldAll', {'close': !allClosed});
-              setState(() {
-                if (allClosed) {
-                  _collapsed.removeAll(groups.map((g) => g.key));
-                } else {
-                  _collapsed.addAll(groups.map((g) => g.key));
-                }
-              });
+              setState(() => _setFolded(groups.map((g) => g.key), fold: !allClosed, all: all));
             },
     );
   }
@@ -225,6 +283,12 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bloc = context.read<TeamTaskBloc>();
+  }
+
+  @override
   void initState() {
     super.initState();
     _pendingOpen = widget.openTaskId;
@@ -237,6 +301,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
 
   @override
   void dispose() {
+    if (_panelTaskId != null) _holdPlace(null);
     _warmTimer?.cancel();
     _blitzWarmTimer?.cancel();
     super.dispose();
@@ -294,7 +359,8 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                         )
                       : const MemberSettingsButton(),
                   actions: [
-                    if (state is TeamTasksLoaded) _foldAllButton(_shownGroups(state, canManage)),
+                    if (state is TeamTasksLoaded)
+                      _foldAllButton(_shownGroups(state, canManage), all: _onAll(canManage)),
                     if (editing)
                       PopupMenuButton<String>(
                         key: const Key('team-tasks-menu'),
@@ -377,8 +443,8 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
               // "מסך מנהלים" (round 10).
               showAssignments: user.isAdmin || user.canAccessSummaryScreen,
               viewerId: state.viewer.id,
-              collapsed: _collapsed,
-              onToggleGroup: _toggleGroup,
+              collapsed: _collapsedIn(groups, all: all),
+              onToggleGroup: (key) => _toggleGroup(key, all: all),
               selectedId: split ? _panelTaskId : null,
               flash: _flash,
               flashRound: _flashRound,
@@ -476,6 +542,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                   // The panel belongs to a tab (editing or not).
                   _panelTaskId = null;
                 });
+                _holdPlace(null);
               },
             ),
           ),
@@ -694,6 +761,8 @@ class _GroupedListState extends State<_GroupedList> {
           // task (Omer, round 4); every row there is the viewer's own.
           selected: task.id == widget.selectedId,
           canChangeStatus: !widget.editing,
+          // "כל המשימות" only (msg 4480).
+          showCreated: widget.editing,
           onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
           onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
         ),

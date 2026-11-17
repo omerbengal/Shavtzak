@@ -53,6 +53,20 @@ class UpdateTeamTask extends TeamTaskEvent {
   List<Object?> get props => [task];
 }
 
+/// The task open in the side panel (a wide window) keeps its place in the
+/// list while it stays open (Omer, msg 4476): a change to its owners,
+/// urgency, status or link shows on its row but moves it, or drops it from a
+/// filter, only once the panel closes or another task is chosen. [id] null
+/// lets it go.
+class TeamTaskHoldPlace extends TeamTaskEvent {
+  final String? id;
+
+  const TeamTaskHoldPlace(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
 /// A manager's change to one field that is not sent yet (a picker with no
 /// save button waits a moment for the next tick, [DebouncedSaver]): shown
 /// over task [id] at once. [apply] null drops it.

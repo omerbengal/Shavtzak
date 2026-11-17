@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/israel_calendar.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../task/task_style.dart';
 
@@ -107,6 +108,18 @@ String shortDate(DateTime date) => '${date.day}.${date.month}';
 
 /// `d.M.yyyy`.
 String fullDate(DateTime date) => '${date.day}.${date.month}.${date.year}';
+
+/// When [task] was created, as the team writes a date: `d.M`, with the
+/// year when it is not [now]'s (Israel days). "כל המשימות" shows it (Omer's
+/// boss, msg 4480).
+String teamTaskCreatedLabel(TeamTask task, DateTime now) {
+  final day = IsraelCalendar.calendarDay(task.createdAt);
+  final sameYear = day.year == IsraelCalendar.calendarDay(now).year;
+  return 'נוצרה ${sameYear ? shortDate(day) : fullDate(day)}';
+}
+
+/// The creation date's small, muted look.
+const TextStyle teamTaskCreatedStyle = TextStyle(fontSize: 12, color: TaskStyle.faintText);
 
 /// `d.M HH:mm` in local time, for the update log.
 String logStamp(DateTime at) {

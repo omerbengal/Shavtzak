@@ -111,6 +111,14 @@ abstract final class SpotlightStyle {
   /// the left in Hebrew.
   static const Duration next = Duration(milliseconds: 420);
 
+  /// "אחורה" (Omer, msg 4455: back to the tasks already seen): the mirror
+  /// of [next], the card slides out backwards, to the right in Hebrew, and the
+  /// previous one fades in.
+  static const Duration back = next;
+
+  /// "אחורה"'s width, beside the four actions (Omer, msg 4463).
+  static const double backWidth = 64;
+
   /// Below this height the card and its buttons scroll together (a phone on
   /// its side); above it they always fit, the updates log taking what is
   /// left (Omer, msg 4070: Safari's bars cut the buttons off).
@@ -168,7 +176,7 @@ abstract final class SpotlightStyle {
 }
 
 /// How the current card leaves.
-enum _Exit { none, skip, done, update, next }
+enum _Exit { none, skip, done, update, next, back }
 
 class TeamTaskSpotlight extends StatefulWidget {
   const TeamTaskSpotlight({super.key, required this.taskIds, this.title, this.clock});
@@ -197,6 +205,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
 
   /// The current card's way out, while [_exit] runs.
   _Exit _exitKind = _Exit.none;
+
+  /// The last move was "אחורה": the counter rolls the other way.
+  bool _wentBack = false;
 
   /// The update just sent, shown in the log until the stream brings it.
   String? _echo;
@@ -294,9 +305,15 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   }
 
   /// The next card fades in (or the summary, after the last one).
-  void _next() {
+  void _next() => _show(_index + 1);
+
+  /// Card [index] fades in, as the stream has it now: [widget.taskIds] never
+  /// changes during a pass, so a task closed or reopened on the way keeps its
+  /// place and going back and forth never skips or repeats one.
+  void _show(int index) {
     setState(() {
-      _index++;
+      _wentBack = index < _index;
+      _index = index;
       _composing = false;
       _echo = null;
       _flightFrom = null;
@@ -320,16 +337,18 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     setState(() => _exitKind = kind);
     // Not for a sent update: its row still glows inside the card.
     _cardPicture.allowSnapshotting =
-        kind == _Exit.skip || kind == _Exit.done || kind == _Exit.next;
+        kind == _Exit.skip || kind == _Exit.done || kind == _Exit.next || kind == _Exit.back;
     _exit.duration = switch (kind) {
       _Exit.skip => SpotlightStyle.fling,
       _Exit.done => SpotlightStyle.done,
       _Exit.next => SpotlightStyle.next,
+      _Exit.back => SpotlightStyle.back,
       _Exit.update => SpotlightStyle.update,
       _Exit.none => Duration.zero,
     };
     await _exit.forward(from: 0).orCancel.catchError((_) {});
-    if (mounted && _exitKind == kind) _next();
+    if (!mounted || _exitKind != kind) return;
+    kind == _Exit.back ? _show(_index - 1) : _next();
   }
 
   void _celebrate() {
@@ -376,6 +395,18 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     Logger.action('tap:spotlightNext');
     HapticFeedback.selectionClick();
     _leaveCard(_Exit.next);
+  }
+
+  /// "אחורה": back to the card before this one, one at a time down to the
+  /// first. Its status and log are whatever they are now, so it can be
+  /// updated again.
+  void _goBack() {
+    if (_leaving || _index == 0) return;
+    Logger.action('tap:spotlightBack', {'at': _index});
+    HapticFeedback.selectionClick();
+    // A "ביטול" offered for the card left behind belongs to it, not here.
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+    _leaveCard(_Exit.back);
   }
 
   void _openComposer() {
@@ -526,9 +557,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     final at = _index;
     if (!await _setStatus(task, status, original: original) || !mounted) return;
     if (status.isActive) {
-      // It counts as updated, and "סיימתי" turns into "למשימה הבאה".
+      // It counts as updated, and "סיימתי" turns into "למשימה הבאה". A task
+      // closed earlier in the pass and reopened on the way back is no longer
+      // counted as closed.
       HapticFeedback.selectionClick();
-      setState(() => _tally = _tally.update(task.id));
+      setState(() => _tally = _tally.reopen(task.id).update(task.id));
       return;
     }
     setState(() => _tally = _tally.close(task.id));
@@ -707,7 +740,9 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 320),
                     transitionBuilder: (child, animation) => SlideTransition(
-                      position: Tween(begin: const Offset(0, 0.8), end: Offset.zero)
+                      // Forward the next number rolls up from below; back,
+                      // down from above.
+                      position: Tween(begin: Offset(0, _wentBack ? -0.8 : 0.8), end: Offset.zero)
                           .chain(CurveTween(curve: Curves.easeOutCubic))
                           .animate(animation),
                       child: FadeTransition(opacity: animation, child: child),
@@ -889,6 +924,11 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             lowerOpacity *= 1 - const Interval(0, 0.3).transform(e);
           case _Exit.next:
             dx = -1.15 * Curves.easeInCubic.transform(e);
+            opacity *= 1 - const Interval(0.5, 1).transform(e);
+            lowerOpacity *= 1 - const Interval(0, 0.35).transform(e);
+          case _Exit.back:
+            // The mirror of "למשימה הבאה": out to the right, backwards.
+            dx = 1.15 * Curves.easeInCubic.transform(e);
             opacity *= 1 - const Interval(0.5, 1).transform(e);
             lowerOpacity *= 1 - const Interval(0, 0.35).transform(e);
           case _Exit.update:
@@ -1464,6 +1504,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
   Widget _bigButton({
     required Key key,
     required String label,
+    EdgeInsetsGeometry? padding,
     IconData? icon,
     IconData? trailingIcon,
     required Color background,
@@ -1476,6 +1517,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
       child: FilledButton(
         key: key,
         style: FilledButton.styleFrom(
+          padding: padding,
           backgroundColor: background,
           foregroundColor: foreground,
           disabledBackgroundColor: background.withValues(alpha: 0.5),
@@ -1503,8 +1545,82 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
     );
   }
 
+  /// The four actions in two rows, and "אחורה" beside them on the right
+  /// (Omer, msg 4463): narrow, centred on the two rows' height, so the card
+  /// loses no height. It is there from a pass of two tasks on, greyed out on
+  /// the first card, so the four keep the same width on every card.
   Widget _actions(TeamTask task, double s) {
+    final withBack = _total > 1;
+    final grid = _grid(task, s, tight: withBack && _narrow(context));
+    return Column(
+      children: [
+        if (!withBack)
+          grid
+        else
+          Row(
+            children: [
+              _backButton(s),
+              SizedBox(width: 10 * s),
+              Expanded(child: grid),
+            ],
+          ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          child: _busy
+              ? const Padding(
+                  padding: EdgeInsets.only(top: 14),
+                  child: SizedBox(
+                    key: Key('spotlight-busy'),
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  /// A phone: the four buttons beside "אחורה" pad less, so their words fit.
+  bool _narrow(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < SpotlightStyle.fillBelowWidth;
+
+  /// "אחורה": the lower row's grey and corners, as tall as one button, the
+  /// arrow (pointing right, back in Hebrew) over the word, so it stays narrow.
+  Widget _backButton(double s) {
+    final enabled = _index > 0 && !_busy && !_leaving;
+    return SizedBox(
+      width: SpotlightStyle.backWidth * s,
+      height: SpotlightStyle.buttonHeight * s,
+      child: FilledButton(
+        key: const Key('spotlight-back'),
+        style: FilledButton.styleFrom(
+          padding: EdgeInsets.zero,
+          backgroundColor: TaskStyle.chip,
+          foregroundColor: TaskStyle.neutralText,
+          disabledBackgroundColor: TaskStyle.chip.withValues(alpha: 0.5),
+          disabledForegroundColor: TaskStyle.neutralText.withValues(alpha: 0.35),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          textStyle: TextStyle(fontSize: 14 * s, fontWeight: FontWeight.w800),
+        ),
+        onPressed: enabled ? _goBack : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Mirrored in Hebrew: points right, back.
+            Icon(Icons.arrow_back_rounded, size: 22 * s),
+            SizedBox(height: 2 * s),
+            const Text('אחורה', maxLines: 1),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _grid(TeamTask task, double s, {required bool tight}) {
     final gap = SizedBox(width: 10 * s);
+    final padding = tight ? EdgeInsets.symmetric(horizontal: 8 * s) : null;
     return Column(
       children: [
         Row(
@@ -1512,6 +1628,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             Expanded(
               child: _bigButton(
                 key: const Key('spotlight-update'),
+                padding: padding,
                 label: 'עדכון קצר',
                 icon: Icons.add_comment_outlined,
                 background: TaskStyle.currentLight,
@@ -1524,9 +1641,12 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             Expanded(
               // After a status change "סיימתי" gives way to "למשימה הבאה", not
               // green (Omer, msg 4070).
-              child: _tally.updated.contains(task.id)
+              // A task already closed (visited again with "אחורה") moves on
+              // the same way: "סיימתי" would change nothing.
+              child: _tally.updated.contains(task.id) || !task.status.isActive
                   ? _bigButton(
                       key: const Key('spotlight-next'),
+                      padding: padding,
                       label: 'למשימה הבאה',
                       trailingIcon: Icons.arrow_forward_rounded,
                       background: TaskStyle.mine,
@@ -1536,6 +1656,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                     )
                   : _bigButton(
                       key: const Key('spotlight-done'),
+                      padding: padding,
                       label: 'סיימתי',
                       icon: Icons.check_rounded,
                       background: TaskStyle.done,
@@ -1552,6 +1673,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             Expanded(
               child: _bigButton(
                 key: const Key('spotlight-skip'),
+                padding: padding,
                 label: 'לא עכשיו',
                 icon: Icons.schedule,
                 background: TaskStyle.chip,
@@ -1582,12 +1704,17 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
                     children: [
                       TeamTaskStatusIcon(status: task.status, size: 22 * s),
                       SizedBox(width: 8 * s),
-                      Text(
-                        'סטטוס',
-                        style: TextStyle(
-                          fontSize: SpotlightStyle.buttonFont * s,
-                          fontWeight: FontWeight.w800,
-                          color: TaskStyle.neutralText,
+                      // Flexible: beside "אחורה" on a small phone the box is
+                      // narrower, and a long word must never overflow it.
+                      Flexible(
+                        child: Text(
+                          'סטטוס',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: SpotlightStyle.buttonFont * s,
+                            fontWeight: FontWeight.w800,
+                            color: TaskStyle.neutralText,
+                          ),
                         ),
                       ),
                       const Icon(Icons.arrow_drop_down, color: TaskStyle.neutralText),
@@ -1597,20 +1724,6 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
               ),
             ),
           ],
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          child: _busy
-              ? const Padding(
-                  padding: EdgeInsets.only(top: 14),
-                  child: SizedBox(
-                    key: Key('spotlight-busy'),
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
         ),
       ],
     );

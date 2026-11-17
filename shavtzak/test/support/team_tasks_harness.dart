@@ -32,6 +32,10 @@ class TeamTasksHarness {
 }
 
 /// Pumps the team tasks screen for [user], then delivers [board].
+///
+/// [foldAllTab]: "כל המשימות" opens with its cards folded, as in the app
+/// (Omer, msg 4466). Off by default here, so tests of other things reach the
+/// rows at once; the tests of the folding turn it on.
 Future<TeamTasksHarness> pumpTeamTasks(
   WidgetTester tester, {
   required TeamMember user,
@@ -40,10 +44,13 @@ Future<TeamTasksHarness> pumpTeamTasks(
   DateTime Function()? clock,
   String? openTaskId,
   TeamTasksPlace place = TeamTasksPlace.standalone,
+  bool foldAllTab = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  TeamTasksScreen.foldAllTabByDefault = foldAllTab;
+  addTearDown(() => TeamTasksScreen.foldAllTabByDefault = true);
 
   final repository = FakeTeamTaskRepository();
   final bloc = TeamTaskBloc(
