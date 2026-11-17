@@ -32,7 +32,9 @@ String? teamTasksRedirect(String strippedRoute, TeamMember user) {
   return null;
 }
 
-/// Who gets the team-task notifications ("שובצת למשימה"): today an admin.
-/// The backend's twin is `canReceiveTaskPush` in functions/src/push.ts:
-/// change both together.
-bool canGetTeamTaskNotifications(TeamMember user) => user.isAdmin;
+/// Who gets the team-task notifications ("שובצת למשימה"): every active,
+/// unarchived member (Omer, 17/11/2026: any member can own a task, and the
+/// "משימות" tab opens for them once they do). The backend's twin is
+/// `canReceiveTaskPush` in functions/src/push.ts: change both together.
+bool canGetTeamTaskNotifications(TeamMember user) =>
+    user.isActive && !user.isArchived;

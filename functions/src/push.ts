@@ -56,12 +56,11 @@ export function addedOwnerIds(
   return [...new Set(after.ownerIds)].filter((id) => !had.has(id) && id !== actorId);
 }
 
-/** Who gets the team-task notifications: whoever can open the team tasks
- * screen, which today is an admin (`teamTasksRedirect` in the app; its twin is
- * `canGetTeamTaskNotifications`). When the screen opens to more members,
- * change both. */
+/** Who gets the team-task notifications: every active, unarchived member
+ * (Omer, 17/11/2026; an owner can open the task from the members' "משימות"
+ * tab). Its twin in the app is `canGetTeamTaskNotifications`: change both. */
 export function canReceiveTaskPush(member: Record<string, unknown>): boolean {
-  return member['isAdmin'] === true && member['isActive'] === true && member['isArchived'] !== true;
+  return member['isActive'] === true && member['isArchived'] !== true;
 }
 
 export type PushMessage = {title: string; body: string; tag: string; path: string};
