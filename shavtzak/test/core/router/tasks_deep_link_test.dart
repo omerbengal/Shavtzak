@@ -247,11 +247,21 @@ void main() {
       }
     });
 
-    test('a member who is not an admin still ends at home', () {
+    test('a member who is not an admin lands on the task in the "משימות" tab',
+        () {
       AppRouter.debugSetPendingDeepLink('/team-tasks?task=t1');
       final dest = AppRouter.postAuthDestination('/user/assignments');
+      expect(dest, '/team-tasks?task=t1');
+      // The router sends them to the tab and keeps the query.
       expect(teamTasksRedirect(Uri.parse(dest).path, buildMember()),
-          '/user/assignments');
+          '/user/team-tasks');
+    });
+
+    test("a link to the members' tab is kept with its task too", () {
+      expect(AppRouter.pendingTasksLinkFor('#/user/team-tasks?task=t1'),
+          '/user/team-tasks?task=t1');
+      expect(AppRouter.pendingTasksLinkFor('#/test/user/team-tasks?task=t1'),
+          '/test/user/team-tasks?task=t1');
     });
 
     test('a signed-out visit (app already open) is remembered with its task',

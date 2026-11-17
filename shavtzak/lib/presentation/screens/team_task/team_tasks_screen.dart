@@ -19,9 +19,11 @@ import '../../../domain/entities/team_task.dart';
 import '../../bloc/team_task/team_task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../event/widgets/event_assignments_dialog.dart';
 import '../task/task_style.dart';
+import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
 import 'widgets/task_link_picker.dart';
 import 'widgets/team_task_filter_bar.dart';
@@ -45,7 +47,12 @@ import 'widgets/topic_management_dialog.dart';
 void resetTeamTasksBlitzWarmup() => _TeamTasksScreenState._blitzWarmed = false;
 
 class TeamTasksScreen extends StatefulWidget {
-  const TeamTasksScreen({super.key, this.openTaskId});
+  const TeamTasksScreen({super.key, this.place = TeamTasksPlace.standalone, this.openTaskId});
+
+  /// The admins' own screen, or the members' "משימות" tab, which has the
+  /// member bar's buttons instead of "home" and no test banner of its own
+  /// (the shell has one).
+  final TeamTasksPlace place;
 
   /// A task to open once the list is loaded: `?task=<id>`, the link a
   /// "שובצת למשימה" notification opens (web/sw.js).
@@ -240,7 +247,8 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     context.go('${EnvironmentService.instance.routePrefix}${AppRouter.homeFor(user)}');
   }
 
-  Widget _withBanner(Widget child) => TestEnvironmentIndicator(child: child);
+  Widget _withBanner(Widget child) =>
+      widget.place == TeamTasksPlace.standalone ? TestEnvironmentIndicator(child: child) : child;
 
   Future<void> _newTask() async {
     Logger.action('tap:newTeamTask');
@@ -277,12 +285,14 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                 appBar: AppBar(
                   title: const Text('משימות'),
                   automaticallyImplyLeading: false,
-                  leading: IconButton(
-                    key: const Key('team-tasks-home'),
-                    tooltip: 'חזרה לדף הבית',
-                    icon: const Icon(Icons.home_outlined),
-                    onPressed: () => _goHome(user),
-                  ),
+                  leading: widget.place == TeamTasksPlace.standalone
+                      ? IconButton(
+                          key: const Key('team-tasks-home'),
+                          tooltip: 'חזרה לדף הבית',
+                          icon: const Icon(Icons.home_outlined),
+                          onPressed: () => _goHome(user),
+                        )
+                      : const MemberSettingsButton(),
                   actions: [
                     if (state is TeamTasksLoaded) _foldAllButton(_shownGroups(state, canManage)),
                     if (editing)
@@ -301,6 +311,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                           ),
                         ],
                       ),
+                    if (widget.place == TeamTasksPlace.tab) MemberBarActions(user: user),
                   ],
                 ),
                 // The panel opens on the left, where the button sits in RTL:

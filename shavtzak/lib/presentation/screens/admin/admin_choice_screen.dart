@@ -430,7 +430,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
           isCompact: isCompact,
           onTap: () {
             Logger.action('tap:teamTasks');
-            context.go(teamTasksRoute);
+            context.go(TeamTasksPlace.standalone.route);
           },
         );
       case HomeCardIds.summary:
