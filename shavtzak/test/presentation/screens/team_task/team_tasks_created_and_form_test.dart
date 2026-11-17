@@ -41,13 +41,15 @@ void main() {
       final created = find.byKey(const Key('team-task-created-a'));
       expect(created, findsOneWidget);
       // "נוצרה DD/MM, HH:mm", Israel time (msg 4516).
-      expect(tester.widget<Text>(created).data, 'נוצרה 07/11, 09:05');
+      expect(find.descendant(of: created, matching: find.text('נוצרה 07/11, 09:05')), findsOneWidget);
       final row = tester.getRect(find.byKey(const Key('team-task-row-a')));
       final date = tester.getRect(created);
       expect(date.left - row.left, lessThan(40));
       expect(row.bottom - date.bottom, lessThan(20));
       // Small and muted.
-      expect(tester.widget<Text>(created).style!.fontSize, lessThan(13));
+      expect(
+          tester.widget<Text>(find.descendant(of: created, matching: find.byType(Text))).style!.fontSize,
+          lessThan(13));
     });
 
     testWidgets('"כל המשימות": in the details card, under ✕ and 🗑', (tester) async {
@@ -56,7 +58,7 @@ void main() {
       await tap(tester, find.byKey(const Key('team-task-row-a')));
       final created = find.byKey(const Key('team-task-sheet-created'));
       expect(created, findsOneWidget);
-      expect(tester.widget<Text>(created).data, 'נוצרה 07/11, 09:05');
+      expect(find.descendant(of: created, matching: find.text('נוצרה 07/11, 09:05')), findsOneWidget);
       final close = tester.getRect(find.byKey(const Key('team-task-close')));
       final trash = tester.getRect(find.byKey(const Key('team-task-delete')));
       final date = tester.getRect(created);

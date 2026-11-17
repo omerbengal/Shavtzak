@@ -12,16 +12,18 @@ import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/israel_calendar.dart';
 import '../../../core/utils/team_task_rules.dart';
 import '../../../core/utils/team_task_spotlight.dart';
-import '../../../data/repositories/assignment_repository.dart';
+import '../../../data/repositories/assignment_label_repository.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/team_task.dart';
+import '../../bloc/event_item/event_item_bloc.dart';
+import '../../bloc/event_item/event_item_state.dart';
 import '../../bloc/team_task/team_task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/event_team_members_dialog.dart';
 import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
-import '../event/widgets/event_assignments_dialog.dart';
 import '../task/task_style.dart';
 import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
@@ -603,27 +605,23 @@ class _GroupedList extends StatefulWidget {
 }
 
 class _GroupedListState extends State<_GroupedList> {
-  /// The event's "שיבוצים ל…" window with its share button, as the 👥 of
-  /// every event in "מסך מנהלים" (Omer, round 10).
+  /// The event's assignments as the live "תמונת שיבוצים" picture of "מי איתי
+  /// באירוע?" (Omer, msg 4581: the 👥 showed the old list), with its share
+  /// button, as the 👥 of every event in "מסך מנהלים" (round 10).
   Future<void> _showAssignments(Event event) async {
     Logger.action('open:teamTaskEventAssignments', {'eventId': event.id});
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    try {
-      final assignments =
-          await context.read<AssignmentRepository>().getAssignmentsByEvent(event.id);
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (_) => EventAssignmentsDialog.withAssignments(
-          event: event,
-          assignments: assignments,
-          // No "by labels" switch here (Omer, round 10 review, msg 3812).
-          showLabelGrouping: false,
-        ),
-      );
-    } catch (_) {
-      messenger?.showSnackBar(const SnackBar(content: Text('טעינת השיבוצים נכשלה')));
-    }
+    await showDialog<void>(
+      context: context,
+      builder: (_) => EventTeamMembersDialog(
+        event: event,
+        currentUserId: widget.viewerId,
+        labels: context.read<AssignmentLabelRepository>().watchAssignmentLabels(),
+        eventItems: context.read<EventItemBloc>().state.catalogue,
+        title: 'שיבוצים ל${event.name}',
+        canShare: true,
+        emptyText: 'אין עדיין שיבוצים לאירוע',
+      ),
+    );
   }
 
   /// "+" on a card (round 10): a new task already linked to it.
@@ -967,7 +965,7 @@ class _GroupedListState extends State<_GroupedList> {
                     children: [
                       Expanded(
                         child: Text(
-                          '${_groupKind(group.type)}${group.label}',
+                          '${teamTaskGroupKind(group.type)}${group.label}',
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
@@ -1027,14 +1025,6 @@ class _GroupedListState extends State<_GroupedList> {
       child: row,
     );
   }
-
-  static String _groupKind(TaskLinkType? type) => switch (type) {
-        TaskLinkType.event => 'אירוע · ',
-        TaskLinkType.category => 'קטגוריה · ',
-        TaskLinkType.topic => 'נושא · ',
-        TaskLinkType.pendingEvent => '$pendingEventLabel · ',
-        null => '',
-      };
 }
 
 /// Above the list of "המשימות שלי": how many tasks are still to be done and

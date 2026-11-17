@@ -196,6 +196,49 @@ int compareTeamTasks(TeamTask a, TeamTask b) {
   return a.title.compareTo(b.title);
 }
 
+/// The order inside a group of "כל המשימות" (Omer, msg 4581): still-active
+/// tasks first; then the urgency, highest first; inside each urgency the tasks
+/// with several owners (by title), then the ones with a single owner, each
+/// owner's tasks one after another (the owners by name, then by title), then
+/// the ones with no owner (by title). Done, cancelled and duplicate stay at
+/// the bottom, in the same order among themselves.
+int compareTeamTasksByOwners(TeamTask a, TeamTask b) {
+  final activeA = a.status.isActive ? 0 : 1;
+  final activeB = b.status.isActive ? 0 : 1;
+  if (activeA != activeB) return activeA.compareTo(activeB);
+  final byUrgency = b.urgency.index.compareTo(a.urgency.index);
+  if (byUrgency != 0) return byUrgency;
+  final ownersA = a.ownerIds.toSet();
+  final ownersB = b.ownerIds.toSet();
+  int tier(Set<String> owners) => owners.length > 1 ? 0 : (owners.length == 1 ? 1 : 2);
+  final byTier = tier(ownersA).compareTo(tier(ownersB));
+  if (byTier != 0) return byTier;
+  if (ownersA.length == 1) {
+    final byOwner = compareHebrewText(teamTaskOwnerNames(a).first, teamTaskOwnerNames(b).first);
+    if (byOwner != 0) return byOwner;
+    // Two owners with the same name still keep their tasks apart.
+    final byOwnerId = ownersA.first.compareTo(ownersB.first);
+    if (byOwnerId != 0) return byOwnerId;
+  }
+  final byTitle = compareHebrewText(a.title, b.title);
+  if (byTitle != 0) return byTitle;
+  return a.id.compareTo(b.id);
+}
+
+/// Alphabetical order of Hebrew text (א-ב): a final letter counts as its
+/// plain form (ך = כ) and points / quotes are ignored; ties fall back to the
+/// raw text.
+int compareHebrewText(String a, String b) {
+  String key(String text) => normalizeTeamTaskSearch(text)
+      .replaceAll('ך', 'כ')
+      .replaceAll('ם', 'מ')
+      .replaceAll('ן', 'נ')
+      .replaceAll('ף', 'פ')
+      .replaceAll('ץ', 'צ');
+  final byKey = key(a).compareTo(key(b));
+  return byKey != 0 ? byKey : a.compareTo(b);
+}
+
 int _compareDeadlines(String? a, String? b) {
   if (a == b) return 0;
   if (a == null) return 1;
@@ -230,11 +273,13 @@ int compareEventsByNearest(Event? a, Event? b, DateTime now) {
 ///   events shows on each such event's card;
 /// - then the pending events and the topics, each by name; "ללא שיוך" last.
 ///
-/// [categories] name the categories of the tasks' events.
+/// [categories] name the categories of the tasks' events. [compare] orders
+/// every list ([compareTeamTasksByOwners] in "כל המשימות").
 List<TeamTaskGroup> groupTeamTasks(
   List<TeamTask> tasks,
   DateTime now, {
   List<Category> categories = const [],
+  int Function(TeamTask a, TeamTask b) compare = compareTeamTasks,
 }) {
   final categoryById = {for (final category in categories) category.id: category};
 
@@ -314,8 +359,8 @@ List<TeamTaskGroup> groupTeamTasks(
         label: categoryLabels[categoryId]!,
         type: TaskLinkType.category,
         link: TaskLink(TaskLinkType.category, categoryId),
-        tasks: [...?categoryTop[categoryId]]..sort(compareTeamTasks),
-        severalEventTasks: [...?categorySeveral[categoryId]]..sort(compareTeamTasks),
+        tasks: [...?categoryTop[categoryId]]..sort(compare),
+        severalEventTasks: [...?categorySeveral[categoryId]]..sort(compare),
         sections: [
           for (final entry in (categorySections[categoryId] ?? const <String, List<TeamTask>>{}).entries)
             TeamTaskSection(
@@ -323,7 +368,7 @@ List<TeamTaskGroup> groupTeamTasks(
               eventId: entry.key,
               event: sectionEvents[entry.key],
               label: sectionLabels[entry.key]!,
-              tasks: [...entry.value]..sort(compareTeamTasks),
+              tasks: [...entry.value]..sort(compare),
             ),
         ]..sort((a, b) => compareEventsByNearest(a.event, b.event, now)),
       ),
@@ -337,7 +382,7 @@ List<TeamTaskGroup> groupTeamTasks(
         type: otherTypes[key],
         link: otherLinks[key],
         event: otherEvents[key],
-        tasks: [...otherCards[key]!]..sort(compareTeamTasks),
+        tasks: [...otherCards[key]!]..sort(compare),
       ),
   ];
   int rank(TaskLinkType? type) => switch (type) {

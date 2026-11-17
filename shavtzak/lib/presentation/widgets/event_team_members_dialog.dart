@@ -16,6 +16,7 @@ import '../../domain/entities/event_item.dart';
 import '../screens/event/widgets/event_assignments_fit_picture.dart';
 import '../screens/event/widgets/event_assignments_share_data_builder.dart';
 import '../screens/event/widgets/event_assignments_share_models.dart';
+import '../screens/event/widgets/event_assignments_share_preview_dialog.dart';
 
 /// "מי איתי באירוע?": the event's assignments drawn as its export picture
 /// ("תמונת שיבוצים"), live, all of it on one screen, with a phone button per
@@ -29,6 +30,17 @@ class EventTeamMembersDialog extends StatefulWidget {
 
   /// The "מה יש באירוע" catalogue, for the picture's items line.
   final List<EventItem> eventItems;
+
+  /// The header. "מי איתי באירוע?" on the member's own assignments; the team
+  /// tasks 👥 names the event instead (Omer, msg 4581: it showed the old list).
+  final String title;
+
+  /// A share button in the header: the same picture as a PNG
+  /// ([EventAssignmentsSharePreviewDialog]), as the old list had.
+  final bool canShare;
+
+  /// What an event with nobody else shows.
+  final String emptyText;
 
   static const double _inset = 6;
   static const double _maxWidth = 620;
@@ -44,6 +56,9 @@ class EventTeamMembersDialog extends StatefulWidget {
     this.labels,
     this.eventItems = const [],
     this.assignmentBloc,
+    this.title = 'מי איתי באירוע?',
+    this.canShare = false,
+    this.emptyText = 'אין חברי צוות נוספים באירוע',
   });
 
   String get eventId => event.id;
@@ -57,6 +72,9 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   late final bool _ownsBloc;
   late final Stream<List<AssignmentLabel>> _labels =
       widget.labels ?? Stream.value(const []);
+
+  /// The picture last drawn, for the share button.
+  EventAssignmentsShareData? _shown;
 
   @override
   void initState() {
@@ -121,13 +139,21 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'מי איתי באירוע?',
+                        widget.title,
+                        key: const Key('event-team-members-title'),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
+                    if (widget.canShare)
+                      IconButton(
+                        key: const Key('event-team-members-share'),
+                        tooltip: 'שיתוף תמונת שיבוצים',
+                        icon: const Icon(Icons.ios_share),
+                        onPressed: _share,
+                      ),
                     IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () {
@@ -184,7 +210,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   Widget _buildEmptyState() {
     return Center(
       child: Text(
-        'אין חברי צוות נוספים באירוע',
+        widget.emptyText,
         style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
       ),
     );
@@ -218,6 +244,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
               eventItems: widget.eventItems,
             );
             if (data.sections.isEmpty) return _buildEmptyState();
+            _shown = data;
             return EventAssignmentsFitPicture(
               pictureKey: const Key('who-is-with-me-picture'),
               data: data,
@@ -227,6 +254,17 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
           },
         );
       },
+    );
+  }
+
+  /// The picture as a PNG to share; nothing before it is drawn.
+  Future<void> _share() async {
+    final data = _shown;
+    if (data == null) return;
+    Logger.action('open:assignmentsSharePreview', {'eventId': widget.eventId});
+    await showDialog<void>(
+      context: context,
+      builder: (_) => EventAssignmentsSharePreviewDialog(data: data),
     );
   }
 
