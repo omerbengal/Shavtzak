@@ -41,23 +41,15 @@ String teamTaskQuietLabel(TeamTask task, DateTime now) {
 }
 
 /// The tasks Spotlight goes through, in order: of [rows], those still to be
-/// done (פתוחה / בטיפול), the quietest first. A task with no update yet is
-/// the quietest; among those, the older one first. Ties: the title.
+/// done (פתוחה / בטיפול), in [rows]' own order, the order "המשימות שלי" shows
+/// them (its cards, and inside each the list's order; Omer, msg 4500: it
+/// was the quietest first). Each task once.
 List<TeamTask> spotlightQueue(Iterable<TeamTask> rows) {
-  final queue = [
+  final seen = <String>{};
+  return [
     for (final task in rows)
-      if (task.status.isActive) task,
+      if (task.status.isActive && seen.add(task.id)) task,
   ];
-  queue.sort((a, b) {
-    final lastA = lastTeamTaskUpdateAt(a);
-    final lastB = lastTeamTaskUpdateAt(b);
-    if (lastA == null && lastB != null) return -1;
-    if (lastA != null && lastB == null) return 1;
-    final byTime = lastA == null ? a.createdAt.compareTo(b.createdAt) : lastA.compareTo(lastB!);
-    if (byTime != 0) return byTime;
-    return a.title.compareTo(b.title);
-  });
-  return queue;
 }
 
 /// The glyphs to lay out, unseen, on the tasks screen before "בליץ" opens:

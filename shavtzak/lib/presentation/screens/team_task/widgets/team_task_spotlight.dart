@@ -96,9 +96,10 @@ abstract final class SpotlightStyle {
   static const int logEntryMs = 250;
   static const int logMaxSteps = 4;
   static const Duration logIn = Duration(milliseconds: logStepMs * logMaxSteps + logEntryMs);
-  /// "לא עכשיו": a slow wind-up to the right over the first [skipWindUp] of
+  /// "לא עכשיו": a slow wind-up to the left over the first [skipWindUp] of
   /// the time (by [skipWindUpOffset] of the card's width), a short hold at the
-  /// peak ([skipHold]), then the fling left.
+  /// peak ([skipHold]), then the fling right (Omer, msg 4500: every sideways
+  /// move of Blitz mirrored; it wound up right and flew left).
   /// Omer, msg 4038: the wind-up was still too quick; now 440ms to 28% of the
   /// width (was ~180ms to 14%), an 80ms hold, then the ~480ms fling.
   static const Duration fling = Duration(milliseconds: 1000);
@@ -108,13 +109,17 @@ abstract final class SpotlightStyle {
   static const Duration done = Duration(milliseconds: 520);
 
   /// "למשימה הבאה" (after a status change): the card slides out forward, to
-  /// the left in Hebrew.
+  /// the right (msg 4500).
   static const Duration next = Duration(milliseconds: 420);
 
   /// "אחורה" (Omer, msg 4455: back to the tasks already seen): the mirror
-  /// of [next], the card slides out backwards, to the right in Hebrew, and the
-  /// previous one fades in.
+  /// of [next]: the card slides out to the left and the previous one comes in
+  /// from the right, moving left ([backEnterOffset], msg 4500).
   static const Duration back = next;
+
+  /// The card "אחורה" returns to slides in from this far to the right (of
+  /// its width), as it fades in.
+  static const double backEnterOffset = 0.6;
 
   /// "אחורה"'s width, beside the four actions (Omer, msg 4463).
   static const double backWidth = 64;
@@ -594,6 +599,7 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
           setState(() {
             _tally = _tally.reopen(task.id);
             _index = at;
+            _wentBack = false;
             _composing = false;
             _echo = null;
             _exitKind = _Exit.none;
@@ -896,21 +902,27 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
         final inT = Curves.easeOut.transform(_enter.value);
         final e = _exit.value;
         var dx = 0.0, dy = 0.0, angle = 0.0, scale = 1.0, opacity = inT;
+        // Back with "אחורה", the card comes in from the right, moving left
+        // (Omer, msg 4500: every sideways move mirrored).
+        if (_wentBack && _exitKind == _Exit.none) {
+          dx = SpotlightStyle.backEnterOffset * (1 - Curves.easeOutCubic.transform(_enter.value));
+        }
         var lowerOpacity = inT;
         double check = 0;
         var jolt = Offset.zero;
         switch (_exitKind) {
           case _Exit.skip:
-            // A slow wind-up to the right, a beat at the peak, then flung off
-            // to the left.
+            // A slow wind-up to the left, a beat at the peak, then flung off
+            // to the right (Omer, msg 4500: left to right, it was the other
+            // way).
             const w = SpotlightStyle.skipWindUp, o = SpotlightStyle.skipWindUpOffset;
             const f = SpotlightStyle.skipWindUp + SpotlightStyle.skipHold;
             if (e < w) {
-              dx = o * Curves.easeOutCubic.transform(e / w);
+              dx = -o * Curves.easeOutCubic.transform(e / w);
             } else if (e < f) {
-              dx = o;
+              dx = -o;
             } else {
-              dx = o - (1.75 + o) * Curves.easeInCubic.transform((e - f) / (1 - f));
+              dx = -o + (1.75 + o) * Curves.easeInCubic.transform((e - f) / (1 - f));
             }
             angle = dx * 0.22;
             opacity *= 1 - const Interval(0.8, 1).transform(e);
@@ -923,12 +935,14 @@ class _TeamTaskSpotlightState extends State<TeamTaskSpotlight> with TickerProvid
             opacity *= 1 - out;
             lowerOpacity *= 1 - const Interval(0, 0.3).transform(e);
           case _Exit.next:
-            dx = -1.15 * Curves.easeInCubic.transform(e);
+            // Onwards, to the right (msg 4500).
+            dx = 1.15 * Curves.easeInCubic.transform(e);
             opacity *= 1 - const Interval(0.5, 1).transform(e);
             lowerOpacity *= 1 - const Interval(0, 0.35).transform(e);
           case _Exit.back:
-            // The mirror of "למשימה הבאה": out to the right, backwards.
-            dx = 1.15 * Curves.easeInCubic.transform(e);
+            // The mirror of "למשימה הבאה": out to the left, and the card
+            // before it comes in from the right (msg 4500).
+            dx = -1.15 * Curves.easeInCubic.transform(e);
             opacity *= 1 - const Interval(0.5, 1).transform(e);
             lowerOpacity *= 1 - const Interval(0, 0.35).transform(e);
           case _Exit.update:

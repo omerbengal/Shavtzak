@@ -39,10 +39,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     final mid = tester.getCenter(card).dx;
-    expect(mid, greaterThan(start + 30));
+    // Wound up to the left, then flung to the right (mirrored, msg 4500).
+    expect(mid, lessThan(start - 30));
     await tester.pump(const Duration(milliseconds: 660));
     expect(card, findsOneWidget);
-    expect(tester.getCenter(card).dx, lessThan(start - 100));
+    expect(tester.getCenter(card).dx, greaterThan(start + 100));
     await tester.pumpAndSettle();
     expect(card, findsNothing);
     expect(find.text('2/2'), findsOneWidget);
