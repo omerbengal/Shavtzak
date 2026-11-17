@@ -324,6 +324,28 @@ void main() {
     });
   });
 
+  group('showTeamTasksTab', () {
+    test('tab hidden for a member with no tasks', () {
+      expect(showTeamTasksTab(buildMember(), const []), isFalse);
+    });
+
+    test('tab shown for an owner and for canManageTasks', () {
+      expect(showTeamTasksTab(buildMember(), [buildTeamTask()]), isTrue);
+      expect(showTeamTasksTab(buildMember(canManageTasks: true), const []), isTrue);
+      expect(showTeamTasksTab(buildMember(isAdmin: true), const []), isTrue);
+    });
+
+    test('only cancelled or duplicate tasks do not show the tab', () {
+      expect(
+        showTeamTasksTab(buildMember(), [
+          buildTeamTask(status: TeamTaskStatus.cancelled),
+          buildTeamTask(id: 't2', status: TeamTaskStatus.duplicate),
+        ]),
+        isFalse,
+      );
+    });
+  });
+
   group('linkableEvents', () {
     test('drops events that ended before today and puts the nearest first', () {
       final ended =

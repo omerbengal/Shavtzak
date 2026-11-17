@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/data/repositories/team_task_repository.dart';
+import 'package:shavtzak/presentation/screens/team_task/team_tasks_place.dart';
 import 'package:shavtzak/presentation/screens/team_task/widgets/team_task_sheet.dart';
+import 'package:shavtzak/presentation/widgets/member_bar_buttons.dart';
 
 import '../../../support/task_fixtures.dart';
 import '../../../support/team_task_fixtures.dart';
@@ -38,6 +40,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(TeamTaskSheet), findsNothing);
     expect(find.text('המשימה לא נמצאה'), findsOneWidget);
+  });
+
+  testWidgets('a member who is not a manager: the task opens in the "משימות" tab',
+      (tester) async {
+    final dana = buildMember(id: 'm1', name: 'דנה');
+    final own = buildTeamTask(id: 'b', title: 'לסגור הסעה', assigneeIds: ['m1'])
+        .copyWith(owners: [dana]);
+    await pumpTeamTasks(tester,
+        user: dana,
+        board: TeamTaskBoard(tasks: [own], members: [dana], topics: [buildTopic()], categories: [buildCategory()]),
+        place: TeamTasksPlace.tab,
+        openTaskId: 'b');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TeamTaskSheet>(find.byType(TeamTaskSheet)).taskId, 'b');
+  });
+
+  testWidgets("the tab has the member bar's settings button instead of home", (tester) async {
+    await pumpTeamTasks(tester, user: manager, board: board(), place: TeamTasksPlace.tab);
+    await tester.pumpAndSettle();
+    expect(find.byType(MemberSettingsButton), findsOneWidget);
+    expect(find.byKey(const Key('team-tasks-home')), findsNothing);
   });
 
   testWidgets('no link opens nothing', (tester) async {

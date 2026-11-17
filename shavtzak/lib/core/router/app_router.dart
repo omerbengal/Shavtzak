@@ -117,9 +117,9 @@ class AppRouter {
     return '$path?task=$task';
   }
 
-  // The team tasks screen, where a "שובצת למשימה" notification opens a task
-  // (`?task=<id>`), in either environment.
-  static final RegExp _teamTasksLink = RegExp(r'^(/test)?/team-tasks$');
+  // The team tasks screen (the admins' or the members' tab), where a "שובצת
+  // למשימה" notification opens a task (`?task=<id>`), in either environment.
+  static final RegExp _teamTasksLink = RegExp(r'^(/test)?(/user)?/team-tasks$');
   static final RegExp _taskId = RegExp(r'^[A-Za-z0-9_-]{1,64}$');
 
   static final RegExp _whoamiPath = RegExp(r'^(/test)?/whoami$');
@@ -474,11 +474,14 @@ class AppRouter {
           }
         } else if (currentState is UserAuthenticated) {
           clearPendingDeepLinkIfArrived(state.uri.toString());
-          // The team tasks screen is the admins' only; the former members'
-          // tab leads an admin to it and anyone else home.
+          // The team tasks screen is the admins'; anyone else has the tab,
+          // with the query kept (`?task=<id>`, a notification's task).
           final teamTasksTarget =
               teamTasksRedirect(strippedRoute, currentState.user);
-          if (teamTasksTarget != null) return '$envPrefix$teamTasksTarget';
+          if (teamTasksTarget != null) {
+            final query = state.uri.hasQuery ? '?${state.uri.query}' : '';
+            return '$envPrefix$teamTasksTarget$query';
+          }
           if (currentState.isAdmin) {
             if (strippedRoute.startsWith('/whoami')) {
               return postAuthDestination('$envPrefix/admin');
@@ -589,7 +592,7 @@ class AppRouter {
         _tasksRoute('/du-yomi', TasksPlace.standalone, 'prod'),
 
         // The admins' team tasks screen ("משימות"), opened from the admin home.
-        _teamTasksRoute('/team-tasks', 'prod'),
+        _teamTasksRoute('/team-tasks', TeamTasksPlace.standalone, 'prod'),
 
         // Admin routes shell - uses existing SwipeablePageView
         StatefulShellRoute.indexedStack(
@@ -670,6 +673,11 @@ class AppRouter {
             StatefulShellBranch(routes: [
               _tasksRoute('/user/du-yomi', TasksPlace.tab, 'prod'),
             ]),
+            // Shown in the bar only to a member who owns a task or manages
+            // tasks (UserNavigationShell).
+            StatefulShellBranch(routes: [
+              _teamTasksRoute('/user/team-tasks', TeamTasksPlace.tab, 'prod'),
+            ]),
           ],
         ),
 
@@ -707,7 +715,7 @@ class AppRouter {
                 child:
                     ChecklistLinkScreen(key: ValueKey('checklist_link_test')))),
         _tasksRoute('/test/du-yomi', TasksPlace.standalone, 'test'),
-        _teamTasksRoute('/test/team-tasks', 'test'),
+        _teamTasksRoute('/test/team-tasks', TeamTasksPlace.standalone, 'test'),
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -786,6 +794,9 @@ class AppRouter {
             StatefulShellBranch(routes: [
               _tasksRoute('/test/user/du-yomi', TasksPlace.tab, 'test'),
             ]),
+            StatefulShellBranch(routes: [
+              _teamTasksRoute('/test/user/team-tasks', TeamTasksPlace.tab, 'test'),
+            ]),
           ],
         ),
       ],
@@ -795,12 +806,13 @@ class AppRouter {
   }
 
   /// The team tasks screen at [path].
-  static GoRoute _teamTasksRoute(String path, String env) {
+  static GoRoute _teamTasksRoute(String path, TeamTasksPlace place, String env) {
     return GoRoute(
       path: path,
       pageBuilder: (context, state) => NoTransitionPage(
         child: TeamTasksScreen(
-          key: ValueKey('team_tasks_$env'),
+          key: ValueKey('team_tasks_${place.name}_$env'),
+          place: place,
           openTaskId: state.uri.queryParameters['task'],
         ),
       ),
