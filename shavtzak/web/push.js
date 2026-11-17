@@ -54,20 +54,45 @@
     // Asks for permission (when not granted yet) and subscribes this device.
     // The subscription as JSON, or null when permission was not given.
     async subscribe(publicKey) {
+      const diag = window.shavtzakPushDiag || (() => {}); // TEMP diag
+      const ua = navigator.userActivation;
+      diag('subscribe() called', {supported: supported(),
+        perm: ('Notification' in window) ? Notification.permission : 'n/a',
+        activeTap: ua ? ua.isActive : 'n/a', everTapped: ua ? ua.hasBeenActive : 'n/a'});
       if (!supported()) return null;
+      const t0 = Date.now();
       const asked = Notification.permission === 'granted'
         ? Promise.resolve('granted')
         : Notification.requestPermission();
-      if ((await asked) !== 'granted') return null;
-      const reg = await registration();
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        });
+      diag('requestPermission() started (no await before it)');
+      let answer;
+      try {
+        answer = await asked;
+      } catch (e) {
+        diag('requestPermission THREW', {err: String(e)});
+        throw e;
       }
-      return JSON.stringify(sub.toJSON());
+      diag('requestPermission answered', {answer: answer, ms: Date.now() - t0,
+        permNow: Notification.permission});
+      if (answer !== 'granted') return null;
+      try {
+        diag('service worker: register + ready ...');
+        const reg = await registration();
+        diag('service worker ready', {scope: reg.scope, active: !!reg.active});
+        let sub = await reg.pushManager.getSubscription();
+        diag('existing subscription', {has: !!sub});
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey),
+          });
+        }
+        diag('subscribed OK', {endpoint: String(sub.endpoint).slice(0, 40) + '...'});
+        return JSON.stringify(sub.toJSON());
+      } catch (e) {
+        diag('subscribe step THREW', {err: String(e)});
+        throw e;
+      }
     },
 
     // This device's subscription as JSON, or null; never asks for anything.
