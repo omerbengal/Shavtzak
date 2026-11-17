@@ -65,9 +65,18 @@ Future<void> showTeamTaskSheet(BuildContext context, String taskId, {bool manage
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    builder: (sheetContext) => FractionallySizedBox(
-      heightFactor: TaskStyle.sheetMaxSize,
-      child: body(sheetContext),
+    // A modal bottom sheet ignores the keyboard: on a phone (the web reports
+    // the keyboard as a bottom inset while a field is edited) the sheet kept
+    // its height and the "+ עדכון" field at the bottom of the log sat under
+    // the keyboard (Omer, 17/11/2026). Lifting the sheet by the inset keeps
+    // the list's viewport above the keyboard, so the focused field scrolls
+    // into view there.
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
+      child: FractionallySizedBox(
+        heightFactor: TaskStyle.sheetMaxSize,
+        child: body(sheetContext),
+      ),
     ),
   );
 }
