@@ -91,6 +91,22 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     on<UpdateTeamTask>(_onUpdate);
     on<TeamTaskDraftChanged>(_onDraft);
     on<SetTeamTaskStatus>(_onStatus);
+    on<TeamTaskHoldPlace>(_onHold);
+  }
+
+  /// The task held in its place ([TeamTaskHoldPlace]) and how it was when
+  /// held: the list places it by that copy and shows the live one.
+  String? _heldId;
+  TeamTask? _heldAs;
+
+  void _onHold(TeamTaskHoldPlace event, Emitter<TeamTaskState> emit) {
+    if (event.id == _heldId) return;
+    _heldId = event.id;
+    _heldAs = null;
+    final state = this.state;
+    if (event.id != null && state is TeamTasksLoaded) _heldAs = state.taskById(event.id!);
+    // Letting go puts it where it belongs now.
+    _emitLoaded(emit);
   }
 
   Future<void> _onSubscribe(TeamTasksSubscribe event, Emitter<TeamTaskState> emit) async {
@@ -155,22 +171,34 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     final mine = myTeamTaskRows(all, viewer.id);
     final now = _clock();
     final eventCategoryById = {for (final e in board.events) e.id: e.categoryId};
+    // The held task is placed (grouped, ordered, filtered) as it was when
+    // held, and drawn as it is now. A deleted one is simply gone.
+    final heldAs = _heldAs;
+    final live = heldAs == null ? null : _firstWithId(all, heldAs.id);
+    var placedAll = all;
+    var placedMine = mine;
+    if (heldAs != null && live != null) {
+      placedAll = [for (final t in all) t.id == heldAs.id ? heldAs : t];
+      placedMine = myTeamTaskRows(placedAll, viewer.id);
+    }
+    List<TeamTaskGroup> drawn(List<TeamTaskGroup> groups) =>
+        live == null ? groups : [for (final g in groups) g.withTask(live)];
     emit(TeamTasksLoaded(
       viewer: viewer,
       all: all,
       mine: mine,
-      allGroups: groupTeamTasks(
-        applyTeamTaskFilter(all, _filter, eventCategoryById, now: now),
+      allGroups: drawn(groupTeamTasks(
+        applyTeamTaskFilter(placedAll, _filter, eventCategoryById, now: now),
         now,
         categories: board.categories,
-      ),
+      )),
       // "המשימות שלי" has no owner filter: they are all the viewer's.
-      mineGroups: groupTeamTasks(
-        applyTeamTaskFilter(mine, _filter.copyWith(ownerIds: const {}), eventCategoryById,
+      mineGroups: drawn(groupTeamTasks(
+        applyTeamTaskFilter(placedMine, _filter.copyWith(ownerIds: const {}), eventCategoryById,
             now: now),
         now,
         categories: board.categories,
-      ),
+      )),
       filter: _filter,
       canManage: canManageTeamTasks(viewer),
       events: board.events,
@@ -179,6 +207,13 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       members: board.members,
       pendingEvents: board.pendingEvents,
     ));
+  }
+
+  static TeamTask? _firstWithId(List<TeamTask> tasks, String id) {
+    for (final task in tasks) {
+      if (task.id == id) return task;
+    }
+    return null;
   }
 
   Future<void> _send(CrudActionCompleter? completion, Future<void> Function() action) async {

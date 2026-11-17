@@ -178,11 +178,23 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   void _openPanel(String taskId) {
     Logger.action('tap:teamTaskPanelOpen');
     setState(() => _panelTaskId = taskId);
+    _holdPlace(taskId);
   }
 
   void _closePanel() {
     Logger.action('tap:teamTaskPanelClose');
     setState(() => _panelTaskId = null);
+    _holdPlace(null);
+  }
+
+  /// The task open in the side panel keeps its place in the list until the
+  /// panel closes, another task opens or the tab changes (Omer, msg 4476):
+  /// [TeamTaskHoldPlace].
+  TeamTaskBloc? _bloc;
+
+  void _holdPlace(String? taskId) {
+    final bloc = _bloc;
+    if (bloc != null && !bloc.isClosed) bloc.add(TeamTaskHoldPlace(taskId));
   }
 
   void _toggleGroup(String key, {required bool all}) {
@@ -271,6 +283,12 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bloc = context.read<TeamTaskBloc>();
+  }
+
+  @override
   void initState() {
     super.initState();
     _pendingOpen = widget.openTaskId;
@@ -283,6 +301,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
 
   @override
   void dispose() {
+    if (_panelTaskId != null) _holdPlace(null);
     _warmTimer?.cancel();
     _blitzWarmTimer?.cancel();
     super.dispose();
@@ -523,6 +542,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                   // The panel belongs to a tab (editing or not).
                   _panelTaskId = null;
                 });
+                _holdPlace(null);
               },
             ),
           ),
