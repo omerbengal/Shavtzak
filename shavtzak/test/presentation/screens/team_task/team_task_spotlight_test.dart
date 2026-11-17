@@ -35,9 +35,19 @@ void main() {
   }) =>
       buildTeamTask(
               id: id, title: title, link: link ?? topic1, assigneeIds: [owner], updates: updates)
-          .copyWith(owners: [if (owner == 'm1') dana else manager]);
+          .copyWith(
+            owners: [if (owner == 'm1') dana else manager],
+            // As the repository fills it in: the card's name (and order).
+            topic: () => (link ?? topic1).id == 'p1'
+                ? buildTopic()
+                : buildTopic(id: 'p2', name: 'חנוכה'),
+          );
 
-  final recent = task('a', 'אוטובוסים', updates: [entry('1', DateTime.utc(2026, 11, 14))]);
+  // Titles in the list's order: "המשימות שלי" shows topic p2 (חנוכה) before
+  // p1 (נשות מגדים), and inside p1 "מקום לאירוע" before "תקציב אוטובוסים", so
+  // Blitz goes c, b, a (msg 4500: the list's order).
+  final recent =
+      task('a', 'תקציב אוטובוסים', updates: [entry('1', DateTime.utc(2026, 11, 14))]);
   final quiet = task('b', 'מקום לאירוע', updates: [entry('2', DateTime.utc(2026, 11, 3))]);
   final never = task('c', 'מוזמנים', link: topic2);
   final closed =
@@ -61,7 +71,7 @@ void main() {
     expect(find.text('משימה אחת פתוחה'), findsOneWidget);
   });
 
-  testWidgets('goes through the open tasks, the quietest first', (tester) async {
+  testWidgets('goes through the open tasks in the list order', (tester) async {
     await open(tester);
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
     expect(find.text('1/3'), findsOneWidget);
@@ -195,18 +205,18 @@ void main() {
     final start = tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx;
     await tester.tap(find.byKey(const Key('spotlight-skip')));
     await tester.pump();
-    // First a slow, wide wind-up to the right (Omer, msgs 4024 / 4038): still
-    // going at 200ms...
+    // First a slow, wide wind-up to the left (Omer, msgs 4024 / 4038; mirrored
+    // in msg 4500): still going at 200ms...
     await tester.pump(const Duration(milliseconds: 200));
     final mid = tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx;
-    expect(mid, greaterThan(start + 30));
-    // ...further right at the peak...
+    expect(mid, lessThan(start - 30));
+    // ...further left at the peak...
     await tester.pump(const Duration(milliseconds: 260));
-    expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, greaterThan(mid + 10));
-    // ...then flung off to the left.
+    expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, lessThan(mid - 10));
+    // ...then flung off to the right: left to right.
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const Key('spotlight-card-c')), findsOneWidget);
-    expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, lessThan(start - 100));
+    expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, greaterThan(start + 100));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('spotlight-card-c')), findsNothing);
     expect(find.byKey(const Key('spotlight-card-b')), findsOneWidget);
@@ -644,8 +654,8 @@ void main() {
       expect(find.text('אחת עודכנה · 2 לפעם אחרת'), findsOneWidget);
     });
 
-    testWidgets('the card leaves backwards, to the right, the mirror of "למשימה הבאה"',
-        (tester) async {
+    testWidgets('back: the card leaves to the left and the one before comes in from the right '
+        '(msg 4500)', (tester) async {
       await open(tester);
       await skip(tester);
       final start = tester.getCenter(find.byKey(const Key('spotlight-card-b'))).dx;
@@ -653,10 +663,31 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(
-          tester.getCenter(find.byKey(const Key('spotlight-card-b'))).dx, greaterThan(start + 40));
+          tester.getCenter(find.byKey(const Key('spotlight-card-b'))).dx, lessThan(start - 40));
+      // The way out ends (420 ms); the card before it comes in from the right...
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 60));
+      final entering = tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx;
+      expect(entering, greaterThan(start + 40));
+      // ...moving left, into place.
       await tester.pumpAndSettle();
       expect(current(), 'c');
       expect(find.byKey(const Key('spotlight-card-b')), findsNothing);
+      expect(tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, closeTo(start, 1));
+    });
+
+    testWidgets('"למשימה הבאה" slides the card out to the right (msg 4500)', (tester) async {
+      await open(tester);
+      await tester.tap(find.byKey(const Key('spotlight-status')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-task-status-option-בטיפול')));
+      await tester.pumpAndSettle();
+      final start = tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx;
+      await tester.tap(find.byKey(const Key('spotlight-next')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+          tester.getCenter(find.byKey(const Key('spotlight-card-c'))).dx, greaterThan(start + 40));
     });
 
     // Geometry only: the test font draws every letter as a full square, far

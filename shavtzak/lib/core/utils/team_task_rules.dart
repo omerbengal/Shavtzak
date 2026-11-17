@@ -404,8 +404,8 @@ class TeamTaskFilter extends Equatable {
   bool get anyFilterSet =>
       statusesChanged || ownerIds.isNotEmpty || urgencies.isNotEmpty || link != null || lateOnly;
 
-  /// [query] trimmed and lower-cased; empty = no search.
-  String get searchText => query.trim().toLowerCase();
+  /// [query] as [normalizeTeamTaskSearch] makes it; empty = no search.
+  String get searchText => normalizeTeamTaskSearch(query);
 
   TeamTaskFilter copyWith({
     Set<TeamTaskStatus>? statuses,
@@ -444,6 +444,7 @@ List<TeamTask> applyTeamTaskFilter(
   TeamTaskFilter filter,
   Map<String, String?> eventCategoryById, {
   DateTime? now,
+  Map<String, String> categoryNameById = const {},
 }) {
   bool linkMatches(TeamTask task) {
     final wanted = filter.link;
@@ -470,13 +471,44 @@ List<TeamTask> applyTeamTaskFilter(
           (filter.urgencies.isEmpty || filter.urgencies.contains(task.urgency)) &&
           linkMatches(task) &&
           (!filter.lateOnly || isTeamTaskLate(task, today)) &&
-          (search.isEmpty || _textMatches(task.title, task.description, search)))
+          (search.isEmpty ||
+              teamTaskSearchText(task, eventCategoryById, categoryNameById).contains(search)))
         task,
   ];
 }
 
-bool _textMatches(String title, String description, String search) =>
-    title.toLowerCase().contains(search) || description.toLowerCase().contains(search);
+/// Text made comparable for the search: lower-cased, without Hebrew points
+/// (niqqud, cantillation), geresh / gershayim or quotes, and with the spaces
+/// collapsed, so "בנגל" finds "עומר בנגל" and צה"ל finds צהל.
+String normalizeTeamTaskSearch(String text) => text
+    .toLowerCase()
+    .replaceAll(RegExp('[\u0591-\u05BD\u05BF-\u05C7\u05F3\u05F4\'"`]'), '')
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .trim();
+
+/// Everything the search looks in for [task] (Omer, msg 4500), normalized
+/// and in one string: what it belongs to (its link's name, its events and
+/// their categories), the title, the description, the update log (texts and
+/// writers), the owners' names and the contacts.
+String teamTaskSearchText(
+  TeamTask task,
+  Map<String, String?> eventCategoryById,
+  Map<String, String> categoryNameById,
+) {
+  final parts = <String>[
+    if (task.link != null) teamTaskLinkLabel(task),
+    for (final event in task.events) event.name,
+    if (task.event != null) task.event!.name,
+    for (final id in task.linkedEventIds)
+      if (categoryNameById[eventCategoryById[id]] case final name?) name,
+    task.title,
+    task.description,
+    for (final entry in task.updates) ...[entry.text, entry.byName ?? ''],
+    for (final owner in task.owners) owner.name,
+    for (final contact in task.contacts) ...[contact.name, contact.role, contact.phone],
+  ];
+  return normalizeTeamTaskSearch(parts.join('\n'));
+}
 
 /// Whether [member] gets the "משימות" tab: a manager always; anyone else when
 /// one of [myTasks] (the tasks they own) is not cancelled or a duplicate.

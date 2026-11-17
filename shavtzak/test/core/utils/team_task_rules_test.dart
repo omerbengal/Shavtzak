@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/team_task_rules.dart';
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/team_task.dart';
 
 import '../../support/task_fixtures.dart';
@@ -420,6 +421,71 @@ void main() {
       expect(shown.map((t) => t.id), ['a', 'c']);
       expect(TeamTaskFilter.initial.copyWith(ownerIds: {'m1', 'm3'}),
           TeamTaskFilter.initial.copyWith(ownerIds: {'m3', 'm1'}));
+    });
+  });
+
+  group('the search (Omer, msg 4500)', () {
+    final omer = buildMember(id: 'o1', name: 'עומר בנגל');
+    final hanukkah = buildEvent(id: 'e9', name: 'הדלקת נרות', categoryId: 'c7');
+    final base = buildTeamTask(id: 'x', title: 'הזמנת אולם', assigneeIds: ['o1']);
+    List<String> search(List<TeamTask> tasks, String query) => applyTeamTaskFilter(
+          tasks,
+          TeamTaskFilter.initial.copyWith(query: query),
+          const {'e9': 'c7'},
+          categoryNameById: const {'c7': 'אירועי חנוכה'},
+        ).map((t) => t.id).toList();
+
+    test('the last name of an owner finds their tasks ("בנגל" for "עומר בנגל")', () {
+      final mine = base.copyWith(owners: [omer]);
+      final other = buildTeamTask(id: 'y', title: 'משהו אחר');
+      expect(search([mine, other], 'בנגל'), ['x']);
+      expect(search([mine, other], 'עומר בנגל'), ['x']);
+    });
+
+    test('what the task belongs to: its event, the category of the event, a topic', () {
+      final byEvent = base.copyWith(
+        link: () => const TaskLink(TaskLinkType.event, 'e9'),
+        event: () => hanukkah,
+        events: [hanukkah],
+      );
+      expect(search([byEvent], 'נרות'), ['x']);
+      expect(search([byEvent], 'חנוכה'), ['x']);
+      final byTopic = base.copyWith(
+          link: () => const TaskLink(TaskLinkType.topic, 'p1'), topic: () => buildTopic());
+      expect(search([byTopic], 'מגדים'), ['x']);
+    });
+
+    test('the update log (text and writer) and the contacts', () {
+      final logged = base.copyWith(updates: [
+        TaskUpdateEntry(
+            id: 'u', text: 'דיברתי עם הספק', at: DateTime.utc(2026, 11, 1), byId: 'm2', byName: 'יוסי כהן'),
+      ]);
+      expect(search([logged], 'הספק'), ['x']);
+      expect(search([logged], 'כהן'), ['x']);
+      final contact = base.copyWith(contacts: const [
+        StageContact(id: 'k', name: 'רינה לוי', phone: '050-1234567', role: 'מנהלת אולם'),
+      ]);
+      expect(search([contact], 'רינה'), ['x']);
+      expect(search([contact], '1234567'), ['x']);
+      expect(search([contact], 'מנהלת'), ['x']);
+    });
+
+    test('ignores case, Hebrew points and quotes', () {
+      final task = base.copyWith(description: 'Bus לצה"ל');
+      expect(search([task], 'bus'), ['x']);
+      expect(search([task], 'צהל'), ['x']);
+      expect(search([base], 'אוּלָם'), ['x']);
+      expect(search([base], 'לא קיים'), isEmpty);
+    });
+
+    test('stays quick on many tasks', () {
+      final many = [
+        for (var i = 0; i < 2000; i++)
+          base.copyWith(owners: [omer], description: 'תיאור ארוך ' * 20),
+      ];
+      final watch = Stopwatch()..start();
+      search(many, 'בנגל');
+      expect(watch.elapsedMilliseconds, lessThan(500));
     });
   });
 }

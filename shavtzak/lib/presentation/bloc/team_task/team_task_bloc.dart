@@ -171,6 +171,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
     final mine = myTeamTaskRows(all, viewer.id);
     final now = _clock();
     final eventCategoryById = {for (final e in board.events) e.id: e.categoryId};
+    final categoryNameById = {for (final c in board.categories) c.id: c.name};
     // The held task is placed (grouped, ordered, filtered) as it was when
     // held, and drawn as it is now. A deleted one is simply gone.
     final heldAs = _heldAs;
@@ -188,14 +189,15 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       all: all,
       mine: mine,
       allGroups: drawn(groupTeamTasks(
-        applyTeamTaskFilter(placedAll, _filter, eventCategoryById, now: now),
+        applyTeamTaskFilter(placedAll, _filter, eventCategoryById,
+            now: now, categoryNameById: categoryNameById),
         now,
         categories: board.categories,
       )),
       // "המשימות שלי" has no owner filter: they are all the viewer's.
       mineGroups: drawn(groupTeamTasks(
         applyTeamTaskFilter(placedMine, _filter.copyWith(ownerIds: const {}), eventCategoryById,
-            now: now),
+            now: now, categoryNameById: categoryNameById),
         now,
         categories: board.categories,
       )),

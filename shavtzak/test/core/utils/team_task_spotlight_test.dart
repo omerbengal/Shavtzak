@@ -11,7 +11,8 @@ void main() {
   final now = DateTime.utc(2026, 11, 16, 8);
 
   group('spotlightQueue', () {
-    test('only tasks still to be done, the quietest first, no update = quietest', () {
+    test('the open tasks in the order given (the list order), not by quietness (Omer, msg 4500)',
+        () {
       final fresh =
           buildTeamTask(id: 'fresh', title: 'א', updates: [entry('1', DateTime.utc(2026, 11, 15))]);
       final old = buildTeamTask(id: 'old', title: 'ב', updates: [
@@ -26,18 +27,13 @@ void main() {
           status: TeamTaskStatus.inProgress,
           updates: [entry('4', DateTime.utc(2026, 11, 10))]);
       final queue = spotlightQueue([fresh, done, old, never, cancelled, busy]);
-      expect(queue.map((t) => t.id), ['never', 'old', 'busy', 'fresh']);
+      expect(queue.map((t) => t.id), ['fresh', 'old', 'never', 'busy']);
     });
 
-    test('ignores the deadline: most tasks have none', () {
-      final dated = buildTeamTask(
-          id: 'dated',
-          title: 'א',
-          deadline: '2026-11-17',
-          updates: [entry('1', DateTime.utc(2026, 11, 15))]);
-      final quiet =
-          buildTeamTask(id: 'quiet', title: 'ב', updates: [entry('2', DateTime.utc(2026, 11, 3))]);
-      expect(spotlightQueue([dated, quiet]).map((t) => t.id), ['quiet', 'dated']);
+    test('a task shown twice (on two cards) comes once, at its first place', () {
+      final a = buildTeamTask(id: 'a');
+      final b = buildTeamTask(id: 'b');
+      expect(spotlightQueue([a, b, a]).map((t) => t.id), ['a', 'b']);
     });
   });
 
