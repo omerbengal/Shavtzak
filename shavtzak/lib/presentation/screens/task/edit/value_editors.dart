@@ -535,44 +535,50 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
           },
           itemBuilder: (context, index) {
             final line = _lines[index];
-            return Row(
+            // The lifted line is drawn in the app's overlay, outside this
+            // screen's right-to-left: without its own direction it flipped
+            // left-to-right while dragged.
+            return Directionality(
               key: ObjectKey(line),
-              children: [
-                ReorderableDragStartListener(
-                  index: index,
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.drag_indicator,
-                        size: 18, color: TaskStyle.editFaint),
+              textDirection: Directionality.of(context),
+              child: Row(
+                children: [
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.drag_indicator,
+                          size: 18, color: TaskStyle.editFaint),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: Focus(
-                    onKeyEvent: (_, event) => _onKey(index, event),
-                    child: RtlArrowKeys(
-                        child: TextField(
-                      key: Key('edit-subtask-$index'),
-                      controller: line.controller,
-                      focusNode: line.focus,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        hintText: 'תת-משימה',
-                        border: InputBorder.none,
-                      ),
-                      onChanged: (_) => _report(),
-                      onSubmitted: (_) => _insertAfter(index),
-                    )),
+                  Expanded(
+                    child: Focus(
+                      onKeyEvent: (_, event) => _onKey(index, event),
+                      child: RtlArrowKeys(
+                          child: TextField(
+                        key: Key('edit-subtask-$index'),
+                        controller: line.controller,
+                        focusNode: line.focus,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          hintText: 'תת-משימה',
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (_) => _report(),
+                        onSubmitted: (_) => _insertAfter(index),
+                      )),
+                    ),
                   ),
-                ),
-                IconButton(
-                  key: Key('edit-subtask-remove-$index'),
-                  tooltip: 'מחיקה',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.close, size: 16),
-                  onPressed: () => _remove(index),
-                ),
-              ],
+                  IconButton(
+                    key: Key('edit-subtask-remove-$index'),
+                    tooltip: 'מחיקה',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close, size: 16),
+                    onPressed: () => _remove(index),
+                  ),
+                ],
+              ),
             );
           },
         ),
