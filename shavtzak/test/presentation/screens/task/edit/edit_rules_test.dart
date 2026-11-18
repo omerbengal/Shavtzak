@@ -131,14 +131,15 @@ void main() {
     );
     final empty = buildTask(id: 'to', stage: stage, assigneeIds: const ['m3']);
 
-    test('only within the stage, and only a value that has something', () {
+    test('to any other task of the event, its stage or another, and only '
+        'a value that has something', () {
       final elsewhere = buildTask(
         id: 'far',
         stage: buildStage(id: 's2', date: DateTime(2026, 6, 15)),
       );
       expect(canCopyField(from, empty, TaskField.description), isTrue);
       expect(canCopyField(from, from, TaskField.description), isFalse);
-      expect(canCopyField(from, elsewhere, TaskField.description), isFalse);
+      expect(canCopyField(from, elsewhere, TaskField.description), isTrue);
       expect(canCopyField(empty, from, TaskField.description), isFalse);
     });
 

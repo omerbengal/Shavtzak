@@ -13,7 +13,7 @@ import 'edit_rules.dart';
 /// * a task dropped on another task of its stage due at the same moment takes
 ///   its place among them ([TaskReorderTarget]);
 /// * a task's value (time, description, assignees, subtasks) dragged onto the
-///   same value of another task of its stage is copied there
+///   same value of another task of the event, in any stage, is copied there
 ///   ([TaskFieldDragSource] and [TaskFieldDropTarget]).
 
 /// What a dragged value carries: whose it is and which one.
