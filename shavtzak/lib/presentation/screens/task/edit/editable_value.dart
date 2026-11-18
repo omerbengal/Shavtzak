@@ -37,7 +37,12 @@ class EditableValue<T> extends StatefulWidget {
     this.expand = true,
     this.inDialog = false,
     this.wrapIdle,
+    this.onEditingChanged,
   });
+
+  /// Told when the in-place editor (wide window) opens and closes, so the
+  /// row around it can give it more room.
+  final ValueChanged<bool>? onEditingChanged;
 
   /// Wraps the value while it is shown, not while it is being edited: for
   /// dragging it to, or dropping onto it from, another task.
@@ -80,15 +85,19 @@ class _EditableValueState<T> extends State<EditableValue<T>> {
         _draft = widget.value;
         _error = null;
       });
+      widget.onEditingChanged?.call(true);
     } else {
       _openSheet();
     }
   }
 
-  void _cancel() => setState(() {
-        _editing = false;
-        _error = null;
-      });
+  void _cancel() {
+    setState(() {
+      _editing = false;
+      _error = null;
+    });
+    widget.onEditingChanged?.call(false);
+  }
 
   void _save() {
     if (!_editing) return;
@@ -106,6 +115,7 @@ class _EditableValueState<T> extends State<EditableValue<T>> {
       _editing = false;
       _error = null;
     });
+    widget.onEditingChanged?.call(false);
     widget.onCommit(draft);
   }
 
