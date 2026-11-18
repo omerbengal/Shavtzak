@@ -4,6 +4,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -567,6 +568,32 @@ void main() {
       [for (final s in repo.updatedTasks.single.subtasks) s.id],
       ['b', 'a', 'c'],
     );
+  });
+
+  testWidgets(
+      'wide: the open subtasks editor spreads over the assignees column, '
+      'and both columns are back in place once it closes', (tester) async {
+    await pump(tester, tasks: withTwin());
+    final value = find.byKey(const Key('edit-task-subtasks-ws-twin'));
+    final assignees = find.byKey(const Key('edit-task-assignees-ws-twin'));
+    await tester.ensureVisible(value);
+    await tester.pumpAndSettle();
+    final cell = tester.getRect(value);
+    final assigneesCell = tester.getRect(assignees);
+    // RTL: the assignees are the column right of the subtasks.
+    expect(assigneesCell.left, greaterThan(cell.right));
+
+    await tester.tap(value);
+    await tester.pumpAndSettle();
+    final editor = tester.getRect(find.byKey(const Key('edit-value-editor')));
+    expect(editor.left, moreOrLessEquals(cell.left, epsilon: 1));
+    expect(editor.right, moreOrLessEquals(assigneesCell.right, epsilon: 1));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-value-editor')), findsNothing);
+    expect(tester.getRect(value), cell);
+    expect(tester.getRect(assignees), assigneesCell);
   });
 
   testWidgets('a value is copied into a task of another stage too',

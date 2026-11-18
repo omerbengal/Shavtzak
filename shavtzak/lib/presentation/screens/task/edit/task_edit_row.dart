@@ -128,10 +128,12 @@ class _TaskValues {
         onCommit: (ids) => ctx.onTaskCommit(task.copyWith(assigneeIds: ids)),
       );
 
-  Widget subtasks() => EditableValue<List<Subtask>>(
+  Widget subtasks({ValueChanged<bool>? onEditingChanged}) =>
+      EditableValue<List<Subtask>>(
         key: Key('edit-task-subtasks-${task.id}'),
         value: task.subtasks,
         wide: ctx.wide,
+        onEditingChanged: onEditingChanged,
         wrapIdle: _draggable(TaskField.subtasks),
         sheetTitle: 'תתי-משימות',
         display: task.subtasks.isEmpty
@@ -208,9 +210,17 @@ class TaskEditHeader extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(flex: 4, child: label('תיאור')),
           const SizedBox(width: 12),
-          Expanded(flex: 3, child: label('אחראים')),
-          const SizedBox(width: 12),
-          Expanded(flex: 3, child: label('תת-משימות')),
+          // One group, as in the rows (see _AssigneesAndSubtasks).
+          Expanded(
+            flex: 6,
+            child: Row(
+              children: [
+                Expanded(child: label('אחראים')),
+                const SizedBox(width: 12),
+                Expanded(child: label('תת-משימות')),
+              ],
+            ),
+          ),
           const SizedBox(width: TaskStyle.editMenuWidth),
         ],
       ),
@@ -273,14 +283,68 @@ class TaskEditRow extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(flex: 4, child: values.description()),
             const SizedBox(width: 12),
-            Expanded(flex: 3, child: values.assignees()),
-            const SizedBox(width: 12),
-            Expanded(flex: 3, child: values.subtasks()),
+            Expanded(flex: 6, child: _AssigneesAndSubtasks(values: values)),
             SizedBox(
                 width: TaskStyle.editMenuWidth, child: values.menu(context)),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The assignees and subtasks columns of a wide row. While the subtasks are
+/// edited, their editor spreads over the assignees column too (Omer,
+/// 18/11/2026: the list was as narrow as its column); shown, each keeps its
+/// own column.
+///
+/// Two layers of the same two columns: the bottom one holds the assignees,
+/// the top one the subtasks. Only the top layer's first slots come and go,
+/// so the subtasks value keeps its state (its open editor and draft) when it
+/// widens. An empty slot takes no clicks, so the assignees under it still do.
+class _AssigneesAndSubtasks extends StatefulWidget {
+  const _AssigneesAndSubtasks({required this.values});
+
+  final _TaskValues values;
+
+  @override
+  State<_AssigneesAndSubtasks> createState() => _AssigneesAndSubtasksState();
+}
+
+class _AssigneesAndSubtasksState extends State<_AssigneesAndSubtasks> {
+  bool _editingSubtasks = false;
+
+  void _onEditingChanged(bool editing) {
+    if (!mounted || editing == _editingSubtasks) return;
+    setState(() => _editingSubtasks = editing);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: widget.values.assignees()),
+            const SizedBox(width: 12),
+            const Expanded(child: SizedBox()),
+          ],
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!_editingSubtasks) ...[
+              const Expanded(key: ValueKey('cover'), child: SizedBox()),
+              const SizedBox(key: ValueKey('gap'), width: 12),
+            ],
+            Expanded(
+              key: const ValueKey('subtasks'),
+              child: widget.values.subtasks(onEditingChanged: _onEditingChanged),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
