@@ -171,4 +171,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(reported.last, ['ב', 'א', 'ג']);
   });
+
+  testWidgets(
+      'subtasks editor: the lifted line stays right-to-left while dragged',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Directionality(
+          textDirection: TextDirection.rtl,
+          child: SubtasksEditor(
+            initial: const [
+              Subtask(id: 'a', title: 'א'),
+              Subtask(id: 'b', title: 'ב'),
+            ],
+            onChanged: (_) {},
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final handle = find.byIcon(Icons.drag_indicator).first;
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 10));
+    await tester.pump(const Duration(milliseconds: 50));
+    // The app's overlay is left-to-right; the lifted line must not be.
+    final lifted = tester.element(find.byKey(const Key('edit-subtask-0')));
+    expect(Directionality.of(lifted), TextDirection.rtl);
+    final handleX =
+        tester.getCenter(find.byIcon(Icons.drag_indicator).first).dx;
+    final fieldX = tester.getCenter(find.byKey(const Key('edit-subtask-0'))).dx;
+    expect(handleX, greaterThan(fieldX));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
 }

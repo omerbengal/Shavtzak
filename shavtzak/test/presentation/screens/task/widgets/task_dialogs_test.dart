@@ -371,6 +371,52 @@ void main() {
       ]);
     });
 
+    testWidgets(
+        'dragging a subtask by its handle reorders it and keeps its id '
+        'and done state', (tester) async {
+      final existing = buildTask(
+        id: 't1',
+        eventId: 'e1',
+        event: north,
+        assigneeIds: const ['m1'],
+        assignees: [dana],
+        subtasks: const [
+          Subtask(id: 'a', title: 'א', isDone: true),
+          Subtask(id: 'b', title: 'ב'),
+          Subtask(id: 'c', title: 'ג'),
+        ],
+      );
+      final form = await openForm(tester, existing: existing);
+
+      final handle = find.byKey(const Key('task-form-subtask-handle-0'));
+      await tester.ensureVisible(handle);
+      await tester.pumpAndSettle();
+      // One row = the distance between two rows' fields (field + gap).
+      final rowHeight =
+          tester.getCenter(find.byKey(const Key('task-form-subtask-1'))).dy -
+              tester
+                  .getCenter(find.byKey(const Key('task-form-subtask-0')))
+                  .dy;
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      await tester.pump();
+      for (var i = 0; i < 8; i++) {
+        await gesture.moveBy(Offset(0, rowHeight * 0.15));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      // The lifted row keeps the form's right-to-left.
+      final lifted = tester.element(find.byKey(const Key('task-form-subtask-0')));
+      expect(Directionality.of(lifted), TextDirection.rtl);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      await save(tester);
+
+      expect(form.saved.single.subtasks, const [
+        Subtask(id: 'b', title: 'ב'),
+        Subtask(id: 'a', title: 'א', isDone: true),
+        Subtask(id: 'c', title: 'ג'),
+      ]);
+    });
+
     group('stage and assembly time', () {
       final assemblyField = find.descendant(
         of: find.byKey(const Key('task-form-assembly-time')),

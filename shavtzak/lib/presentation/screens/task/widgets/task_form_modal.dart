@@ -15,6 +15,7 @@ import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../event/widgets/event_time_field.dart';
+import '../task_style.dart';
 import 'discard_changes_dialog.dart';
 
 final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
@@ -687,13 +688,40 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       children: [
         Text('תתי-משימות', style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
-        for (var index = 0; index < _subtasks.length; index++)
-          KeyedSubtree(
+        // The same ⋮⋮ handle and reorder as the editing screen's subtasks
+        // (`SubtasksEditor`): the list order is the order on every screen.
+        ReorderableListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          buildDefaultDragHandles: false,
+          itemCount: _subtasks.length,
+          // `onReorder`, not the newer `onReorderItem`, which Flutter 3.41
+          // lacks (the site was built with it until November 2026).
+          // ignore: deprecated_member_use
+          onReorder: (from, to) {
+            // `to` counts the moved row still in place.
+            final target = to > from ? to - 1 : to;
+            setState(() => _subtasks.insert(target, _subtasks.removeAt(from)));
+          },
+          // The lifted row is drawn in the app's overlay, outside the form's
+          // right-to-left: without its own direction it flipped
+          // left-to-right while dragged.
+          itemBuilder: (context, index) => Directionality(
             key: ObjectKey(_subtasks[index]),
+            textDirection: Directionality.of(context),
             child: Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: [
+                  ReorderableDragStartListener(
+                    key: Key('task-form-subtask-handle-$index'),
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.drag_indicator,
+                          size: 18, color: TaskStyle.editFaint),
+                    ),
+                  ),
                   Expanded(
                     child: TextField(
                       key: Key('task-form-subtask-$index'),
@@ -719,6 +747,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
               ),
             ),
           ),
+        ),
         TextButton.icon(
           key: const Key('task-form-add-subtask'),
           onPressed: _subtasks.length >= 50 ? null : _addSubtask,
