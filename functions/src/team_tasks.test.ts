@@ -144,6 +144,17 @@ test('a task that still stores subtasks takes a status by hand (16/11/2026)', ()
   assert.deepEqual(done.completedAt, later);
 });
 
+test('a status change stamps statusChangedAt; the same status keeps it (19/11/2026)', () => {
+  const task = buildNewTeamTask(input(), {now, actor: manager});
+  assert.equal(task.statusChangedAt, null);
+  const moved = applyTeamTaskStatus(task, 'inProgress', null, {now, actor: manager});
+  assert.deepEqual(moved.statusChangedAt, now);
+  const again = applyTeamTaskStatus(moved, 'inProgress', null, {now: later, actor: manager});
+  assert.deepEqual(again.statusChangedAt, now);
+  const done = applyTeamTaskStatus(again, 'done', null, {now: later, actor: manager});
+  assert.deepEqual(done.statusChangedAt, later);
+});
+
 test("cancelling every stored subtask leaves the parent's status alone", () => {
   let task = withSubtasks();
   task = applyTeamTaskStatus(task, 'inProgress', null, {now, actor: manager});

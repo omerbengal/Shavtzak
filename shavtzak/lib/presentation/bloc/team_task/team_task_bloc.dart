@@ -198,7 +198,12 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       )),
       // "המשימות שלי" has no owner filter: they are all the viewer's.
       mineGroups: drawn(groupTeamTasks(
-        applyTeamTaskFilter(placedMine, _filter.copyWith(ownerIds: const {}), eventCategoryById,
+        // Nor the time chips: they are on "כל המשימות" only (19/11/2026).
+        applyTeamTaskFilter(
+            placedMine,
+            _filter.copyWith(
+                ownerIds: const {}, created: () => null, statusChanged: () => null),
+            eventCategoryById,
             now: now, categoryNameById: categoryNameById),
         now,
         categories: board.categories,
@@ -312,6 +317,7 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
       event.id,
       (task) => task.copyWith(
         status: event.status,
+        statusChangedAt: event.status == task.status ? null : () => _clock(),
         duplicateOfId: () =>
             event.status == TeamTaskStatus.duplicate ? event.duplicateOfId : null,
       ),

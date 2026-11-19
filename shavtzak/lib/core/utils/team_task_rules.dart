@@ -404,6 +404,39 @@ List<TeamTaskGroup> groupTeamTasks(
   return [...categoryCards, ...others];
 }
 
+/// A time chip's range in "כל המשימות" (Omer, 19/11/2026): היום, בשבוע
+/// האחרון, בחודש האחרון, counted in Israel calendar days with today
+/// included (the week = today and the 6 days before it, the month = today
+/// and the 29 before it).
+enum TeamTaskTimeRange {
+  today('היום', 1),
+  week('בשבוע האחרון', 7),
+  month('בחודש האחרון', 30);
+
+  const TeamTaskTimeRange(this.hebrewLabel, this.days);
+  final String hebrewLabel;
+
+  /// Calendar days covered, today included.
+  final int days;
+
+  /// Whether [at] falls inside the range ending on [now]'s Israel day. A
+  /// null [at] (never happened) never does.
+  bool contains(DateTime? at, DateTime now) {
+    if (at == null) return false;
+    final today = IsraelCalendar.calendarDay(now);
+    final day = IsraelCalendar.calendarDay(at);
+    final first = DateTime(today.year, today.month, today.day - (days - 1));
+    return !day.isBefore(first) && !day.isAfter(today);
+  }
+}
+
+/// When [task]'s status last changed: the stored `statusChangedAt` (kept by
+/// the backend since 19/11/2026), else, for a task done before it existed,
+/// when it was done. Null = its status never changed since it was created.
+DateTime? teamTaskStatusChangedAt(TeamTask task) =>
+    task.statusChangedAt ??
+    (task.status == TeamTaskStatus.done ? task.completedAt : null);
+
 /// What the list shows: a set of statuses, optionally some owners (any of
 /// them, round 7: several like the statuses), some urgencies (16/11/2026),
 /// one link, only the late tasks ("באיחור", round 7) and a search text.
@@ -423,6 +456,13 @@ class TeamTaskFilter extends Equatable {
   /// Words looked up in a task's title and description.
   final String query;
 
+  /// "יצירה": only the tasks created in this range; null = any time.
+  final TeamTaskTimeRange? created;
+
+  /// "עדכון סטטוס": only the tasks whose status changed in this range
+  /// ([teamTaskStatusChangedAt]); null = any time.
+  final TeamTaskTimeRange? statusChanged;
+
   const TeamTaskFilter({
     required this.statuses,
     this.ownerIds = const {},
@@ -430,6 +470,8 @@ class TeamTaskFilter extends Equatable {
     this.link,
     this.lateOnly = false,
     this.query = '',
+    this.created,
+    this.statusChanged,
   });
 
   /// What is still to be done: "פתוחה" and "בטיפול" (Omer, round 8).
@@ -445,9 +487,16 @@ class TeamTaskFilter extends Equatable {
   bool get statusesChanged =>
       statuses.length != initial.statuses.length || !statuses.containsAll(initial.statuses);
 
-  /// Whether any of the filters (status, owner, urgency, link, late) is set.
+  /// Whether any of the filters (status, owner, urgency, link, late, the two
+  /// time chips) is set.
   bool get anyFilterSet =>
-      statusesChanged || ownerIds.isNotEmpty || urgencies.isNotEmpty || link != null || lateOnly;
+      statusesChanged ||
+      ownerIds.isNotEmpty ||
+      urgencies.isNotEmpty ||
+      link != null ||
+      lateOnly ||
+      created != null ||
+      statusChanged != null;
 
   /// [query] as [normalizeTeamTaskSearch] makes it; empty = no search.
   String get searchText => normalizeTeamTaskSearch(query);
@@ -459,6 +508,8 @@ class TeamTaskFilter extends Equatable {
     TaskLink? Function()? link,
     bool? lateOnly,
     String? query,
+    TeamTaskTimeRange? Function()? created,
+    TeamTaskTimeRange? Function()? statusChanged,
   }) =>
       TeamTaskFilter(
         statuses: statuses ?? this.statuses,
@@ -467,6 +518,8 @@ class TeamTaskFilter extends Equatable {
         link: link != null ? link() : this.link,
         lateOnly: lateOnly ?? this.lateOnly,
         query: query ?? this.query,
+        created: created != null ? created() : this.created,
+        statusChanged: statusChanged != null ? statusChanged() : this.statusChanged,
       );
 
   @override
@@ -477,6 +530,8 @@ class TeamTaskFilter extends Equatable {
         link,
         lateOnly,
         query,
+        created,
+        statusChanged,
       ];
 }
 
@@ -516,6 +571,9 @@ List<TeamTask> applyTeamTaskFilter(
           (filter.urgencies.isEmpty || filter.urgencies.contains(task.urgency)) &&
           linkMatches(task) &&
           (!filter.lateOnly || isTeamTaskLate(task, today)) &&
+          (filter.created == null || filter.created!.contains(task.createdAt, today)) &&
+          (filter.statusChanged == null ||
+              filter.statusChanged!.contains(teamTaskStatusChangedAt(task), today)) &&
           (search.isEmpty ||
               teamTaskSearchText(task, eventCategoryById, categoryNameById).contains(search)))
         task,

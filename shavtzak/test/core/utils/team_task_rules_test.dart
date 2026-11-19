@@ -424,6 +424,61 @@ void main() {
     });
   });
 
+  group('the time chips (19/11/2026)', () {
+    // now = 15.11.2026 10:00 in Israel.
+    DateTime israel(int day, [int hour = 12]) => DateTime.utc(2026, 11, day, hour - 2);
+
+    test('a range counts Israel days, today included', () {
+      expect(TeamTaskTimeRange.today.contains(israel(15, 0), now), isTrue);
+      // 23:30 on the 14th in Israel is 21:30Z: yesterday, not today.
+      expect(TeamTaskTimeRange.today.contains(DateTime.utc(2026, 11, 14, 21, 30), now), isFalse);
+      expect(TeamTaskTimeRange.week.contains(israel(9), now), isTrue);
+      expect(TeamTaskTimeRange.week.contains(israel(8), now), isFalse);
+      expect(TeamTaskTimeRange.month.contains(DateTime.utc(2026, 10, 17, 10), now), isTrue);
+      expect(TeamTaskTimeRange.month.contains(DateTime.utc(2026, 10, 16, 10), now), isFalse);
+      expect(TeamTaskTimeRange.month.contains(null, now), isFalse);
+    });
+
+    test('"יצירה" keeps the tasks created in the range', () {
+      final tasks = [
+        buildTeamTask(id: 'new', createdAt: israel(15)),
+        buildTeamTask(id: 'week', createdAt: israel(10)),
+        buildTeamTask(id: 'old', createdAt: israel(1)),
+      ];
+      List<String> shown(TeamTaskTimeRange range) => applyTeamTaskFilter(
+              tasks, TeamTaskFilter.initial.copyWith(created: () => range), const {}, now: now)
+          .map((t) => t.id)
+          .toList();
+      expect(shown(TeamTaskTimeRange.today), ['new']);
+      expect(shown(TeamTaskTimeRange.week), ['new', 'week']);
+      expect(shown(TeamTaskTimeRange.month), ['new', 'week', 'old']);
+      expect(TeamTaskFilter.initial.copyWith(created: () => TeamTaskTimeRange.today).anyFilterSet,
+          isTrue);
+    });
+
+    test('"עדכון סטטוס" uses statusChangedAt, else a done task\'s completedAt', () {
+      final all = {...TeamTaskStatus.values};
+      final tasks = [
+        buildTeamTask(id: 'moved', status: TeamTaskStatus.inProgress, statusChangedAt: israel(15)),
+        buildTeamTask(
+            id: 'doneBefore', status: TeamTaskStatus.done, completedAt: israel(15)),
+        buildTeamTask(id: 'untouched', createdAt: israel(15)),
+        buildTeamTask(id: 'movedLong', status: TeamTaskStatus.inProgress, statusChangedAt: israel(2)),
+      ];
+      final shown = applyTeamTaskFilter(
+          tasks,
+          TeamTaskFilter(statuses: all, statusChanged: TeamTaskTimeRange.today),
+          const {},
+          now: now);
+      expect(shown.map((t) => t.id), ['moved', 'doneBefore']);
+    });
+
+    test('clearing a range', () {
+      final set = TeamTaskFilter.initial.copyWith(statusChanged: () => TeamTaskTimeRange.week);
+      expect(set.copyWith(statusChanged: () => null), TeamTaskFilter.initial);
+    });
+  });
+
   group('the search (Omer, msg 4500)', () {
     final omer = buildMember(id: 'o1', name: 'עומר בנגל');
     final hanukkah = buildEvent(id: 'e9', name: 'הדלקת נרות', categoryId: 'c7');

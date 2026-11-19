@@ -26,6 +26,7 @@ class TeamTaskModel {
       updates: _updates(data['updates']),
       ownerIds: _stringList(data['ownerIds']),
       completedAt: _date(data['completedAt']),
+      statusChangedAt: _date(data['statusChangedAt']),
       createdAt: _date(data['createdAt']) ?? _epoch,
       createdById: _string(data['createdById']) ?? '',
       updatedAt: _date(data['updatedAt']) ?? _epoch,
