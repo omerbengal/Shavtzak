@@ -108,6 +108,7 @@ class TeamTaskModel {
         byName: _string(entry['byName']),
         editedAt: _date(entry['editedAt']),
         mentionIds: _stringList(entry['mentionIds']),
+        mentionDoneOf: _string(entry['mentionDoneOf']),
       ));
     }
     return updates;
@@ -121,9 +122,11 @@ class TeamTaskModel {
       final memberId = _string(entry['memberId']);
       final at = _date(entry['at']);
       if (memberId == null || at == null) continue;
-      if (mentions.any((m) => m.memberId == memberId)) continue;
+      final updateId = _string(entry['updateId']) ?? '';
+      if (mentions.any((m) => m.memberId == memberId && m.updateId == updateId)) continue;
       mentions.add(TeamTaskMention(
         memberId: memberId,
+        updateId: updateId,
         byId: _string(entry['byId']) ?? '',
         at: at,
         doneAt: _date(entry['doneAt']),

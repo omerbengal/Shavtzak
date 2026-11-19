@@ -2726,8 +2726,12 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
-  Future<void> setTeamTaskMentionDone(String id, String text) async {
-    await _invokeMutation('teamTask.setMentionDone', payload: {'id': id, 'text': text});
+  Future<void> setTeamTaskMentionDone(String id, String updateId, String text) async {
+    await _invokeMutation('teamTask.setMentionDone', payload: {
+      'id': id,
+      if (updateId.isNotEmpty) 'updateId': updateId,
+      'text': text,
+    });
   }
 
   @override

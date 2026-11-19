@@ -72,16 +72,24 @@ export type TaskUpdateEntry = {
   editedAt?: Timestamp | null;
   /** The members tagged ("@") in it (19/11/2026); absent = none. */
   mentionIds?: string[];
+  /**
+   * On a tagged member's "done" line (20/11/2026): the id of the update that
+   * tagged them, so the log links the two lines.
+   */
+  mentionDoneOf?: string;
 };
 
 /**
  * A member tagged ("@") in a task's update log (Omer, 19/11/2026). Not an
- * owner: they see the task in "המשימות שלי", write updates and mark what
- * they were tagged for as done ([doneAt]), never its status. One entry per
- * member; a new tag after "done" opens it again.
+ * owner: they see it in "המשימות שלי", write updates and mark what they were
+ * tagged for as done ([doneAt]), never the task's status. One entry per tag
+ * (Omer, 20/11/2026): the same member tagged in two updates has two, each its
+ * own item titled by its update's text, each done on its own.
  */
 export type TeamTaskMention = {
   memberId: string;
+  /** The update that tagged them; '' = a tag from before 20/11/2026. */
+  updateId: string;
   byId: string;
   at: Timestamp;
   doneAt: Timestamp | null;
@@ -225,30 +233,36 @@ export function parseMentionIds(value: unknown): string[] {
 }
 
 /**
- * [mentions] after the actor tagged [ids]: a member not tagged yet gets an
- * entry; one whose tag was done gets it open again (a new request). The
- * actor never tags themself, and an owner needs no tag (the task is theirs):
- * both stay highlighted in the text only.
+ * [mentions] after update [updateId] of the actor tagged [ids]: every tagged
+ * member gets a tag of their own for that update (Omer, 20/11/2026: two
+ * updates = two tags, whatever the earlier one's state). The actor never tags
+ * themself, and an owner needs no tag (the task is theirs): both stay
+ * highlighted in the text only.
  */
-export function addMentions(task: TeamTaskDoc, ids: string[], ctx: Ctx): TeamTaskMention[] {
+export function addMentions(
+  task: TeamTaskDoc,
+  updateId: string,
+  ids: string[],
+  ctx: Ctx,
+): TeamTaskMention[] {
   const mentions = [...task.mentions];
   for (const id of ids) {
     if (id === ctx.actor.memberId || task.ownerIds.includes(id)) continue;
-    const index = mentions.findIndex((mention) => mention.memberId === id);
-    const fresh: TeamTaskMention = {
+    mentions.push({
       memberId: id,
+      updateId,
       byId: ctx.actor.memberId,
       at: ctx.now,
       doneAt: null,
       doneText: null,
-    };
-    if (index < 0) {
-      mentions.push(fresh);
-    } else if (mentions[index].doneAt != null) {
-      mentions[index] = fresh;
-    }
+    });
   }
   return mentions;
+}
+
+/** The ids of the members tagged in [mentions], once each. */
+export function mentionedMemberIds(mentions: TeamTaskMention[]): string[] {
+  return [...new Set(mentions.map((mention) => mention.memberId))];
 }
 
 function findSubtask(task: TeamTaskDoc, subtaskId: string): TeamSubtask {
@@ -358,6 +372,9 @@ function storedUpdates(value: unknown): TaskUpdateEntry[] {
       ...(Array.isArray(record['mentionIds']) && record['mentionIds'].length > 0
         ? {mentionIds: storedStringList(record['mentionIds'])}
         : {}),
+      ...(storedString(record['mentionDoneOf']) != null
+        ? {mentionDoneOf: storedString(record['mentionDoneOf'])!}
+        : {}),
     });
   }
   return updates;
@@ -372,9 +389,11 @@ function storedMentions(value: unknown): TeamTaskMention[] {
     const memberId = storedString(record['memberId']);
     const at = storedTimestamp(record['at']);
     if (memberId == null || at == null) continue;
-    if (mentions.some((mention) => mention.memberId === memberId)) continue;
+    const updateId = storedString(record['updateId']) ?? '';
+    if (mentions.some((m) => m.memberId === memberId && m.updateId === updateId)) continue;
     mentions.push({
       memberId,
+      updateId,
       byId: storedString(record['byId']) ?? '',
       at,
       doneAt: storedTimestamp(record['doneAt']),
@@ -403,7 +422,7 @@ export function teamTaskFromStored(id: string, raw: Record<string, unknown>): Te
     updates: storedUpdates(raw['updates']),
     ownerIds: storedStringList(raw['ownerIds']),
     mentions: storedMentions(raw['mentions']),
-    mentionIds: storedMentions(raw['mentions']).map((mention) => mention.memberId),
+    mentionIds: mentionedMemberIds(storedMentions(raw['mentions'])),
     completedAt: storedTimestamp(raw['completedAt']),
     statusChangedAt: storedTimestamp(raw['statusChangedAt']),
     createdAt: storedTimestamp(raw['createdAt']) ?? Timestamp.fromMillis(0),
@@ -563,7 +582,7 @@ function finish(task: TeamTaskDoc): TeamTaskDoc {
   return {
     ...task,
     ownerIds: deriveOwnerIds(task),
-    mentionIds: task.mentions.map((mention) => mention.memberId),
+    mentionIds: mentionedMemberIds(task.mentions),
   };
 }
 
@@ -771,20 +790,34 @@ export function appendTeamTaskUpdate(
   return finish({
     ...task,
     updates: [entry, ...task.updates].slice(0, MAX_UPDATES),
-    mentions: addMentions(task, mentionIds, ctx),
+    mentions: addMentions(task, entry.id, mentionIds, ctx),
     updatedAt: ctx.now,
   });
 }
 
 /**
- * A tagged member marks what they were tagged for as done (Omer,
- * 19/11/2026): their tag closes, and the log gets their line with the
- * optional [text]. The task's status does not change.
+ * A tagged member marks what update [updateId] tagged them for as done
+ * (Omer, 19/11/2026; one tag of theirs, 20/11/2026): that tag closes, and the
+ * log gets their line with the optional [text], linked to the update that
+ * tagged them. The task's status and their other tags do not change. No
+ * [updateId] (an app from before 20/11/2026): their oldest open tag.
  */
-export function markTeamTaskMentionDone(task: TeamTaskDoc, text: unknown, ctx: Ctx): TeamTaskDoc {
-  const index = task.mentions.findIndex((mention) => mention.memberId === ctx.actor.memberId);
-  if (index < 0) throw new TaskError(403, 'לא תויגת במשימה הזו');
-  if (task.mentions[index].doneAt != null) throw new TaskError(409, 'כבר סימנת כבוצע');
+export function markTeamTaskMentionDone(
+  task: TeamTaskDoc,
+  updateId: string | null,
+  text: unknown,
+  ctx: Ctx,
+): TeamTaskDoc {
+  const mine = (mention: TeamTaskMention) => mention.memberId === ctx.actor.memberId;
+  if (!task.mentions.some(mine)) throw new TaskError(403, 'לא תויגת במשימה הזו');
+  const index = updateId == null
+    ? task.mentions.findIndex((mention) => mine(mention) && mention.doneAt == null)
+    : task.mentions.findIndex((mention) => mine(mention) && mention.updateId === updateId);
+  if (updateId != null && index < 0) throw new TaskError(404, 'התיוג לא נמצא');
+  if (index < 0 || task.mentions[index].doneAt != null) {
+    throw new TaskError(409, 'כבר סימנת כבוצע');
+  }
+  const tagUpdateId = task.mentions[index].updateId;
   const note = typeof text === 'string' ? text.trim() : '';
   if (note.length > MAX_UPDATE_LENGTH) throw new TaskError(400, 'העדכון ארוך מדי');
   const mentions = [...task.mentions];
@@ -797,6 +830,7 @@ export function markTeamTaskMentionDone(task: TeamTaskDoc, text: unknown, ctx: C
     at: ctx.now,
     byId: ctx.actor.memberId,
     byName: ctx.actor.name,
+    ...(tagUpdateId.length > 0 ? {mentionDoneOf: tagUpdateId} : {}),
   };
   return finish({
     ...task,
@@ -866,6 +900,14 @@ export function deleteTeamTaskUpdate(
   ctx: Ctx,
   subtaskId: string | null = null,
 ): TeamTaskDoc {
-  return changeLog(task, subtaskId, updateId, ctx,
+  const next = changeLog(task, subtaskId, updateId, ctx,
     (log, index) => log.filter((_, i) => i !== index));
+  if (subtaskId != null) return next;
+  // The open tags it made go with it (their item's title was its text); a
+  // done one stays, with its "done" line.
+  return finish({
+    ...next,
+    mentions: next.mentions.filter(
+      (mention) => mention.updateId !== updateId || mention.doneAt != null),
+  });
 }

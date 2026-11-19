@@ -126,13 +126,16 @@ class AddTeamTaskUpdate extends TeamTaskEvent {
 /// optional line for the log.
 class MarkTeamTaskMentionDone extends TeamTaskEvent {
   final String id;
+
+  /// The update that tagged them: which of their tags (20/11/2026).
+  final String updateId;
   final String text;
   final CrudActionCompleter? completion;
 
-  const MarkTeamTaskMentionDone(this.id, this.text, {this.completion});
+  const MarkTeamTaskMentionDone(this.id, this.updateId, this.text, {this.completion});
 
   @override
-  List<Object?> get props => [id, text];
+  List<Object?> get props => [id, updateId, text];
 }
 
 /// A new text for an update of the log: its writer, or a manager in "כל

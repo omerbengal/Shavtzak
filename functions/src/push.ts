@@ -79,36 +79,39 @@ export function taskAssignedMessage(
   };
 }
 
-/** The tag notification (Omer, 19/11/2026): "@ תויגת במשימה" + the title;
- * a tap opens the task, as [taskAssignedMessage]. */
+/** The tag notification (Omer, 19/11/2026): "@ תויגת במשימה" + the title,
+ * and since 20/11/2026 the text of the update that tagged ([text], the tag's
+ * own item); a tap opens the task, as [taskAssignedMessage]. */
 export function taskMentionedMessage(
   task: {id: string; title: string},
   routePrefix: '' | '/test',
+  text: string | null = null,
 ): PushMessage {
   return {
     title: '@ תויגת במשימה',
-    body: task.title,
+    body: text == null || text.length === 0 ? task.title : `${task.title}: ${text}`,
     tag: `task-mention-${task.id}`,
     path: `${routePrefix}/team-tasks?task=${encodeURIComponent(task.id)}`,
   };
 }
 
-type WithMentions = {mentions: {memberId: string; doneAt: unknown}[]};
+type WithMentions = {mentions: {memberId: string; updateId?: string; doneAt: unknown}[]};
 
-/** The members whose tag [after] opened (a new tag, or a done one tagged
- * again), without [actorId]. */
+/** The members [after] has a new open tag for (one per update since
+ * 20/11/2026), once each, without [actorId]. */
 export function openedMentionIds(
   before: WithMentions | null,
   after: WithMentions | null,
   actorId: string,
 ): string[] {
   if (after == null) return [];
+  const key = (m: {memberId: string; updateId?: string}) => `${m.memberId}/${m.updateId ?? ''}`;
   const wasOpen = new Set(
-    (before?.mentions ?? []).filter((m) => m.doneAt == null).map((m) => m.memberId),
+    (before?.mentions ?? []).filter((m) => m.doneAt == null).map(key),
   );
-  return after.mentions
-    .filter((m) => m.doneAt == null && !wasOpen.has(m.memberId) && m.memberId !== actorId)
-    .map((m) => m.memberId);
+  return [...new Set(after.mentions
+    .filter((m) => m.doneAt == null && !wasOpen.has(key(m)) && m.memberId !== actorId)
+    .map((m) => m.memberId))];
 }
 
 /** One document per browser subscription: the same device signing in as
@@ -176,7 +179,7 @@ export async function sendTaskMentionedPush(
   send: PushSend,
   input: {
     before: (WithMentions & {id: string; title: string}) | null;
-    after: (WithMentions & {id: string; title: string}) | null;
+    after: (WithMentions & {id: string; title: string; updates?: {text: string}[]}) | null;
     actorId: string;
     site: PushSite;
     routePrefix: '' | '/test';
@@ -187,7 +190,8 @@ export async function sendTaskMentionedPush(
     store,
     send,
     openedMentionIds(input.before, input.after, input.actorId),
-    taskMentionedMessage(input.after, input.routePrefix),
+    // The newest update is the one that tagged.
+    taskMentionedMessage(input.after, input.routePrefix, input.after.updates?.[0]?.text ?? null),
     input.site,
   );
 }

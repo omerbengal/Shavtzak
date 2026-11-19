@@ -813,23 +813,49 @@ class _GroupedListState extends State<_GroupedList> {
   /// One task's row; [showEvents] adds the chips of a task of several
   /// events (16/11/2026).
   Widget _row(TeamTask task) {
-    // "המשימות שלי" of a member only tagged in it: the @ box instead of the
-    // status (19/11/2026).
-    final tagged = !widget.editing && isTeamTaskTaggedOnly(task, widget.viewerId);
+    // "המשימות שלי" of a member only tagged in it: a row per open tag, the @
+    // box instead of the status (19/11/2026), each titled by the update that
+    // tagged them (20/11/2026).
+    if (!widget.editing && isTeamTaskTaggedOnly(task, widget.viewerId)) {
+      final mentions = task.openMentionsOf(widget.viewerId);
+      final names = {for (final m in widget.state.members) m.id: m.name};
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, mention) in mentions.indexed) ...[
+            if (i > 0) _rowDivider,
+            _flashed(
+              task.id,
+              TeamTaskRow(
+                task: task,
+                now: widget.now,
+                viewerId: widget.viewerId,
+                mention: mention,
+                mentionTitle:
+                    mentionItemTitle(task, mention, memberName: names[widget.viewerId]),
+                mentionByName: names[mention.byId],
+                selected: task.id == widget.selectedId,
+                onAddUpdate: () => showTeamTaskUpdatesDialog(context, task.id),
+                onTap: () => showTeamTaskSheet(context, task.id, manage: false),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
     return _flashed(
         task.id,
         TeamTaskRow(
           task: task,
           now: widget.now,
           viewerId: widget.viewerId,
-          mention: tagged ? task.mentionOf(widget.viewerId) : null,
           // With the events' sections gone (the switch off), every row
           // names its events.
           showEvents: task.hasSeveralEvents || (widget.flat && task.events.isNotEmpty),
           // "המשימות שלי": the status and a new update without opening the
           // task (Omer, round 4); every row there is the viewer's own.
           selected: task.id == widget.selectedId,
-          canChangeStatus: !widget.editing && !tagged,
+          canChangeStatus: !widget.editing,
           // "כל המשימות" only (msg 4480).
           showCreated: widget.editing,
           onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
@@ -837,6 +863,15 @@ class _GroupedListState extends State<_GroupedList> {
         ),
       );
   }
+
+  /// The rows [tasks] show: in "המשימות שלי" a task the viewer is only
+  /// tagged in shows a row per open tag (20/11/2026).
+  int _itemCount(Iterable<TeamTask> tasks) => tasks.fold(
+      0,
+      (sum, task) => sum +
+          (!widget.editing && isTeamTaskTaggedOnly(task, widget.viewerId)
+              ? task.openMentionsOf(widget.viewerId).length
+              : 1));
 
   static const Widget _rowDivider =
       Divider(height: 1, thickness: 1, color: TaskStyle.stageCardDivider);
@@ -851,7 +886,7 @@ class _GroupedListState extends State<_GroupedList> {
         DateTime(event.endDate.year, event.endDate.month, event.endDate.day)
             .isBefore(IsraelCalendar.calendarDay(widget.now));
     final days = event == null ? '' : _eventDays(event);
-    final count = section.tasks.length;
+    final count = _itemCount(section.tasks);
     return [
       Material(
         color: TeamTaskStyle.sectionHeader,
@@ -994,7 +1029,7 @@ class _GroupedListState extends State<_GroupedList> {
       if (rows.isNotEmpty) rows.add(_rowDivider);
       rows.addAll(_section(group, section, state));
     }
-    final count = group.allTasks.length;
+    final count = _itemCount(group.allTasks);
     // Folded by a tap on its header (round 7); a search opens it.
     final folded = widget.collapsed.contains(group.key) && state.filter.searchText.isEmpty;
     return Container(

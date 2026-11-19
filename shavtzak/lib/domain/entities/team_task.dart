@@ -105,6 +105,7 @@ class TaskUpdateEntry extends Equatable {
     this.byName,
     this.editedAt,
     this.mentionIds = const [],
+    this.mentionDoneOf,
   });
 
   /// Set once its writer (or a manager) edited it (round 10): "(נערך)".
@@ -113,15 +114,24 @@ class TaskUpdateEntry extends Equatable {
   /// The members tagged ("@") in it (19/11/2026).
   final List<String> mentionIds;
 
+  /// A tagged member's "done" line (20/11/2026): the id of the update that
+  /// tagged them, which the log links it to.
+  final String? mentionDoneOf;
+
   @override
-  List<Object?> get props => [id, text, at, byId, byName, editedAt, mentionIds];
+  List<Object?> get props =>
+      [id, text, at, byId, byName, editedAt, mentionIds, mentionDoneOf];
 }
 
 /// A member tagged ("@") in the log (Omer, 19/11/2026): not an owner; they
-/// see the task in "המשימות שלי" with an @ mark, write updates and mark what
-/// they were tagged for as done, never the task's status.
+/// write updates and mark what they were tagged for as done, never the
+/// task's status. One per tag (20/11/2026): each is its own item in their
+/// "המשימות שלי", titled by the text of the update that tagged them.
 class TeamTaskMention extends Equatable {
   final String memberId;
+
+  /// The update that tagged them; '' = a tag from before 20/11/2026.
+  final String updateId;
   final String byId;
   final DateTime at;
 
@@ -132,6 +142,7 @@ class TeamTaskMention extends Equatable {
   const TeamTaskMention({
     required this.memberId,
     required this.at,
+    this.updateId = '',
     this.byId = '',
     this.doneAt,
     this.doneText,
@@ -140,7 +151,7 @@ class TeamTaskMention extends Equatable {
   bool get isDone => doneAt != null;
 
   @override
-  List<Object?> get props => [memberId, byId, at, doneAt, doneText];
+  List<Object?> get props => [memberId, updateId, byId, at, doneAt, doneText];
 }
 
 /// A team task ("משימה") of the headquarters team: linked to one or more
@@ -238,9 +249,18 @@ class TeamTask extends Equatable {
     return [link.id, ...eventIds.where((id) => id != link.id)];
   }
 
-  /// [memberId]'s tag, or null when they were never tagged.
-  TeamTaskMention? mentionOf(String memberId) =>
-      mentions.where((mention) => mention.memberId == memberId).firstOrNull;
+  /// [memberId]'s tags, one per update that tagged them (20/11/2026).
+  List<TeamTaskMention> mentionsOf(String memberId) =>
+      [for (final mention in mentions) if (mention.memberId == memberId) mention];
+
+  /// [memberId]'s tags not marked done yet: their items in "המשימות שלי".
+  List<TeamTaskMention> openMentionsOf(String memberId) =>
+      [for (final mention in mentionsOf(memberId)) if (!mention.isDone) mention];
+
+  /// The update [mention] was made in, or null (deleted, or an old tag).
+  TaskUpdateEntry? updateOf(TeamTaskMention mention) => mention.updateId.isEmpty
+      ? null
+      : updates.where((entry) => entry.id == mention.updateId).firstOrNull;
 
   /// Linked to more than one event.
   bool get hasSeveralEvents => linkedEventIds.length > 1;

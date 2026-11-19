@@ -223,7 +223,9 @@ test('addUpdate with tags: an inactive member is refused; setMentionDone by the 
   assert.deepEqual(added.after?.mentionIds, ['b']);
   assert.deepEqual(added.details['mentionIds'], ['b']);
   const tagged: TaskActor = {memberId: 'b', name: 'יוסי', isAdmin: false, canManageTasks: false};
-  const done = await runTeamTaskOperation(store, 'teamTask.setMentionDone', {id: 't1', text: 'בוצע'}, tagged, now);
+  const done = await runTeamTaskOperation(store, 'teamTask.setMentionDone',
+    {id: 't1', updateId: added.after?.updates[0].id, text: 'בוצע'}, tagged, now);
+  assert.equal(done.after?.updates[0].mentionDoneOf, added.after?.updates[0].id);
   assert.notEqual(done.after?.mentions[0].doneAt, null);
   assert.equal(done.after?.status, 'open');
   await assert.rejects(

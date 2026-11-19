@@ -495,21 +495,51 @@ test('tagging an owner adds no mention', () => {
   assert.deepEqual(tagged.updates[0].mentionIds, ['a']);
 });
 
-test('marking a tag done closes it, logs the line, and a new tag opens it again', () => {
+test('marking a tag done closes it and logs a line linked to the tagging update', () => {
   const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
   const tagged = appendTeamTaskUpdate(task, 'יוסי', {now, actor: ownerA}, null, ['b']);
-  expectTaskError(() => markTeamTaskMentionDone(tagged, '', {now, actor: stranger}), 403);
-  const done = markTeamTaskMentionDone(tagged, ' שלחתי ', {now: later, actor: ownerB});
+  const tagId = tagged.updates[0].id;
+  assert.equal(tagged.mentions[0].updateId, tagId);
+  expectTaskError(() => markTeamTaskMentionDone(tagged, tagId, '', {now, actor: stranger}), 403);
+  expectTaskError(() => markTeamTaskMentionDone(tagged, 'nope', '', {now, actor: ownerB}), 404);
+  const done = markTeamTaskMentionDone(tagged, tagId, ' שלחתי ', {now: later, actor: ownerB});
   assert.deepEqual(done.mentions[0].doneAt, later);
   assert.equal(done.mentions[0].doneText, 'שלחתי');
   assert.equal(done.updates[0].text, `${MENTION_DONE_PREFIX}: שלחתי`);
+  assert.equal(done.updates[0].mentionDoneOf, tagId);
   assert.equal(done.status, 'open');
-  expectTaskError(() => markTeamTaskMentionDone(done, '', {now, actor: ownerB}), 409);
-  const bare = markTeamTaskMentionDone(tagged, '', {now, actor: ownerB});
+  expectTaskError(() => markTeamTaskMentionDone(done, tagId, '', {now, actor: ownerB}), 409);
+  const bare = markTeamTaskMentionDone(tagged, tagId, '', {now, actor: ownerB});
   assert.equal(bare.updates[0].text, MENTION_DONE_PREFIX);
-  const again = appendTeamTaskUpdate(done, 'שוב', {now, actor: ownerA}, null, ['b']);
-  assert.equal(again.mentions[0].doneAt, null);
-  assert.deepEqual(again.mentionIds, ['b']);
+});
+
+test('the same member tagged in two updates has two tags, each done on its own', () => {
+  const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
+  const first = appendTeamTaskUpdate(task, '@b מזרנים', {now, actor: ownerA}, null, ['b']);
+  const second = appendTeamTaskUpdate(first, '@b קשר', {now: later, actor: ownerA}, null, ['b']);
+  assert.equal(second.mentions.length, 2);
+  assert.deepEqual(second.mentionIds, ['b']);
+  const [firstId, secondId] = [first.updates[0].id, second.updates[0].id];
+  const done = markTeamTaskMentionDone(second, firstId, '', {now: later, actor: ownerB});
+  const byUpdate = Object.fromEntries(done.mentions.map((m) => [m.updateId, m.doneAt]));
+  assert.notEqual(byUpdate[firstId], null);
+  assert.equal(byUpdate[secondId], null);
+  // A tag again after "done" is one more tag; the done one stays done.
+  const again = appendTeamTaskUpdate(done, '@b שוב', {now: later, actor: ownerA}, null, ['b']);
+  assert.equal(again.mentions.length, 3);
+  // No update id (an older app): the oldest open tag.
+  const legacy = markTeamTaskMentionDone(second, null, '', {now: later, actor: ownerB});
+  assert.notEqual(legacy.mentions.find((m) => m.updateId === firstId)?.doneAt, null);
+});
+
+test('deleting a tagging update drops its open tags, keeps the done ones', () => {
+  const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
+  const tagged = appendTeamTaskUpdate(task, '@b @c', {now, actor: ownerA}, null, ['b', 'c']);
+  const tagId = tagged.updates[0].id;
+  const done = markTeamTaskMentionDone(tagged, tagId, '', {now: later, actor: ownerB});
+  const removed = deleteTeamTaskUpdate(done, tagId, {now: later, actor: ownerA});
+  assert.deepEqual(removed.mentions.map((m) => m.memberId), ['b']);
+  assert.deepEqual(removed.mentionIds, ['b']);
 });
 
 test('mentions survive a round trip through the stored document', () => {

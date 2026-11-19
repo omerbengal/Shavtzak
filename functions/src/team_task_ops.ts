@@ -256,7 +256,8 @@ export async function runTeamTaskOperation(
     }
     case 'teamTask.setMentionDone': {
       const before = await loadTask(store, requireId(payload['id'], 'id'));
-      const next = markTeamTaskMentionDone(before, payload['text'], ctx);
+      const next = markTeamTaskMentionDone(
+        before, optionalId(payload['updateId'], 'updateId'), payload['text'], ctx);
       await store.writeTask(next);
       return {entityId: next.id, before, after: next, details: {text: next.updates[0]?.text}};
     }

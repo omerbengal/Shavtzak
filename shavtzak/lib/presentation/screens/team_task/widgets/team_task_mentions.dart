@@ -60,6 +60,27 @@ List<String> mentionIdsInText(String text, Map<String, String> picked) => [
         if (text.contains('@${entry.key}')) entry.value,
     ];
 
+/// The update field (Omer, msg 5298): a name picked from the "@" list shows
+/// in the tag's colour while the update is still being written, so it is
+/// clear the tag took.
+class MentionTextEditingController extends TextEditingController {
+  /// The names picked from the list (their "@<name>" is coloured).
+  final Set<String> picked = {};
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final names = [for (final name in picked) if (text.contains('@$name')) name];
+    if (names.isEmpty) {
+      return super.buildTextSpan(context: context, style: style, withComposing: withComposing);
+    }
+    return mentionSpans(text, names, style: style);
+  }
+}
+
 /// [text] with every "@<name>" of [names] in the tag's colour.
 TextSpan mentionSpans(String text, Iterable<String> names, {TextStyle? style}) {
   final sorted = names.where((n) => n.isNotEmpty).toSet().toList()
@@ -84,8 +105,8 @@ TextSpan mentionSpans(String text, Iterable<String> names, {TextStyle? style}) {
   return TextSpan(style: style, children: spans);
 }
 
-/// The suggestions under the update field while the caret is in an "@"
-/// query; a tap calls [onPick].
+/// The suggestions above the update field (Omer, msg 5298) while the caret
+/// is in an "@" query; a tap calls [onPick].
 class MentionSuggestions extends StatelessWidget {
   const MentionSuggestions({super.key, required this.members, required this.onPick});
 
@@ -97,14 +118,15 @@ class MentionSuggestions extends StatelessWidget {
     if (members.isEmpty) return const SizedBox.shrink();
     return Container(
       key: const Key('team-task-mention-suggestions'),
-      margin: const EdgeInsets.only(top: 4),
+      margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: TaskStyle.rest),
         borderRadius: BorderRadius.circular(8),
-        boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 6, offset: Offset(0, 2))],
+        boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 6, offset: Offset(0, -2))],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final member in members)
@@ -156,8 +178,9 @@ class MentionMark extends StatelessWidget {
       );
 }
 
-/// The tagged member's box: empty while the tag is open, ticked once they
-/// marked it done. A tap on an open one asks first ([showMentionDoneDialog]).
+/// The tagged member's box for one tag: empty while it is open, ticked once
+/// they marked it done. A tap on an open one asks first
+/// ([showMentionDoneDialog]).
 class MentionDoneBox extends StatelessWidget {
   const MentionDoneBox({super.key, required this.task, required this.mention, this.size = 24});
 
@@ -176,20 +199,27 @@ class MentionDoneBox extends StatelessWidget {
     return Tooltip(
       message: done ? 'סימנת כבוצע' : 'סימון כבוצע',
       child: InkWell(
-        key: Key('team-task-mention-box-${task.id}'),
+        key: Key('team-task-mention-box-${task.id}-${mention.updateId}'),
         customBorder: const CircleBorder(),
-        onTap: done ? null : () => showMentionDoneDialog(context, task),
+        onTap: done ? null : () => showMentionDoneDialog(context, task, mention),
         child: Padding(padding: const EdgeInsets.all(6), child: icon),
       ),
     );
   }
 }
 
-/// "סמן כבוצע" for a tag (Omer, 19/11/2026): an optional line, "ביטול"
-/// leaves the box empty, "סמן כבוצע" ticks it and writes the line to the log.
-Future<void> showMentionDoneDialog(BuildContext context, TeamTask task) async {
-  Logger.action('open:teamTaskMentionDone', {'taskId': task.id});
+/// "סמן כבוצע" for one tag (Omer, 19/11/2026): an optional line, "ביטול"
+/// leaves the box empty, "סמן כבוצע" ticks it and writes the line to the log,
+/// linked to the update that tagged (20/11/2026).
+Future<void> showMentionDoneDialog(
+    BuildContext context, TeamTask task, TeamTaskMention mention) async {
+  Logger.action('open:teamTaskMentionDone', {'taskId': task.id, 'updateId': mention.updateId});
   final bloc = context.read<TeamTaskBloc>();
+  final state = bloc.state;
+  final name = state is TeamTasksLoaded
+      ? state.members.where((m) => m.id == mention.memberId).firstOrNull?.name
+      : null;
+  final title = mentionItemTitle(task, mention, memberName: name);
   final messenger = ScaffoldMessenger.maybeOf(context);
   // Not disposed here: the dialog still draws it while it fades out.
   final controller = TextEditingController();
@@ -206,7 +236,14 @@ Future<void> showMentionDoneDialog(BuildContext context, TeamTask task) async {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(task.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                if (title != task.title)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text('במשימה: ${task.title}',
+                        style: const TextStyle(
+                            fontSize: TaskStyle.rowMetaSize, color: TaskStyle.neutralText)),
+                  ),
                 const SizedBox(height: 10),
                 RtlArrowKeys(
                   multiline: true,
@@ -243,7 +280,7 @@ Future<void> showMentionDoneDialog(BuildContext context, TeamTask task) async {
     );
   if (text == null) return;
   final completion = CrudActionCompleter();
-  bloc.add(MarkTeamTaskMentionDone(task.id, text, completion: completion));
+  bloc.add(MarkTeamTaskMentionDone(task.id, mention.updateId, text, completion: completion));
   final result = await completion.future;
   if (result.isFailure) {
     messenger?.showSnackBar(SnackBar(content: Text(result.message ?? 'הפעולה נכשלה')));

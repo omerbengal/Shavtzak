@@ -55,7 +55,8 @@ class FakeTeamTaskRepository extends Fake implements TeamTaskRepository {
       _record('log:$id:$text${mentionIds.isEmpty ? '' : ':@${mentionIds.join(',')}'}');
 
   @override
-  Future<void> setMentionDone(String id, String text) => _record('mentionDone:$id:$text');
+  Future<void> setMentionDone(String id, String updateId, String text) =>
+      _record('mentionDone:$id:$updateId:$text');
 
   @override
   Future<void> editUpdate(String id, String updateId, String text) =>

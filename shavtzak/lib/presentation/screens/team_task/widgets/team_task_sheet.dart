@@ -258,7 +258,9 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     final owner = isTeamTaskOwner(task, viewerId);
     // Tagged ("@") without owning it (19/11/2026): writes in the log, never
     // the status.
-    final myTag = isTeamTaskTaggedOnly(task, viewerId) ? task.mentionOf(viewerId) : null;
+    final myTags = isTeamTaskTaggedOnly(task, viewerId)
+        ? task.mentionsOf(viewerId)
+        : const <TeamTaskMention>[];
     final activeMembers = state.members.where((m) => m.isActive && !m.isArchived).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     final now = DateTime.now();
@@ -281,13 +283,13 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                 _section('דד ליין', _deadlineValue(state, task, manage, late)),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
                 _section('אנשי קשר', _contactsValue(task, manage)),
-                if (myTag != null) _section('תויגת', _myTagValue(state, task, myTag)),
+                if (myTags.isNotEmpty) _section('תויגת', _myTagsValue(state, task, myTags)),
                 if (task.mentions.isNotEmpty) _section('מתויגים', _mentionsValue(state, task)),
                 _section(
                   'יומן עדכונים',
                   TeamTaskUpdateLog(
                     task: task,
-                    canWrite: manage || owner || myTag != null,
+                    canWrite: manage || owner || myTags.isNotEmpty,
                     // Everyone's updates only in "כל המשימות" (round 10).
                     canEditAll: manage,
                   ),
@@ -300,45 +302,70 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     );
   }
 
-  /// The viewer's own tag: the box they tick when done, and who tagged them.
-  Widget _myTagValue(TeamTasksLoaded state, TeamTask task, TeamTaskMention mention) {
-    final by = state.members.where((m) => m.id == mention.byId).firstOrNull?.name;
-    return Row(
+  /// The viewer's own tags, one line each (20/11/2026): the box they tick
+  /// when done, what the update asked, and who tagged them.
+  Widget _myTagsValue(TeamTasksLoaded state, TeamTask task, List<TeamTaskMention> mentions) {
+    final names = {for (final m in state.members) m.id: m.name};
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MentionDoneBox(task: task, mention: mention),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            mention.isDone
-                ? 'סימנת כבוצע'
-                : 'סמן/י כבוצע כשסיימת${by == null ? '' : ' (תייג/ה: $by)'}',
-            style: const TextStyle(color: TaskStyle.neutralText),
+        for (final mention in mentions)
+          Row(
+            children: [
+              MentionDoneBox(task: task, mention: mention),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(
+                      text: mentionItemTitle(task, mention, memberName: names[mention.memberId]),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: mention.isDone ? TaskStyle.faintText : null,
+                        decoration: mention.isDone ? TextDecoration.lineThrough : null,
+                      ),
+                    ),
+                    TextSpan(
+                      text: mention.isDone
+                          ? '  · סימנת כבוצע'
+                          : names[mention.byId] == null
+                              ? ''
+                              : '  · תייג/ה: ${names[mention.byId]}',
+                      style: const TextStyle(
+                          fontSize: TaskStyle.rowMetaSize, color: TaskStyle.neutralText),
+                    ),
+                  ]),
+                ),
+              ),
+            ],
           ),
-        ),
       ],
     );
   }
 
-  /// Everyone tagged in the log, each with ✓ once they marked it done.
+  /// Everyone tagged in the log, once each, with ✓ once they marked all
+  /// their tags done.
   Widget _mentionsValue(TeamTasksLoaded state, TeamTask task) {
     final names = {for (final m in state.members) m.id: m.name};
+    final open = {for (final m in task.mentions) if (!m.isDone) m.memberId};
+    final members = {for (final m in task.mentions) m.memberId}.toList();
     return Wrap(
       key: const Key('team-task-mentions'),
       spacing: 6,
       runSpacing: 4,
       children: [
-        for (final mention in task.mentions)
+        for (final id in members)
           Chip(
-            key: Key('team-task-mention-${mention.memberId}'),
+            key: Key('team-task-mention-$id'),
             visualDensity: VisualDensity.compact,
-            backgroundColor: mention.isDone ? TaskStyle.doneLight : mentionLight,
+            backgroundColor: open.contains(id) ? mentionLight : TaskStyle.doneLight,
             side: BorderSide.none,
             avatar: Icon(
-              mention.isDone ? Icons.check : Icons.alternate_email,
+              open.contains(id) ? Icons.alternate_email : Icons.check,
               size: 16,
-              color: mention.isDone ? TaskStyle.done : mentionColor,
+              color: open.contains(id) ? mentionColor : TaskStyle.done,
             ),
-            label: Text(names[mention.memberId] ?? unknownMemberLabel),
+            label: Text(names[id] ?? unknownMemberLabel),
           ),
       ],
     );
