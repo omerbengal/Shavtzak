@@ -101,11 +101,11 @@ void main() {
   });
 
   group('assignedEventIdsOf', () {
-    test('every assignment counts except a declined one', () {
+    test('every assignment counts, one id per event', () {
       final ids = assignedEventIdsOf([
         _assignment('a1', 'e1', AssignmentStatus.pending),
         _assignment('a2', 'e2', AssignmentStatus.confirmed),
-        _assignment('a3', 'e3', AssignmentStatus.declined),
+        _assignment('a3', 'e2', AssignmentStatus.pending),
       ]);
       expect(ids, {'e1', 'e2'});
     });

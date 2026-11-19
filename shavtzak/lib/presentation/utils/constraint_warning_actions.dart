@@ -24,12 +24,9 @@ Future<List<Event>> loadEventsForConstraintWarnings(
   }
 }
 
-/// The events [assignments] place a member in: every assignment except a
-/// declined one (a declined assignment does not fill the role either, see
-/// [AssignmentRepository.getEventAssignmentStats]).
+/// The events [assignments] place a member in: every assignment counts.
 Set<String> assignedEventIdsOf(List<Assignment> assignments) => {
-      for (final assignment in assignments)
-        if (!assignment.isDeclined) assignment.eventId,
+      for (final assignment in assignments) assignment.eventId,
     };
 
 /// Ids of the events [teamMemberId] is assigned to, for the
