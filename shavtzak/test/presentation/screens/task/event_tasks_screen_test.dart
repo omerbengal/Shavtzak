@@ -408,6 +408,26 @@ void main() {
       expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
     });
 
+    testWidgets('a stage that ends while my timeline is open folds away on the minute',
+        (tester) async {
+      // The workshops run 14:30-17:00; the tab is open at 16:59.
+      var clockNow = DateTime(2026, 10, 20, 16, 59);
+      await pumpEventTasks(
+        tester,
+        user: sDana,
+        clock: () => clockNow,
+        board: sampleTaskBoard(),
+      );
+      expect(find.textContaining('2 שלבים קודמים'), findsOneWidget);
+
+      // 17:00 on the phone's clock: no tab switch, no lifecycle event.
+      clockNow = DateTime(2026, 10, 20, 17);
+      await tester.pump(const Duration(minutes: 1));
+
+      expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
+      expect(find.byKey(const Key('my-task-tick-ws-later')), findsNothing);
+    });
+
     testWidgets('the clock moves on the minute, not a minute after opening',
         (tester) async {
       // Opened 45 seconds into 14:40.

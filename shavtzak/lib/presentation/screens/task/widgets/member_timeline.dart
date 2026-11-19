@@ -25,8 +25,10 @@ final DateFormat _dayKeyFormat = DateFormat('yyyy-MM-dd');
 /// the list is also the event's schedule. Late tasks of the viewer, from any
 /// stage, are pinned on top.
 ///
-/// Where it opens is taken once, when it is created, so time passing moves
-/// the highlight and the captions but never re-folds or reshapes the list.
+/// Where it opens is taken when it is created and again whenever the stage
+/// of now changes (a stage ends or the next one starts), so a stage that is
+/// over folds away by itself; time passing within a stage moves only the
+/// highlight and the captions.
 class MemberTimeline extends StatefulWidget {
   const MemberTimeline({
     super.key,
@@ -119,7 +121,22 @@ class _MemberTimelineState extends State<MemberTimeline> {
     final anchorGone = anchorId == null
         ? widget.board.stages.isNotEmpty
         : widget.board.stageById(anchorId) == null;
-    if (anchorGone) _takeAnchor();
+    if (anchorGone) {
+      _takeAnchor();
+      return;
+    }
+    // A stage ending (or the next one starting) while the tab is open moves
+    // the timeline on by itself, as reopening the tab would: the stage of
+    // now gets the full rows and the ones behind it join the fold. Time
+    // passing within a stage changes nothing here.
+    final liveAnchor = timelineAnchor(widget.board.stages, widget.now);
+    if (liveAnchor != null &&
+        liveAnchor.id != _anchorId &&
+        liveAnchor.id !=
+            timelineAnchor(oldWidget.board.stages, oldWidget.now)?.id) {
+      _anchorId = liveAnchor.id;
+      _folded = foldedStageIds(widget.board.stages, liveAnchor);
+    }
   }
 
   void _takeAnchor() {

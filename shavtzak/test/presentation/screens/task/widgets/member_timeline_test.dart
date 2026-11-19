@@ -308,7 +308,11 @@ void main() {
     await pumpTimeline(tester);
     final evening = DateTime(2026, 10, 20, 20);
     await tester.pumpWidget(timeline(board: sampleBoard(), now: evening));
-    expect(find.textContaining('2 שלבים קודמים'), findsOneWidget);
+    // The workshops ended at 17:00, so they already folded away live.
+    expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('my-earlier-toggle')));
+    await tester.pump();
+    expect(find.text('הקמה'), findsOneWidget);
 
     for (final state in [
       AppLifecycleState.inactive,
@@ -322,7 +326,9 @@ void main() {
     }
     await tester.pump();
 
+    // Reopened on the stage of now: the earlier stages folded again.
     expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
+    expect(find.text('הקמה'), findsNothing);
     // At 20:00 the lunch task, both workshop tasks and the 19:00 dinner task
     // are late.
     expect(inside('my-late-banner', find.text('4 משימות באיחור')), findsOneWidget);
@@ -487,22 +493,54 @@ void main() {
     expect(showAllTaps, 1);
   });
 
-  testWidgets('time passing moves the highlight and the captions, not the fold or the rows',
+  testWidgets('time passing inside a stage moves the captions, not the fold or the rows',
       (tester) async {
     await pumpTimeline(tester);
 
     await tester.pumpWidget(timeline(
       board: sampleBoard(),
-      now: DateTime(2026, 10, 20, 17, 30),
+      now: DateTime(2026, 10, 20, 16, 59),
     ));
 
-    expect(inside('my-stage-ws', find.text('עכשיו')), findsNothing);
-    expect(inside('my-stage-dinner', find.text('השלב הבא')), findsOneWidget);
+    expect(inside('my-stage-ws', find.text('עכשיו')), findsOneWidget);
     expect(
       find.text('2 שלבים קודמים · משימה אחת שלך הושלמה'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('my-task-tick-ws-later')), findsOneWidget);
+  });
+
+  testWidgets('a stage that ends while the tab is open folds into the earlier stages at once',
+      (tester) async {
+    await pumpTimeline(tester);
+
+    // The workshops run 14:30-17:00: at 17:00 sharp they are over and the
+    // timeline moves on to dinner by itself, no tab switch needed.
+    await tester.pumpWidget(timeline(
+      board: sampleBoard(),
+      now: DateTime(2026, 10, 20, 17),
+    ));
+
+    expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
+    expect(find.text('סדנאות'), findsNothing);
+    expect(find.byKey(const Key('my-task-tick-ws-later')), findsNothing);
+    expect(inside('my-stage-dinner', find.text('השלב הבא')), findsOneWidget);
+  });
+
+  testWidgets('earlier stages opened by hand stay open when a stage ends',
+      (tester) async {
+    await pumpTimeline(tester);
+    await tester.tap(find.byKey(const Key('my-earlier-toggle')));
+    await tester.pump();
+
+    await tester.pumpWidget(timeline(
+      board: sampleBoard(),
+      now: DateTime(2026, 10, 20, 17),
+    ));
+
+    expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
+    expect(find.text('הקמה'), findsOneWidget);
+    expect(find.text('סדנאות'), findsOneWidget);
   });
 
   testWidgets('before the event it opens on the first stage, captioned השלב הבא',
