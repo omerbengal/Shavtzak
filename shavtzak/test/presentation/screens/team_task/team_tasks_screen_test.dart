@@ -724,6 +724,45 @@ void main() {
     });
   });
 
+  group('the time chips (19/11/2026)', () {
+    const wide = Size(1280, 900);
+    final fresh = buildTeamTask(
+            id: 'f', title: 'חדשה', assigneeIds: ['m1'], createdAt: DateTime.utc(2026, 11, 15, 7))
+        .copyWith(owners: [dana]);
+
+    testWidgets('"יצירה ← היום" keeps the tasks of today; the same pick clears it', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine, fresh]), size: wide);
+      expect(find.text('יצירה'), findsOneWidget);
+      expect(find.text('עדכון סטטוס'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-filter-created')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-created-today')).first);
+      await tester.pumpAndSettle();
+      expect(find.text('יצירה: היום'), findsOneWidget);
+      expect(find.byKey(const Key('team-task-row-f')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-row-a')), findsNothing);
+      await tester.tap(find.byKey(const Key('team-filter-created')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-filter-created-today')).first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-row-a')), findsOneWidget);
+    });
+
+    testWidgets('"המשימות שלי" has no time chips', (tester) async {
+      await pumpTeamTasks(tester, user: dana, board: board([mine]), size: wide);
+      expect(find.byKey(const Key('team-filter-created')), findsNothing);
+      expect(find.byKey(const Key('team-filter-status-changed')), findsNothing);
+    });
+
+    testWidgets('"באיחור" stays the leftmost chip', (tester) async {
+      await pumpTeamTasks(tester, user: manager, board: board([mine]), size: wide);
+      final late = tester.getRect(find.byKey(const Key('team-filter-late')));
+      for (final key in ['team-filter-created', 'team-filter-status-changed']) {
+        expect(late.right, lessThanOrEqualTo(tester.getRect(find.byKey(Key(key))).left));
+      }
+    });
+  });
+
   group('round 9', () {
     testWidgets('the "שיוך" row of the funnel has the arrow, its word lined up with the others',
         (tester) async {

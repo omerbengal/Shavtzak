@@ -97,6 +97,11 @@ export type TeamTaskDoc = {
   /** Derived: [deriveOwnerIds]. */
   ownerIds: string[];
   completedAt: Timestamp | null;
+  /**
+   * When [status] last changed (19/11/2026, the "עדכון סטטוס" filter);
+   * null = not since the field exists, or never.
+   */
+  statusChangedAt: Timestamp | null;
   createdAt: Timestamp;
   createdById: string;
   updatedAt: Timestamp;
@@ -294,6 +299,7 @@ export function teamTaskFromStored(id: string, raw: Record<string, unknown>): Te
     updates: storedUpdates(raw['updates']),
     ownerIds: storedStringList(raw['ownerIds']),
     completedAt: storedTimestamp(raw['completedAt']),
+    statusChangedAt: storedTimestamp(raw['statusChangedAt']),
     createdAt: storedTimestamp(raw['createdAt']) ?? Timestamp.fromMillis(0),
     createdById: storedString(raw['createdById']) ?? '',
     updatedAt: storedTimestamp(raw['updatedAt']) ?? Timestamp.fromMillis(0),
@@ -481,6 +487,7 @@ export function buildNewTeamTask(input: Record<string, unknown>, ctx: Ctx): Team
     updates: [],
     ownerIds: [],
     completedAt: null,
+    statusChangedAt: null,
     createdAt: ctx.now,
     createdById: ctx.actor.memberId,
     updatedAt: ctx.now,
@@ -557,6 +564,7 @@ export function applyTeamTaskStatus(
     status,
     duplicateOfId: original,
     completedAt,
+    statusChangedAt: status === task.status ? task.statusChangedAt : ctx.now,
     updatedAt: ctx.now,
   });
 }

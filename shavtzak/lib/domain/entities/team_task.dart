@@ -145,6 +145,10 @@ class TeamTask extends Equatable {
   /// Derived by the backend on every write: the owners, once each.
   final List<String> ownerIds;
   final DateTime? completedAt;
+
+  /// When the status last changed (written by the backend's
+  /// `teamTask.setStatus` since 19/11/2026); null = not since then.
+  final DateTime? statusChangedAt;
   final DateTime createdAt;
   final String createdById;
   final DateTime updatedAt;
@@ -179,6 +183,7 @@ class TeamTask extends Equatable {
     this.updates = const [],
     this.ownerIds = const [],
     this.completedAt,
+    this.statusChangedAt,
     required this.createdAt,
     this.createdById = '',
     required this.updatedAt,
@@ -229,6 +234,7 @@ class TeamTask extends Equatable {
     List<TaskUpdateEntry>? updates,
     List<String>? ownerIds,
     DateTime? Function()? completedAt,
+    DateTime? Function()? statusChangedAt,
     DateTime? updatedAt,
     Event? Function()? event,
     List<Event>? events,
@@ -252,6 +258,7 @@ class TeamTask extends Equatable {
         updates: updates ?? this.updates,
         ownerIds: ownerIds ?? this.ownerIds,
         completedAt: completedAt != null ? completedAt() : this.completedAt,
+        statusChangedAt: statusChangedAt != null ? statusChangedAt() : this.statusChangedAt,
         createdAt: createdAt,
         createdById: createdById,
         updatedAt: updatedAt ?? this.updatedAt,
@@ -279,6 +286,7 @@ class TeamTask extends Equatable {
         updates,
         ownerIds,
         completedAt,
+        statusChangedAt,
         createdAt,
         createdById,
         updatedAt,

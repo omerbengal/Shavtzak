@@ -17,7 +17,8 @@ import 'team_task_style.dart';
 /// same three filters as rows (Omer, round 3).
 ///
 /// [showOwner] false hides the owner filter ("המשימות שלי": they are all the
-/// viewer's).
+/// viewer's) and the two time chips, "יצירה" and "עדכון סטטוס" (Omer,
+/// 19/11/2026: "כל המשימות" only).
 class TeamTaskFilterBar extends StatefulWidget {
   const TeamTaskFilterBar({super.key, required this.state, required this.showOwner});
 
@@ -141,6 +142,77 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           ),
       ];
 
+  // ---- the time chips (19/11/2026) ----
+
+  /// "יצירה" or "עדכון סטטוס", and the range once one is picked.
+  static String _timeLabel(String name, TeamTaskTimeRange? range) =>
+      range == null ? name : '$name: ${range.hebrewLabel}';
+
+  /// A title row inside the funnel's "זמן" submenu.
+  Widget _menuHeader(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w600, color: TaskStyle.neutralText)),
+      );
+
+  void _setCreated(TeamTaskTimeRange range) {
+    Logger.action('tap:teamTasksCreatedFilter', {'range': range.name});
+    // Picking the ticked range again clears it.
+    final next = _filter.created == range ? null : range;
+    _set(_filter.copyWith(created: () => next));
+  }
+
+  void _setStatusChanged(TeamTaskTimeRange range) {
+    Logger.action('tap:teamTasksStatusChangedFilter', {'range': range.name});
+    final next = _filter.statusChanged == range ? null : range;
+    _set(_filter.copyWith(statusChanged: () => next));
+  }
+
+  /// One row per range; one range at a time, so a pick closes the menu.
+  List<Widget> _timeRows({
+    required String keyPrefix,
+    required TeamTaskTimeRange? selected,
+    required void Function(TeamTaskTimeRange) onPick,
+  }) =>
+      [
+        for (final range in TeamTaskTimeRange.values)
+          CheckboxMenuButton(
+            key: Key('$keyPrefix-${range.name}'),
+            value: selected == range,
+            onChanged: (_) => onPick(range),
+            child: Text(range.hebrewLabel),
+          ),
+      ];
+
+  Widget _timeChip({
+    required String keyName,
+    required String name,
+    required String tooltip,
+    required TeamTaskTimeRange? selected,
+    required void Function(TeamTaskTimeRange) onPick,
+  }) =>
+      MenuAnchor(
+        menuChildren: _timeRows(keyPrefix: keyName, selected: selected, onPick: onPick),
+        builder: (context, controller, _) => Tooltip(
+          message: tooltip,
+          child: InkWell(
+            key: Key(keyName),
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              Logger.action('tap:${keyName}Chip');
+              controller.isOpen ? controller.close() : controller.open();
+            },
+            child: _FilterChipLook(
+              compact: _compact,
+              icon: Icons.schedule,
+              label: _timeLabel(name, selected),
+              active: selected != null,
+            ),
+          ),
+        ),
+      );
+
   void _toggleLate() {
     Logger.action('tap:teamTasksLateChip', {'on': !_filter.lateOnly});
     _set(_filter.copyWith(lateOnly: !_filter.lateOnly));
@@ -217,7 +289,8 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
       (widget.showOwner && _filter.ownerIds.isNotEmpty) ||
       _filter.urgencies.isNotEmpty ||
       _filter.link != null ||
-      _filter.lateOnly;
+      _filter.lateOnly ||
+      (widget.showOwner && (_filter.created != null || _filter.statusChanged != null));
 
   // ---- build ----
 
@@ -389,6 +462,24 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
         onTap: _tapLink,
         child: _FilterChipLook(compact: _compact, label: _linkLabel, active: filter.link != null),
       ),
+      if (widget.showOwner) ...[
+        gap,
+        _timeChip(
+          keyName: 'team-filter-created',
+          name: 'יצירה',
+          tooltip: 'סינון לפי מועד היצירה',
+          selected: filter.created,
+          onPick: _setCreated,
+        ),
+        gap,
+        _timeChip(
+          keyName: 'team-filter-status-changed',
+          name: 'עדכון סטטוס',
+          tooltip: 'סינון לפי מועד שינוי הסטטוס',
+          selected: filter.statusChanged,
+          onPick: _setStatusChanged,
+        ),
+      ],
       gap,
       // "באיחור" (round 7): a plain on/off chip, the last one, at the far
       // left (Omer, round 8).
@@ -474,6 +565,28 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           onPressed: _tapLink,
           child: _withArrow(Text(_linkLabel), arrow: filter.link == null),
         ),
+        // Both time chips in ONE row, "זמן": a row as long as "עדכון סטטוס"
+        // widens the menu until a phone has no room for a submenu beside it.
+        if (widget.showOwner)
+          SubmenuButton(
+            key: const Key('team-filter-menu-time'),
+            submenuIcon: _noTrailingArrow,
+            menuChildren: [
+              _menuHeader('יצירה'),
+              ..._timeRows(
+                  keyPrefix: 'team-filter-menu-created',
+                  selected: filter.created,
+                  onPick: _setCreated),
+              const Divider(height: 1),
+              _menuHeader('עדכון סטטוס'),
+              ..._timeRows(
+                  keyPrefix: 'team-filter-menu-status-changed',
+                  selected: filter.statusChanged,
+                  onPick: _setStatusChanged),
+            ],
+            child: _withArrow(Text(
+                filter.created != null || filter.statusChanged != null ? 'זמן •' : 'זמן')),
+          ),
         // Last in the menu, as its chip is last in the row (round 8).
         CheckboxMenuButton(
           key: const Key('team-filter-menu-late'),
@@ -508,7 +621,11 @@ class _FilterChipLook extends StatelessWidget {
     required this.active,
     this.dropdown = true,
     this.compact = false,
+    this.icon,
   });
+
+  /// Shown beside the label (the time chips' clock, 19/11/2026).
+  final IconData? icon;
 
   /// A phone: less room inside the chip.
   final bool compact;
@@ -531,6 +648,10 @@ class _FilterChipLook extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (icon != null) ...[
+            Icon(icon, size: 15, color: active ? TaskStyle.mine : TaskStyle.neutralText),
+            const SizedBox(width: 4),
+          ],
           Text(
             label,
             style: TextStyle(
