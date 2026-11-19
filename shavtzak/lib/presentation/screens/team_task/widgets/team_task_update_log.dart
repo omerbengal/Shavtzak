@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/team_task_rules.dart';
+import '../../../../domain/entities/team_member.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
 import '../../../widgets/rtl_arrow_keys.dart';
 import '../../task/task_style.dart';
 import '../../task/widgets/confirm_delete_dialog.dart';
+import 'team_task_mentions.dart';
 import 'team_task_style.dart';
 
 /// A task's update log: the field for a new update (when [canWrite]) and
@@ -36,7 +39,12 @@ class TeamTaskUpdateLog extends StatefulWidget {
 
 class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
   final TextEditingController _update = TextEditingController();
+  final FocusNode _updateFocus = FocusNode();
   bool _sending = false;
+
+  /// The members picked from the "@" list for the update being written,
+  /// name → id (19/11/2026).
+  final Map<String, String> _picked = {};
 
   /// The update being edited in place, and its draft.
   String? _editingId;
@@ -46,6 +54,7 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
   @override
   void dispose() {
     _update.dispose();
+    _updateFocus.dispose();
     _edit.dispose();
     super.dispose();
   }
@@ -177,18 +186,41 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
     );
   }
 
+  /// The "@" query the caret is in, or null.
+  ({int start, String query})? get _mentionQuery {
+    final selection = _update.selection;
+    if (!selection.isValid || !selection.isCollapsed) return null;
+    return activeMentionQuery(_update.text, selection.baseOffset);
+  }
+
+  /// [member] picked from the "@" list: "@<name> " in place of the query.
+  void _pickMention(TeamMember member, ({int start, String query}) at) {
+    Logger.action('tap:teamTaskMention', {'memberId': member.id});
+    final text = _update.text;
+    final insert = '@${member.name} ';
+    final end = at.start + 1 + at.query.length;
+    _update.value = TextEditingValue(
+      text: text.replaceRange(at.start, end, insert),
+      selection: TextSelection.collapsed(offset: at.start + insert.length),
+    );
+    setState(() => _picked[member.name] = member.id);
+    _updateFocus.requestFocus();
+  }
+
   Future<void> _send() async {
     final task = widget.task;
     final text = _update.text.trim();
     if (text.isEmpty) return;
     final completion = CrudActionCompleter();
     setState(() => _sending = true);
-    context.read<TeamTaskBloc>().add(AddTeamTaskUpdate(task.id, text, completion: completion));
+    context.read<TeamTaskBloc>().add(AddTeamTaskUpdate(task.id, text,
+        mentionIds: mentionIdsInText(text, _picked), completion: completion));
     final result = await completion.future;
     if (!mounted) return;
     setState(() => _sending = false);
     if (result.isSuccess) {
       _update.clear();
+      _picked.clear();
     } else {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text(result.message ?? 'הפעולה נכשלה')),
@@ -201,6 +233,19 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
     final task = widget.task;
     final state = context.watch<TeamTaskBloc>().state;
     final viewerId = state is TeamTasksLoaded ? state.viewer.id : '';
+    final members = state is TeamTasksLoaded ? state.members : const <TeamMember>[];
+    final nameById = {for (final m in members) m.id: m.name};
+    final query = widget.canWrite ? _mentionQuery : null;
+    // Who can be tagged: the active team, not the writer.
+    final candidates = query == null
+        ? const <TeamMember>[]
+        : mentionCandidates(
+            [
+              for (final m in members)
+                if (m.isActive && !m.isArchived && m.id != viewerId) m,
+            ],
+            query.query,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -214,12 +259,16 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
                   child: TextField(
                     key: const Key('team-task-update-field'),
                     controller: _update,
+                    focusNode: _updateFocus,
                     readOnly: _sending,
                     minLines: 1,
                     maxLines: 4,
+                    // The "@" list follows the text and the caret.
+                    onChanged: (_) => setState(() {}),
+                    onTap: () => setState(() {}),
                     decoration: const InputDecoration(
                       isDense: true,
-                      hintText: '+ עדכון',
+                      hintText: '+ עדכון (@ לתיוג)',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -241,6 +290,11 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
               ),
             ],
           ),
+        if (query != null && candidates.isNotEmpty)
+          MentionSuggestions(
+            members: candidates,
+            onPick: (member) => _pickMention(member, query),
+          ),
         if (task.updates.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 6),
@@ -258,7 +312,17 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_editingId == entry.id) _editor(entry) else Text(entry.text),
+                if (_editingId == entry.id)
+                  _editor(entry)
+                else
+                  Text.rich(
+                    // The tagged names in the tag's colour (19/11/2026).
+                    mentionSpans(entry.text, [
+                      for (final id in entry.mentionIds)
+                        if (nameById[id] != null) nameById[id]!,
+                    ]),
+                    key: Key('team-task-log-text-${entry.id}'),
+                  ),
                 const SizedBox(height: 2),
                 Row(
                   children: [

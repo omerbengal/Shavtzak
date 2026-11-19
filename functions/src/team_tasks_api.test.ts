@@ -210,3 +210,24 @@ test('several events: each one must exist; an update checks only the added ones'
   await assert.rejects(runTeamTaskOperation(store, 'teamTask.update',
     {task: task({eventIds: ['e1', 'e7']})}, manager, now), status(404, 'האירוע לא נמצא'));
 });
+
+test('addUpdate with tags: an inactive member is refused; setMentionDone by the tagged one', async () => {
+  const store = new MemoryStore();
+  await insert(store);
+  await assert.rejects(
+    runTeamTaskOperation(store, 'teamTask.addUpdate', {id: 't1', text: 'x', mentionIds: ['gone']}, owner, now),
+    status(400, 'חבר צוות לא נמצא'),
+  );
+  const added = await runTeamTaskOperation(
+    store, 'teamTask.addUpdate', {id: 't1', text: 'יוסי', mentionIds: ['b']}, owner, now);
+  assert.deepEqual(added.after?.mentionIds, ['b']);
+  assert.deepEqual(added.details['mentionIds'], ['b']);
+  const tagged: TaskActor = {memberId: 'b', name: 'יוסי', isAdmin: false, canManageTasks: false};
+  const done = await runTeamTaskOperation(store, 'teamTask.setMentionDone', {id: 't1', text: 'בוצע'}, tagged, now);
+  assert.notEqual(done.after?.mentions[0].doneAt, null);
+  assert.equal(done.after?.status, 'open');
+  await assert.rejects(
+    runTeamTaskOperation(store, 'teamTask.setStatus', {id: 't1', status: 'done'}, tagged, now),
+    status(403),
+  );
+});

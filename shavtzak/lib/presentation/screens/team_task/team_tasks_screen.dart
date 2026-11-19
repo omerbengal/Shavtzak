@@ -115,7 +115,9 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// "בליץ" over [rows] (their tasks still to be done, the quietest
   /// first); [title] = what the pass covers (a long-pressed card).
   Future<void> _spotlight(List<TeamTask> rows, {String? title}) async {
-    final queue = spotlightQueue(rows);
+    final state = context.read<TeamTaskBloc>().state;
+    final queue =
+        spotlightQueue(rows, ownerId: state is TeamTasksLoaded ? state.viewer.id : null);
     Logger.action('tap:spotlightOpen', {'count': queue.length, 'scoped': title != null});
     if (queue.isEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -272,7 +274,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// The hidden "בליץ" while it warms up (see [_warmupDelay]), else nothing.
   Widget _blitzWarmup(TeamTaskState state) {
     if (!_warm || _blitzWarmed || state is! TeamTasksLoaded) return const SizedBox.shrink();
-    final queue = spotlightQueue(state.mine);
+    final queue = spotlightQueue(state.mine, ownerId: state.viewer.id);
     if (queue.isEmpty) return const SizedBox.shrink();
     if (!_blitzWarming) {
       _blitzWarming = true;
@@ -438,7 +440,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
           if (all) _groupByEventsSwitch(),
           if (!all)
             _SpotlightBar(
-              count: spotlightQueue(_uniqueTasks(groups)).length,
+              count: spotlightQueue(_uniqueTasks(groups), ownerId: state.viewer.id).length,
               onStart: () => _spotlight(_uniqueTasks(groups)),
             ),
           const Divider(height: 1),
@@ -810,25 +812,31 @@ class _GroupedListState extends State<_GroupedList> {
 
   /// One task's row; [showEvents] adds the chips of a task of several
   /// events (16/11/2026).
-  Widget _row(TeamTask task) => _flashed(
+  Widget _row(TeamTask task) {
+    // "המשימות שלי" of a member only tagged in it: the @ box instead of the
+    // status (19/11/2026).
+    final tagged = !widget.editing && isTeamTaskTaggedOnly(task, widget.viewerId);
+    return _flashed(
         task.id,
         TeamTaskRow(
           task: task,
           now: widget.now,
           viewerId: widget.viewerId,
+          mention: tagged ? task.mentionOf(widget.viewerId) : null,
           // With the events' sections gone (the switch off), every row
           // names its events.
           showEvents: task.hasSeveralEvents || (widget.flat && task.events.isNotEmpty),
           // "המשימות שלי": the status and a new update without opening the
           // task (Omer, round 4); every row there is the viewer's own.
           selected: task.id == widget.selectedId,
-          canChangeStatus: !widget.editing,
+          canChangeStatus: !widget.editing && !tagged,
           // "כל המשימות" only (msg 4480).
           showCreated: widget.editing,
           onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
           onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
         ),
       );
+  }
 
   static const Widget _rowDivider =
       Divider(height: 1, thickness: 1, color: TaskStyle.stageCardDivider);

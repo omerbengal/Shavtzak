@@ -25,6 +25,7 @@ class TeamTaskModel {
           status == TeamTaskStatus.duplicate ? _string(data['duplicateOfId']) : null,
       updates: _updates(data['updates']),
       ownerIds: _stringList(data['ownerIds']),
+      mentions: _mentions(data['mentions']),
       completedAt: _date(data['completedAt']),
       statusChangedAt: _date(data['statusChangedAt']),
       createdAt: _date(data['createdAt']) ?? _epoch,
@@ -106,8 +107,29 @@ class TeamTaskModel {
         byId: _string(entry['byId']) ?? '',
         byName: _string(entry['byName']),
         editedAt: _date(entry['editedAt']),
+        mentionIds: _stringList(entry['mentionIds']),
       ));
     }
     return updates;
+  }
+
+  static List<TeamTaskMention> _mentions(Object? value) {
+    if (value is! List) return const [];
+    final mentions = <TeamTaskMention>[];
+    for (final entry in value) {
+      if (entry is! Map) continue;
+      final memberId = _string(entry['memberId']);
+      final at = _date(entry['at']);
+      if (memberId == null || at == null) continue;
+      if (mentions.any((m) => m.memberId == memberId)) continue;
+      mentions.add(TeamTaskMention(
+        memberId: memberId,
+        byId: _string(entry['byId']) ?? '',
+        at: at,
+        doneAt: _date(entry['doneAt']),
+        doneText: _string(entry['doneText']),
+      ));
+    }
+    return mentions;
   }
 }

@@ -53,8 +53,23 @@ List<String> teamTaskOwnerIds(TeamTask task) => task.assigneeIds.toSet().toList(
 /// What the "המשימות שלי" tab lists for [viewerId]: every task they own.
 List<TeamTask> myTeamTaskRows(List<TeamTask> tasks, String viewerId) => [
       for (final task in tasks)
-        if (task.ownerIds.contains(viewerId)) task,
+        if (task.ownerIds.contains(viewerId) || isTeamTaskTaggedOpen(task, viewerId)) task,
     ];
+
+/// [viewerId] is tagged ("@") in [task] and has not marked it done yet, and
+/// is not one of its owners (19/11/2026): the task is in their "המשימות
+/// שלי" with an @ mark until they mark it done (Omer: then it leaves; a new
+/// tag brings it back).
+bool isTeamTaskTaggedOpen(TeamTask task, String viewerId) {
+  if (task.ownerIds.contains(viewerId)) return false;
+  final mention = task.mentionOf(viewerId);
+  return mention != null && !mention.isDone;
+}
+
+/// [viewerId] is tagged in [task] (done or not) without owning it: they
+/// may write in its log, never change its status.
+bool isTeamTaskTaggedOnly(TeamTask task, String viewerId) =>
+    !task.ownerIds.contains(viewerId) && task.mentionOf(viewerId) != null;
 
 /// One event inside a category's card (16/11/2026): its title row and the
 /// tasks linked to that event alone.

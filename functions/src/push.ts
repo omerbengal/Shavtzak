@@ -79,6 +79,38 @@ export function taskAssignedMessage(
   };
 }
 
+/** The tag notification (Omer, 19/11/2026): "@ תויגת במשימה" + the title;
+ * a tap opens the task, as [taskAssignedMessage]. */
+export function taskMentionedMessage(
+  task: {id: string; title: string},
+  routePrefix: '' | '/test',
+): PushMessage {
+  return {
+    title: '@ תויגת במשימה',
+    body: task.title,
+    tag: `task-mention-${task.id}`,
+    path: `${routePrefix}/team-tasks?task=${encodeURIComponent(task.id)}`,
+  };
+}
+
+type WithMentions = {mentions: {memberId: string; doneAt: unknown}[]};
+
+/** The members whose tag [after] opened (a new tag, or a done one tagged
+ * again), without [actorId]. */
+export function openedMentionIds(
+  before: WithMentions | null,
+  after: WithMentions | null,
+  actorId: string,
+): string[] {
+  if (after == null) return [];
+  const wasOpen = new Set(
+    (before?.mentions ?? []).filter((m) => m.doneAt == null).map((m) => m.memberId),
+  );
+  return after.mentions
+    .filter((m) => m.doneAt == null && !wasOpen.has(m.memberId) && m.memberId !== actorId)
+    .map((m) => m.memberId);
+}
+
 /** One document per browser subscription: the same device signing in as
  * someone else overwrites it, so a shared computer never keeps getting the
  * previous member's notifications. */
@@ -126,18 +158,62 @@ export async function sendTaskAssignedPush(
     routePrefix: '' | '/test';
   },
 ): Promise<PushResult> {
+  if (input.after == null) return {sent: 0, dropped: 0, failed: 0};
+  return sendToMembers(
+    store,
+    send,
+    addedOwnerIds(input.before, input.after, input.actorId),
+    taskAssignedMessage(input.after, input.routePrefix),
+    input.site,
+  );
+}
+
+/** Tells every member a log update newly tagged ([openedMentionIds]) on
+ * each of their devices of [site]; like [sendTaskAssignedPush], never
+ * throws. */
+export async function sendTaskMentionedPush(
+  store: PushStore,
+  send: PushSend,
+  input: {
+    before: (WithMentions & {id: string; title: string}) | null;
+    after: (WithMentions & {id: string; title: string}) | null;
+    actorId: string;
+    site: PushSite;
+    routePrefix: '' | '/test';
+  },
+): Promise<PushResult> {
+  if (input.after == null) return {sent: 0, dropped: 0, failed: 0};
+  return sendToMembers(
+    store,
+    send,
+    openedMentionIds(input.before, input.after, input.actorId),
+    taskMentionedMessage(input.after, input.routePrefix),
+    input.site,
+  );
+}
+
+/** [message] to every one of [ids] who may get it ([canReceiveTaskPush]),
+ * on each of their devices of [site]. Never throws; a subscription the push
+ * service no longer knows (404 / 410) is deleted. */
+async function sendToMembers(
+  store: PushStore,
+  send: PushSend,
+  ids: string[],
+  message: PushMessage,
+  site: PushSite,
+): Promise<PushResult> {
   const result: PushResult = {sent: 0, dropped: 0, failed: 0};
   try {
-    const added = addedOwnerIds(input.before, input.after, input.actorId);
-    if (added.length === 0 || input.after == null) return result;
+    const added = ids;
+    if (added.length === 0) return result;
     const members = await store.members(added);
     const recipients = added.filter((id) => {
       const member = members.get(id);
       return member != null && canReceiveTaskPush(member);
     });
     if (recipients.length === 0) return result;
-    const subscriptions = await store.subscriptionsOf(recipients, input.site);
-    const payload = JSON.stringify(taskAssignedMessage(input.after, input.routePrefix));
+    const subscriptions = await store.subscriptionsOf(recipients, site);
+    const payload = JSON.stringify(message);
     await Promise.all(subscriptions.map(async (subscription) => {
       try {
         await send(subscription, payload);
@@ -154,7 +230,7 @@ export async function sendTaskAssignedPush(
       }
     }));
   } catch (error) {
-    console.warn('push: task-assigned notification skipped', error);
+    console.warn('push: team-task notification skipped', error);
   }
   return result;
 }

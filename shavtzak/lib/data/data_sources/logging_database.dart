@@ -1487,9 +1487,14 @@ class LoggingDatabase implements DatabaseInterface {
           () => _inner.setTeamSubtaskDone(id, subtaskId, isDone));
 
   @override
-  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId}) =>
+  Future<void> addTeamTaskUpdate(String id, String text,
+          {String? subtaskId, List<String> mentionIds = const []}) =>
       _teamTaskWrite('addTeamTaskUpdate', id,
-          () => _inner.addTeamTaskUpdate(id, text, subtaskId: subtaskId));
+          () => _inner.addTeamTaskUpdate(id, text, subtaskId: subtaskId, mentionIds: mentionIds));
+
+  @override
+  Future<void> setTeamTaskMentionDone(String id, String text) =>
+      _teamTaskWrite('setTeamTaskMentionDone', id, () => _inner.setTeamTaskMentionDone(id, text));
 
   @override
   Future<void> editTeamTaskUpdate(String id, String updateId, String text,

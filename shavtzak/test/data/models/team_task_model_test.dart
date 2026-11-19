@@ -147,4 +147,34 @@ void main() {
     expect(old.hasSeveralEvents, isFalse);
     expect(old.urgency, TeamTaskUrgency.normal);
   });
+
+  test('tags: the mentions and the tagged ids of an update (19/11/2026)', () {
+    final task = TeamTaskModel.fromMap('t1', {
+      'title': 'x',
+      'status': 'open',
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
+      'updates': [
+        {
+          'id': 'u1',
+          'text': '@יוסי',
+          'at': Timestamp.fromDate(updatedAt),
+          'byId': 'a',
+          'mentionIds': ['b'],
+        },
+      ],
+      'mentions': [
+        {'memberId': 'b', 'byId': 'a', 'at': Timestamp.fromDate(updatedAt), 'doneAt': null},
+        {'memberId': 'b', 'byId': 'a', 'at': Timestamp.fromDate(updatedAt)},
+        {'memberId': 'c', 'at': Timestamp.fromDate(updatedAt), 'doneAt': Timestamp.fromDate(updatedAt),
+          'doneText': 'בוצע'},
+        {'byId': 'a'},
+      ],
+    });
+    expect(task.updates.single.mentionIds, ['b']);
+    expect(task.mentions.map((m) => m.memberId), ['b', 'c']);
+    expect(task.mentionOf('b')!.isDone, isFalse);
+    expect(task.mentionOf('c')!.doneText, 'בוצע');
+    expect(TeamTaskModel.fromMap('t2', {'title': 'y'}).mentions, isEmpty);
+  });
 }

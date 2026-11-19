@@ -51,7 +51,11 @@ class FakeTeamTaskRepository extends Fake implements TeamTaskRepository {
       _record('status:$id:${status.key}${duplicateOfId == null ? '' : ':$duplicateOfId'}');
 
   @override
-  Future<void> addUpdate(String id, String text) => _record('log:$id:$text');
+  Future<void> addUpdate(String id, String text, {List<String> mentionIds = const []}) =>
+      _record('log:$id:$text${mentionIds.isEmpty ? '' : ':@${mentionIds.join(',')}'}');
+
+  @override
+  Future<void> setMentionDone(String id, String text) => _record('mentionDone:$id:$text');
 
   @override
   Future<void> editUpdate(String id, String updateId, String text) =>

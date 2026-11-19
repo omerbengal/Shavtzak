@@ -102,7 +102,11 @@ class TeamTaskRepository {
   Future<void> setStatus(String id, TeamTaskStatus status, {String? duplicateOfId}) =>
       _database.setTeamTaskStatus(id, status, duplicateOfId: duplicateOfId);
 
-  Future<void> addUpdate(String id, String text) => _database.addTeamTaskUpdate(id, text);
+  Future<void> addUpdate(String id, String text, {List<String> mentionIds = const []}) =>
+      _database.addTeamTaskUpdate(id, text, mentionIds: mentionIds);
+
+  Future<void> setMentionDone(String id, String text) =>
+      _database.setTeamTaskMentionDone(id, text);
 
   Future<void> editUpdate(String id, String updateId, String text) =>
       _database.editTeamTaskUpdate(id, updateId, text);

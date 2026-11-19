@@ -104,13 +104,43 @@ class TaskUpdateEntry extends Equatable {
     required this.byId,
     this.byName,
     this.editedAt,
+    this.mentionIds = const [],
   });
 
   /// Set once its writer (or a manager) edited it (round 10): "(נערך)".
   final DateTime? editedAt;
 
+  /// The members tagged ("@") in it (19/11/2026).
+  final List<String> mentionIds;
+
   @override
-  List<Object?> get props => [id, text, at, byId, byName, editedAt];
+  List<Object?> get props => [id, text, at, byId, byName, editedAt, mentionIds];
+}
+
+/// A member tagged ("@") in the log (Omer, 19/11/2026): not an owner; they
+/// see the task in "המשימות שלי" with an @ mark, write updates and mark what
+/// they were tagged for as done, never the task's status.
+class TeamTaskMention extends Equatable {
+  final String memberId;
+  final String byId;
+  final DateTime at;
+
+  /// When they marked it done; null = still open.
+  final DateTime? doneAt;
+  final String? doneText;
+
+  const TeamTaskMention({
+    required this.memberId,
+    required this.at,
+    this.byId = '',
+    this.doneAt,
+    this.doneText,
+  });
+
+  bool get isDone => doneAt != null;
+
+  @override
+  List<Object?> get props => [memberId, byId, at, doneAt, doneText];
 }
 
 /// A team task ("משימה") of the headquarters team: linked to one or more
@@ -144,6 +174,9 @@ class TeamTask extends Equatable {
 
   /// Derived by the backend on every write: the owners, once each.
   final List<String> ownerIds;
+
+  /// Everyone tagged in the log (19/11/2026), one entry each.
+  final List<TeamTaskMention> mentions;
   final DateTime? completedAt;
 
   /// When the status last changed (written by the backend's
@@ -182,6 +215,7 @@ class TeamTask extends Equatable {
     this.duplicateOfId,
     this.updates = const [],
     this.ownerIds = const [],
+    this.mentions = const [],
     this.completedAt,
     this.statusChangedAt,
     required this.createdAt,
@@ -203,6 +237,10 @@ class TeamTask extends Equatable {
     if (link == null || link.type != TaskLinkType.event) return const [];
     return [link.id, ...eventIds.where((id) => id != link.id)];
   }
+
+  /// [memberId]'s tag, or null when they were never tagged.
+  TeamTaskMention? mentionOf(String memberId) =>
+      mentions.where((mention) => mention.memberId == memberId).firstOrNull;
 
   /// Linked to more than one event.
   bool get hasSeveralEvents => linkedEventIds.length > 1;
@@ -233,6 +271,7 @@ class TeamTask extends Equatable {
     String? Function()? duplicateOfId,
     List<TaskUpdateEntry>? updates,
     List<String>? ownerIds,
+    List<TeamTaskMention>? mentions,
     DateTime? Function()? completedAt,
     DateTime? Function()? statusChangedAt,
     DateTime? updatedAt,
@@ -257,6 +296,7 @@ class TeamTask extends Equatable {
         duplicateOfId: duplicateOfId != null ? duplicateOfId() : this.duplicateOfId,
         updates: updates ?? this.updates,
         ownerIds: ownerIds ?? this.ownerIds,
+        mentions: mentions ?? this.mentions,
         completedAt: completedAt != null ? completedAt() : this.completedAt,
         statusChangedAt: statusChangedAt != null ? statusChangedAt() : this.statusChangedAt,
         createdAt: createdAt,
@@ -285,6 +325,7 @@ class TeamTask extends Equatable {
         duplicateOfId,
         updates,
         ownerIds,
+        mentions,
         completedAt,
         statusChangedAt,
         createdAt,

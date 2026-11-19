@@ -2,6 +2,7 @@ import '../../core/utils/hold_cache_until_server.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:rxdart/rxdart.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/assignment_label.dart';
@@ -2654,11 +2655,26 @@ class FirestoreDatabase implements DatabaseInterface {
       _firestore.collection(_teamTasksCollection).snapshots().map(_teamTasksFrom);
 
   @override
-  Stream<List<TeamTask>> watchOwnedTeamTasks(String memberId) => _firestore
-      .collection(_teamTasksCollection)
-      .where('ownerIds', arrayContains: memberId)
-      .snapshots()
-      .map(_teamTasksFrom);
+  Stream<List<TeamTask>> watchOwnedTeamTasks(String memberId) {
+    final collection = _firestore.collection(_teamTasksCollection);
+    final owned =
+        collection.where('ownerIds', arrayContains: memberId).snapshots().map(_teamTasksFrom);
+    // The tasks they are tagged in ("@", 19/11/2026). A refusal (rules from
+    // before the tags) must not blank their own tasks: it reads as none.
+    final tagged = collection
+        .where('mentionIds', arrayContains: memberId)
+        .snapshots()
+        .map(_teamTasksFrom)
+        .onErrorReturn(const []);
+    return Rx.combineLatest2<List<TeamTask>, List<TeamTask>, List<TeamTask>>(
+      owned,
+      tagged,
+      (owned, tagged) {
+        final ids = {for (final task in owned) task.id};
+        return [...owned, ...tagged.where((task) => !ids.contains(task.id))];
+      },
+    );
+  }
 
   @override
   Future<void> insertTeamTask(TeamTask task) async {
@@ -2699,12 +2715,19 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
-  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId}) async {
+  Future<void> addTeamTaskUpdate(String id, String text,
+      {String? subtaskId, List<String> mentionIds = const []}) async {
     await _invokeMutation('teamTask.addUpdate', payload: {
       'id': id,
       'text': text,
       if (subtaskId != null) 'subtaskId': subtaskId,
+      if (mentionIds.isNotEmpty) 'mentionIds': mentionIds,
     });
+  }
+
+  @override
+  Future<void> setTeamTaskMentionDone(String id, String text) async {
+    await _invokeMutation('teamTask.setMentionDone', payload: {'id': id, 'text': text});
   }
 
   @override

@@ -10,6 +10,8 @@ import {
   buildNewTeamTask,
   deleteTeamTaskUpdate,
   editTeamTaskUpdate,
+  markTeamTaskMentionDone,
+  parseMentionIds,
   parseTeamTaskStatus,
   teamTaskFromStored,
 } from './team_tasks';
@@ -50,6 +52,7 @@ export const TEAM_TASK_OPERATIONS = [
   'teamTask.addUpdate',
   'teamTask.editUpdate',
   'teamTask.deleteUpdate',
+  'teamTask.setMentionDone',
 ] as const;
 
 function requireId(value: unknown, field: string): string {
@@ -231,7 +234,13 @@ export async function runTeamTaskOperation(
       const before = await loadTask(store, requireId(payload['id'], 'id'));
       const text = typeof payload['text'] === 'string' ? payload['text'] : '';
       const subtaskId = optionalId(payload['subtaskId'], 'subtaskId');
-      const next = appendTeamTaskUpdate(before, text, ctx, subtaskId);
+      const mentionIds = parseMentionIds(payload['mentionIds']);
+      const next = appendTeamTaskUpdate(before, text, ctx, subtaskId, mentionIds);
+      // Every member the update tags for the first time must be an active one.
+      const added = next.mentionIds.filter((id) => !before.mentionIds.includes(id));
+      if (added.length > 0 && (await store.inactiveMemberIds(added)).length > 0) {
+        throw new TaskError(400, 'חבר צוות לא נמצא');
+      }
       await store.writeTask(next);
       const log = subtaskId == null
         ? next.updates
@@ -240,8 +249,16 @@ export async function runTeamTaskOperation(
         entityId: next.id,
         before,
         after: next,
-        details: subtaskId == null ? {text: log[0]?.text} : {text: log[0]?.text, subtaskId},
+        details: subtaskId == null
+          ? {text: log[0]?.text, ...(mentionIds.length > 0 ? {mentionIds} : {})}
+          : {text: log[0]?.text, subtaskId},
       };
+    }
+    case 'teamTask.setMentionDone': {
+      const before = await loadTask(store, requireId(payload['id'], 'id'));
+      const next = markTeamTaskMentionDone(before, payload['text'], ctx);
+      await store.writeTask(next);
+      return {entityId: next.id, before, after: next, details: {text: next.updates[0]?.text}};
     }
     case 'teamTask.editUpdate':
     case 'teamTask.deleteUpdate': {

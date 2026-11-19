@@ -15,6 +15,9 @@ import {
   deleteTeamTaskUpdate,
   editTeamTaskUpdate,
   isTeamTaskOwner,
+  MENTION_DONE_PREFIX,
+  markTeamTaskMentionDone,
+  parseMentionIds,
   teamTaskAuditDetails,
   teamTaskFromStored,
 } from './team_tasks';
@@ -465,4 +468,65 @@ test('an edit with no subtasks key keeps the stored subtasks', () => {
   assert.deepEqual(edited.ownerIds, ['a', 'b']);
   const own = applyTeamTaskEdit(doc, {...payload, assigneeIds: ['c']}, {now: later, actor: manager});
   assert.deepEqual(own.ownerIds, ['c', 'a', 'b']);
+});
+
+// ---- tags ("@", 19/11/2026) ----
+
+test('a tag gives the member a mention: not an owner, may write, never changes the status', () => {
+  const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
+  const tagged = appendTeamTaskUpdate(task, 'יוסי תבדוק', {now, actor: ownerA}, null, ['b', 'a']);
+  // The writer never tags themself; b is tagged.
+  assert.deepEqual(tagged.mentionIds, ['b']);
+  assert.deepEqual(tagged.ownerIds, ['a']);
+  assert.deepEqual(tagged.updates[0].mentionIds, ['b', 'a']);
+  assert.equal(tagged.mentions[0].doneAt, null);
+  // b may write in the log, but not change the status.
+  const reply = appendTeamTaskUpdate(tagged, 'בודק', {now: later, actor: ownerB});
+  assert.equal(reply.updates[0].byId, 'b');
+  expectTaskError(() => applyTeamTaskStatus(tagged, 'done', null, {now, actor: ownerB}), 403);
+  // A stranger still may not write.
+  expectTaskError(() => appendTeamTaskUpdate(tagged, 'x', {now, actor: stranger}), 403);
+});
+
+test('tagging an owner adds no mention', () => {
+  const task = buildNewTeamTask(input({assigneeIds: ['a', 'b']}), {now, actor: manager});
+  const tagged = appendTeamTaskUpdate(task, 'דנה', {now, actor: manager}, null, ['a']);
+  assert.deepEqual(tagged.mentionIds, []);
+  assert.deepEqual(tagged.updates[0].mentionIds, ['a']);
+});
+
+test('marking a tag done closes it, logs the line, and a new tag opens it again', () => {
+  const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
+  const tagged = appendTeamTaskUpdate(task, 'יוסי', {now, actor: ownerA}, null, ['b']);
+  expectTaskError(() => markTeamTaskMentionDone(tagged, '', {now, actor: stranger}), 403);
+  const done = markTeamTaskMentionDone(tagged, ' שלחתי ', {now: later, actor: ownerB});
+  assert.deepEqual(done.mentions[0].doneAt, later);
+  assert.equal(done.mentions[0].doneText, 'שלחתי');
+  assert.equal(done.updates[0].text, `${MENTION_DONE_PREFIX}: שלחתי`);
+  assert.equal(done.status, 'open');
+  expectTaskError(() => markTeamTaskMentionDone(done, '', {now, actor: ownerB}), 409);
+  const bare = markTeamTaskMentionDone(tagged, '', {now, actor: ownerB});
+  assert.equal(bare.updates[0].text, MENTION_DONE_PREFIX);
+  const again = appendTeamTaskUpdate(done, 'שוב', {now, actor: ownerA}, null, ['b']);
+  assert.equal(again.mentions[0].doneAt, null);
+  assert.deepEqual(again.mentionIds, ['b']);
+});
+
+test('mentions survive a round trip through the stored document', () => {
+  const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
+  const tagged = appendTeamTaskUpdate(task, 'יוסי', {now, actor: ownerA}, null, ['b']);
+  const read = teamTaskFromStored(tagged.id, tagged as unknown as Record<string, unknown>);
+  assert.deepEqual(read.mentions, tagged.mentions);
+  assert.deepEqual(read.mentionIds, ['b']);
+  assert.deepEqual(read.updates[0].mentionIds, ['b']);
+  const edited = applyTeamTaskEdit(read, input({assigneeIds: ['a']}), {now: later, actor: manager});
+  assert.deepEqual(edited.mentionIds, ['b']);
+});
+
+test('parseMentionIds: valid ids, once each, capped', () => {
+  assert.deepEqual(parseMentionIds(undefined), []);
+  assert.deepEqual(parseMentionIds(['a', 'a', 'b']), ['a', 'b']);
+  expectTaskError(() => parseMentionIds('a'), 400);
+  expectTaskError(() => parseMentionIds(['bad id']), 400);
+  expectTaskError(() => parseMentionIds(Array.from({length: 21}, (_, i) => `m${i}`)), 400);
 });

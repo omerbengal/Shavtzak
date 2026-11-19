@@ -4,6 +4,7 @@ import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../task/task_style.dart';
 import 'team_task_actions.dart';
+import 'team_task_mentions.dart';
 import 'team_task_style.dart';
 
 /// One task in the list (design A, Omer round 3): the status circle, the
@@ -27,7 +28,13 @@ class TeamTaskRow extends StatelessWidget {
     this.onAddUpdate,
     this.selected = false,
     this.showCreated = false,
+    this.mention,
   });
+
+  /// The viewer is only tagged ("@") in the task (19/11/2026): the box they
+  /// tick when they did what they were tagged for stands where the status
+  /// is, and a coloured @ marks the title.
+  final TeamTaskMention? mention;
 
   /// "כל המשימות" (msg 4480): the creation date in the row's bottom-left
   /// corner.
@@ -80,6 +87,10 @@ class TeamTaskRow extends StatelessWidget {
 
   /// The status circle, opening the status menu when [canChangeStatus].
   Widget _status(double size) {
+    final mention = this.mention;
+    if (mention != null) {
+      return MentionDoneBox(task: task, mention: mention, size: size);
+    }
     final icon = TeamTaskStatusIcon(status: task.status, size: size);
     if (!canChangeStatus) return icon;
     return TeamTaskStatusMenu(
@@ -91,7 +102,8 @@ class TeamTaskRow extends StatelessWidget {
 
   /// The width the status circle and the gap after it take: what the lines
   /// under the title are indented by.
-  double _lead(double size) => canChangeStatus ? size + 2 * _tapPadding + 2 : size + 8;
+  double _lead(double size) =>
+      canChangeStatus || mention != null ? size + 2 * _tapPadding + 2 : size + 8;
 
   List<Widget> _owners(double size) => [
         for (final owner in teamTaskOwnerChips(task))
@@ -118,7 +130,11 @@ class TeamTaskRow extends StatelessWidget {
           Row(
             children: [
               _status(TeamTaskStyle.statusIconSize),
-              SizedBox(width: canChangeStatus ? 2 : 8),
+              SizedBox(width: canChangeStatus || mention != null ? 2 : 8),
+              if (mention != null) ...[
+                MentionMark(key: Key('team-task-mention-mark-${task.id}')),
+                const SizedBox(width: 6),
+              ],
               Expanded(
                 child: Text(
                   task.title,

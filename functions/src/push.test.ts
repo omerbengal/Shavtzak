@@ -7,7 +7,9 @@ import {
   addedOwnerIds,
   canReceiveTaskPush,
   parseSubscription,
+  openedMentionIds,
   sendTaskAssignedPush,
+  taskMentionedMessage,
   subscriptionDocId,
   taskAssignedMessage,
 } from './push';
@@ -158,4 +160,19 @@ test('send: a store failure never throws', async () => {
     before: null, after: task(['a']), actorId: 'me', site: 'main', routePrefix: '',
   });
   assert.equal(result.sent, 0);
+});
+
+test('a tag tells the newly tagged member only, never the writer', () => {
+  const before = {mentions: [{memberId: 'b', doneAt: null}, {memberId: 'c', doneAt: 1}]};
+  const after = {mentions: [
+    {memberId: 'b', doneAt: null},
+    {memberId: 'c', doneAt: null},
+    {memberId: 'd', doneAt: null},
+    {memberId: 'me', doneAt: null},
+  ]};
+  assert.deepEqual(openedMentionIds(before, after, 'me'), ['c', 'd']);
+  assert.deepEqual(openedMentionIds(null, null, 'me'), []);
+  const message = taskMentionedMessage({id: 't 1', title: 'אולם'}, '/test');
+  assert.equal(message.title, '@ תויגת במשימה');
+  assert.equal(message.path, '/test/team-tasks?task=t%201');
 });

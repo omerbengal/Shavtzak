@@ -19,6 +19,7 @@ import 'task_link_picker.dart';
 import 'team_task_actions.dart';
 import 'team_task_split_view.dart';
 import 'team_task_style.dart';
+import 'team_task_mentions.dart';
 import 'team_task_update_log.dart';
 
 /// Opens one task: a sheet from the bottom on a phone, a centred panel (at
@@ -255,6 +256,9 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
     final manage = state.canManage && widget.manage;
     final viewerId = state.viewer.id;
     final owner = isTeamTaskOwner(task, viewerId);
+    // Tagged ("@") without owning it (19/11/2026): writes in the log, never
+    // the status.
+    final myTag = isTeamTaskTaggedOnly(task, viewerId) ? task.mentionOf(viewerId) : null;
     final activeMembers = state.members.where((m) => m.isActive && !m.isArchived).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     final now = DateTime.now();
@@ -277,11 +281,13 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
                 _section('דד ליין', _deadlineValue(state, task, manage, late)),
                 _section('אחראים', _ownersValue(task, manage, activeMembers, viewerId)),
                 _section('אנשי קשר', _contactsValue(task, manage)),
+                if (myTag != null) _section('תויגת', _myTagValue(state, task, myTag)),
+                if (task.mentions.isNotEmpty) _section('מתויגים', _mentionsValue(state, task)),
                 _section(
                   'יומן עדכונים',
                   TeamTaskUpdateLog(
                     task: task,
-                    canWrite: manage || owner,
+                    canWrite: manage || owner || myTag != null,
                     // Everyone's updates only in "כל המשימות" (round 10).
                     canEditAll: manage,
                   ),
@@ -291,6 +297,50 @@ class _TeamTaskSheetState extends State<TeamTaskSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  /// The viewer's own tag: the box they tick when done, and who tagged them.
+  Widget _myTagValue(TeamTasksLoaded state, TeamTask task, TeamTaskMention mention) {
+    final by = state.members.where((m) => m.id == mention.byId).firstOrNull?.name;
+    return Row(
+      children: [
+        MentionDoneBox(task: task, mention: mention),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            mention.isDone
+                ? 'סימנת כבוצע'
+                : 'סמן/י כבוצע כשסיימת${by == null ? '' : ' (תייג/ה: $by)'}',
+            style: const TextStyle(color: TaskStyle.neutralText),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Everyone tagged in the log, each with ✓ once they marked it done.
+  Widget _mentionsValue(TeamTasksLoaded state, TeamTask task) {
+    final names = {for (final m in state.members) m.id: m.name};
+    return Wrap(
+      key: const Key('team-task-mentions'),
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        for (final mention in task.mentions)
+          Chip(
+            key: Key('team-task-mention-${mention.memberId}'),
+            visualDensity: VisualDensity.compact,
+            backgroundColor: mention.isDone ? TaskStyle.doneLight : mentionLight,
+            side: BorderSide.none,
+            avatar: Icon(
+              mention.isDone ? Icons.check : Icons.alternate_email,
+              size: 16,
+              color: mention.isDone ? TaskStyle.done : mentionColor,
+            ),
+            label: Text(names[mention.memberId] ?? unknownMemberLabel),
+          ),
+      ],
     );
   }
 
