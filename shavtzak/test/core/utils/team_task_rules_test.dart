@@ -479,6 +479,49 @@ void main() {
     });
   });
 
+  group('"קיבוץ לפי אירועים" off (19/11/2026)', () {
+    test("inside one owner's run: the earliest event first, no event last", () {
+      final early = buildEvent(id: 'e1', name: 'מוקדם', startDate: DateTime(2026, 12, 1));
+      final late = buildEvent(id: 'e2', name: 'מאוחר', startDate: DateTime(2026, 12, 20));
+      final tasks = [
+        buildTeamTask(id: 'none', title: 'א'),
+        buildTeamTask(
+            id: 'late', title: 'ב', link: const TaskLink(TaskLinkType.event, 'e2'), event: late, events: [late]),
+        buildTeamTask(
+            id: 'early', title: 'ג', link: const TaskLink(TaskLinkType.event, 'e1'), event: early, events: [early]),
+      ]..sort(compareTeamTasksByOwners);
+      expect(tasks.map((t) => t.id), ['early', 'late', 'none']);
+    });
+
+    test('a category card becomes one list; other cards stay', () {
+      final category = buildCategory(id: 'c1', name: 'חנוכה');
+      final e1 = buildEvent(id: 'e1', name: 'א', categoryId: 'c1');
+      final e2 = buildEvent(id: 'e2', name: 'ב', categoryId: 'c1');
+      final tasks = [
+        buildTeamTask(id: 'own', title: 'ג', link: const TaskLink(TaskLinkType.category, 'c1'))
+            .copyWith(category: () => category),
+        buildTeamTask(id: 'x', title: 'א', link: const TaskLink(TaskLinkType.event, 'e1'), event: e1, events: [e1]),
+        buildTeamTask(id: 'y', title: 'ב', link: const TaskLink(TaskLinkType.event, 'e2'), event: e2, events: [e2]),
+        buildTeamTask(
+            id: 'both',
+            title: 'ד',
+            link: const TaskLink(TaskLinkType.event, 'e1'),
+            eventIds: const ['e1', 'e2'],
+            event: e1,
+            events: [e1, e2]),
+        buildTeamTask(id: 'free', title: 'ה'),
+      ];
+      final grouped = groupTeamTasks(tasks, now, categories: [category]);
+      final flat = flattenTeamTaskGroups(grouped);
+      expect(flat.length, grouped.length);
+      final card = flat.first;
+      expect(card.sections, isEmpty);
+      expect(card.severalEventTasks, isEmpty);
+      expect(card.tasks.map((t) => t.id), ['x', 'y', 'own', 'both']);
+      expect(flat.last, grouped.last);
+    });
+  });
+
   group('the search (Omer, msg 4500)', () {
     final omer = buildMember(id: 'o1', name: 'עומר בנגל');
     final hanukkah = buildEvent(id: 'e9', name: 'הדלקת נרות', categoryId: 'c7');

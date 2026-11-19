@@ -65,6 +65,12 @@ class TeamTasksScreen extends StatefulWidget {
   @visibleForTesting
   static bool foldAllTabByDefault = true;
 
+  /// "קיבוץ לפי אירועים" in "כל המשימות" (Omer, 19/11/2026): on = the
+  /// events' sections inside each category's card (as before), off = one
+  /// list per category. Kept for the app session, across the screen's
+  /// openings.
+  static bool groupByEvents = true;
+
   @override
   State<TeamTasksScreen> createState() => _TeamTasksScreenState();
 }
@@ -429,6 +435,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       final column = Column(
         children: [
           TeamTaskFilterBar(state: state, showOwner: all),
+          if (all) _groupByEventsSwitch(),
           if (!all)
             _SpotlightBar(
               count: spotlightQueue(_uniqueTasks(groups)).length,
@@ -441,6 +448,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
               state: state,
               now: now,
               editing: all,
+              flat: all && !TeamTasksScreen.groupByEvents,
               // The event's "שיבוצים" window, for whoever sees it in
               // "מסך מנהלים" (round 10).
               showAssignments: user.isAdmin || user.canAccessSummaryScreen,
@@ -483,7 +491,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       children: [
         _tabs(),
         Expanded(
-          child: _showAll ? list(state.allGroups, all: true) : list(state.mineGroups, all: false),
+          child: _showAll ? list(_allGroups(state), all: true) : list(state.mineGroups, all: false),
         ),
       ],
     );
@@ -502,7 +510,56 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// The groups the list shows now (the tab).
   List<TeamTaskGroup> _shownGroups(TeamTasksLoaded state, bool canManage) {
     if (!canManage) return state.mineGroups;
-    return _showAll ? state.allGroups : state.mineGroups;
+    return _showAll ? _allGroups(state) : state.mineGroups;
+  }
+
+  /// "כל המשימות" as the switch wants it ([TeamTasksScreen.groupByEvents]).
+  static List<TeamTaskGroup> _allGroups(TeamTasksLoaded state) => TeamTasksScreen.groupByEvents
+      ? state.allGroups
+      : flattenTeamTaskGroups(state.allGroups, compare: compareTeamTasksByOwners);
+
+  /// The "קיבוץ לפי אירועים" switch, under the filters of "כל המשימות".
+  Widget _groupByEventsSwitch() {
+    final on = TeamTasksScreen.groupByEvents;
+    void toggle(bool value) {
+      Logger.action('toggle:teamTasksGroupByEvents', {'on': value});
+      setState(() => TeamTasksScreen.groupByEvents = value);
+      _holdPlace(null);
+    }
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 4, 2),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => toggle(!on),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Text(
+                  'קיבוץ לפי אירועים',
+                  style: TextStyle(
+                    fontSize: TaskStyle.filterFontSize,
+                    color: on ? TaskStyle.mine : TaskStyle.neutralText,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Transform.scale(
+                  scale: 0.75,
+                  child: Switch(
+                    key: const Key('team-tasks-group-by-events'),
+                    value: on,
+                    onChanged: toggle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Whether the window is wider than a phone: tasks open in the side panel.
@@ -571,7 +628,12 @@ class _GroupedList extends StatefulWidget {
     this.flash = const {},
     this.flashRound = 0,
     this.onSpotlightGroup,
+    this.flat = false,
   });
+
+  /// "קיבוץ לפי אירועים" off: a category's card is one list, with no
+  /// "משויכות לקטגוריה" line, and every row carries its events' names.
+  final bool flat;
 
   /// The rows a "בליץ" pass just changed, flashing green.
   final Set<String> flash;
@@ -754,7 +816,9 @@ class _GroupedListState extends State<_GroupedList> {
           task: task,
           now: widget.now,
           viewerId: widget.viewerId,
-          showEvents: task.hasSeveralEvents,
+          // With the events' sections gone (the switch off), every row
+          // names its events.
+          showEvents: task.hasSeveralEvents || (widget.flat && task.events.isNotEmpty),
           // "המשימות שלי": the status and a new update without opening the
           // task (Omer, round 4); every row there is the viewer's own.
           selected: task.id == widget.selectedId,
@@ -893,7 +957,7 @@ class _GroupedListState extends State<_GroupedList> {
         : null;
     final rows = <Widget>[];
     // A category's own tasks: a labelled list of their own.
-    if (isCategory && group.tasks.isNotEmpty) {
+    if (isCategory && !widget.flat && group.tasks.isNotEmpty) {
       rows.add(_listSeparator(
         Key('team-task-own-separator-${group.key}'),
         'משויכות לקטגוריה',
