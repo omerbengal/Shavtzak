@@ -11,6 +11,13 @@ class ConstraintEventWarningDialog extends StatelessWidget {
   final List<EventOverlapInfo> overlaps;
   final bool showMissingTimeNote;
 
+  /// Ids of the events the constraint's member is assigned to. An overlapping
+  /// event in this set gets [assignedLabel] on the left of its row.
+  final Set<String> assignedEventIds;
+
+  /// Shown on an overlapping event the member is assigned to.
+  static const String assignedLabel = 'משובץ/ת לאירוע!';
+
   const ConstraintEventWarningDialog({
     super.key,
     required this.title,
@@ -18,6 +25,7 @@ class ConstraintEventWarningDialog extends StatelessWidget {
     required this.confirmText,
     required this.overlaps,
     this.showMissingTimeNote = false,
+    this.assignedEventIds = const {},
   });
 
   static Future<bool> show(
@@ -27,6 +35,7 @@ class ConstraintEventWarningDialog extends StatelessWidget {
     required String confirmText,
     required List<EventOverlapInfo> overlaps,
     bool showMissingTimeNote = false,
+    Set<String> assignedEventIds = const {},
   }) async {
     final result = await showDialog<bool>(
       context: context,
@@ -36,6 +45,7 @@ class ConstraintEventWarningDialog extends StatelessWidget {
         confirmText: confirmText,
         overlaps: overlaps,
         showMissingTimeNote: showMissingTimeNote,
+        assignedEventIds: assignedEventIds,
       ),
     );
 
@@ -141,12 +151,33 @@ class ConstraintEventWarningDialog extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  event.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        event.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                    if (assignedEventIds.contains(event.id))
+                                      Padding(
+                                        padding:
+                                            const EdgeInsetsDirectional.only(
+                                                start: 8),
+                                        child: Text(
+                                          assignedLabel,
+                                          style: TextStyle(
+                                            color: Colors.green.shade800,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 const SizedBox(height: 4),
                                 Text(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../data/repositories/assignment_repository.dart';
 import '../../data/repositories/event_repository.dart';
+import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/utils/constraint_event_overlap.dart';
@@ -22,6 +24,29 @@ Future<List<Event>> loadEventsForConstraintWarnings(
   }
 }
 
+/// The events [assignments] place a member in: every assignment except a
+/// declined one (a declined assignment does not fill the role either, see
+/// [AssignmentRepository.getEventAssignmentStats]).
+Set<String> assignedEventIdsOf(List<Assignment> assignments) => {
+      for (final assignment in assignments)
+        if (!assignment.isDeclined) assignment.eventId,
+    };
+
+/// Ids of the events [teamMemberId] is assigned to, for the
+/// "משובץ/ת לאירוע!" mark in [ConstraintEventWarningDialog]. A failed read
+/// shows no marks rather than blocking the approval.
+Future<Set<String>> loadAssignedEventIdsForMember(
+    BuildContext context, String teamMemberId) async {
+  try {
+    final assignments = await context
+        .read<AssignmentRepository>()
+        .getAssignmentsByPerson(teamMemberId);
+    return assignedEventIdsOf(assignments);
+  } catch (_) {
+    return const {};
+  }
+}
+
 Future<bool> confirmConstraintOverlapWarning({
   required BuildContext context,
   required DateConstraint constraint,
@@ -30,6 +55,7 @@ Future<bool> confirmConstraintOverlapWarning({
   required String message,
   required String confirmText,
   bool showMissingTimeNote = false,
+  Set<String> assignedEventIds = const {},
 }) async {
   if (!constraint.isUnavailability) {
     return true;
@@ -51,5 +77,6 @@ Future<bool> confirmConstraintOverlapWarning({
     confirmText: confirmText,
     overlaps: overlaps,
     showMissingTimeNote: showMissingTimeNote,
+    assignedEventIds: assignedEventIds,
   );
 }

@@ -3443,6 +3443,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       final targetConstraint = _constraints[constraintIndex];
       final events = await loadEventsForConstraintWarnings(context);
       if (!mounted) return;
+      final assignedEventIds =
+          await loadAssignedEventIdsForMember(context, widget.member!.id);
+      if (!mounted) return;
 
       final shouldProceed = await confirmConstraintOverlapWarning(
         context: context,
@@ -3453,6 +3456,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         message: 'שים לב: במועדים הללו קיימים אירועים:',
         confirmText: 'אשר בכל זאת',
         showMissingTimeNote: true,
+        assignedEventIds: assignedEventIds,
       );
 
       if (!shouldProceed || !mounted) {
@@ -5920,6 +5924,9 @@ class _RejectedConstraintsDialogState
   Future<void> _approveConstraint(DateConstraint constraint) async {
     final events = await loadEventsForConstraintWarnings(context);
     if (!mounted) return;
+    final assignedEventIds =
+        await loadAssignedEventIdsForMember(context, widget.teamMemberId);
+    if (!mounted) return;
 
     final shouldProceed = await confirmConstraintOverlapWarning(
       context: context,
@@ -5929,6 +5936,7 @@ class _RejectedConstraintsDialogState
       message: 'שים לב: במועדים הללו קיימים אירועים:',
       confirmText: 'אשר בכל זאת',
       showMissingTimeNote: true,
+      assignedEventIds: assignedEventIds,
     );
 
     if (!shouldProceed || !mounted) {

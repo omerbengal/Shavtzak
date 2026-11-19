@@ -633,6 +633,9 @@ class _ConstraintsExaminingDialogState
     if (newStatus == ConstraintStatus.approved) {
       final events = await loadEventsForConstraintWarnings(context);
       if (!mounted) return;
+      final assignedEventIds =
+          await loadAssignedEventIdsForMember(context, member.id);
+      if (!mounted) return;
 
       final shouldProceed = await confirmConstraintOverlapWarning(
         context: context,
@@ -642,6 +645,7 @@ class _ConstraintsExaminingDialogState
         message: 'שים לב: במועדים הללו קיימים אירועים:',
         confirmText: 'אשר בכל זאת',
         showMissingTimeNote: true,
+        assignedEventIds: assignedEventIds,
       );
 
       if (!shouldProceed || !mounted) {
