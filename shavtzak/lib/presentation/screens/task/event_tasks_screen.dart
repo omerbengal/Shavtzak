@@ -349,12 +349,28 @@ class _EventTasksScreenState extends State<EventTasksScreen>
               controller: _searchController,
               focusNode: _searchFocusNode,
               autofocus: true,
-              cursorColor: Colors.white,
-              style: const TextStyle(color: Colors.white, fontSize: 17),
-              decoration: const InputDecoration(
+              // The app's inputDecorationTheme fills every field with the
+              // white surface, this one too, so the text is dark like every
+              // other search field (white text here was invisible).
+              cursorColor: AppTheme.primary,
+              style: const TextStyle(
+                color: AppTheme.textPrimary,
+                fontSize: 17,
+              ),
+              decoration: InputDecoration(
                 hintText: 'חיפוש משימה או אדם...',
-                hintStyle: TextStyle(color: Colors.white70),
-                border: InputBorder.none,
+                hintStyle: const TextStyle(color: AppTheme.textSecondary),
+                filled: true,
+                fillColor: AppTheme.surface,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
               ),
               onChanged: _onQueryChanged,
             )

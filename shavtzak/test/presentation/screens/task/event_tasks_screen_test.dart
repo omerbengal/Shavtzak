@@ -304,6 +304,46 @@ void main() {
       expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
     });
 
+    testWidgets('the typed text is readable on the field, in both tabs',
+        (tester) async {
+      double contrast(Color a, Color b) {
+        final la = a.computeLuminance();
+        final lb = b.computeLuminance();
+        final lighter = la > lb ? la : lb;
+        final darker = la > lb ? lb : la;
+        return (lighter + 0.05) / (darker + 0.05);
+      }
+
+      // The app theme fills every field with its white surface, so white
+      // text in the app bar's search field could not be seen (Omer, msg 4924).
+      final theme = AppTheme.lightTheme;
+      await pumpScreen(tester, user: dana, tasks: [mine], theme: theme);
+
+      for (final tab in ['המשימות שלי', 'כל השלבים']) {
+        await openTab(tester, tab);
+        await tester.tap(find.byKey(const Key('tasks-search-open')));
+        await tester.pump();
+
+        final field =
+            tester.widget<TextField>(find.byKey(const Key('tasks-search')));
+        final decoration = field.decoration!;
+        final themed = theme.inputDecorationTheme;
+        final filled = decoration.filled ?? themed.filled;
+        final fill = filled
+            ? (decoration.fillColor ?? themed.fillColor!)
+            : theme.appBarTheme.backgroundColor!;
+        expect(contrast(field.style!.color!, fill), greaterThanOrEqualTo(4.5),
+            reason: tab);
+        expect(contrast(decoration.hintStyle!.color!, fill),
+            greaterThanOrEqualTo(3), reason: tab);
+        expect(contrast(field.cursorColor!, fill), greaterThanOrEqualTo(3),
+            reason: tab);
+
+        await tester.tap(find.byKey(const Key('tasks-search-close')));
+        await tester.pump();
+      }
+    });
+
     testWidgets('typing lists the matches in the sheet, grouped by stage',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
