@@ -199,8 +199,10 @@ int compareTeamTasks(TeamTask a, TeamTask b) {
 /// The order inside a group of "כל המשימות" (Omer, msg 4581): still-active
 /// tasks first; then the urgency, highest first; inside each urgency the tasks
 /// with several owners (by title), then the ones with a single owner, each
-/// owner's tasks one after another (the owners by name, then by title), then
-/// the ones with no owner (by title). Done, cancelled and duplicate stay at
+/// owner's tasks one after another (the owners by name; inside one owner's
+/// run the earliest event start first, Omer 19/11/2026, a task with no event
+/// after those with one; then by title), then the ones with no owner (by
+/// title). Done, cancelled and duplicate stay at
 /// the bottom, in the same order among themselves.
 int compareTeamTasksByOwners(TeamTask a, TeamTask b) {
   final activeA = a.status.isActive ? 0 : 1;
@@ -219,6 +221,8 @@ int compareTeamTasksByOwners(TeamTask a, TeamTask b) {
     // Two owners with the same name still keep their tasks apart.
     final byOwnerId = ownersA.first.compareTo(ownersB.first);
     if (byOwnerId != 0) return byOwnerId;
+    final byEvent = _compareStarts(teamTaskFirstEventStart(a), teamTaskFirstEventStart(b));
+    if (byEvent != 0) return byEvent;
   }
   final byTitle = compareHebrewText(a.title, b.title);
   if (byTitle != 0) return byTitle;
@@ -237,6 +241,23 @@ int compareHebrewText(String a, String b) {
       .replaceAll('ץ', 'צ');
   final byKey = key(a).compareTo(key(b));
   return byKey != 0 ? byKey : a.compareTo(b);
+}
+
+/// The earliest start among [task]'s events that still exist; null when it
+/// has none (not linked to an event, or every one deleted).
+DateTime? teamTaskFirstEventStart(TeamTask task) {
+  DateTime? first;
+  for (final event in [...task.events, if (task.event != null) task.event!]) {
+    if (first == null || event.startDate.isBefore(first)) first = event.startDate;
+  }
+  return first;
+}
+
+int _compareStarts(DateTime? a, DateTime? b) {
+  if (a == b) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return a.compareTo(b);
 }
 
 int _compareDeadlines(String? a, String? b) {
@@ -436,6 +457,29 @@ enum TeamTaskTimeRange {
 DateTime? teamTaskStatusChangedAt(TeamTask task) =>
     task.statusChangedAt ??
     (task.status == TeamTaskStatus.done ? task.completedAt : null);
+
+/// [groups] with "קיבוץ לפי אירועים" off (Omer, 19/11/2026): every
+/// category's card holds ONE list, its own tasks, those of several events and
+/// those of each event together, once each, in [compare] order, so one
+/// person's tasks stay together across the events. The other cards (an event
+/// with no category, a pending event, a topic, "ללא שיוך") stay as they are.
+List<TeamTaskGroup> flattenTeamTaskGroups(
+  List<TeamTaskGroup> groups, {
+  int Function(TeamTask a, TeamTask b) compare = compareTeamTasks,
+}) =>
+    [
+      for (final group in groups)
+        group.type == TaskLinkType.category
+            ? TeamTaskGroup(
+                key: group.key,
+                label: group.label,
+                type: group.type,
+                link: group.link,
+                event: group.event,
+                tasks: group.allTasks..sort(compare),
+              )
+            : group,
+    ];
 
 /// What the list shows: a set of statuses, optionally some owners (any of
 /// them, round 7: several like the statuses), some urgencies (16/11/2026),

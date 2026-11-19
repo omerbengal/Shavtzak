@@ -799,6 +799,43 @@ void main() {
           members: [dana, yossi, manager],
         );
 
+    testWidgets('"קיבוץ לפי אירועים" off: one list per category, each row names its event',
+        (tester) async {
+      addTearDown(() => TeamTasksScreen.groupByEvents = true);
+      final one = buildTeamTask(
+        id: 'one',
+        title: 'נרות',
+        link: const TaskLink(TaskLinkType.event, 'e1'),
+        event: candles,
+        events: [candles],
+        assigneeIds: ['m2'],
+      ).copyWith(owners: [yossi]);
+      final two = buildTeamTask(
+        id: 'two',
+        title: 'דיג׳יי',
+        link: const TaskLink(TaskLinkType.event, 'e2'),
+        event: party,
+        events: [party],
+        assigneeIds: ['m1'],
+      ).copyWith(owners: [dana]);
+      await pumpTeamTasks(tester, user: manager, board: categoryBoard([one, two]));
+      expect(find.byKey(const Key('team-task-section-category:c1/event:e1')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('team-tasks-group-by-events')));
+      await tester.pumpAndSettle();
+      expect(TeamTasksScreen.groupByEvents, isFalse);
+      expect(find.byKey(const Key('team-task-section-category:c1/event:e1')), findsNothing);
+      expect(find.byKey(const Key('team-task-section-category:c1/event:e2')), findsNothing);
+      expect(find.byKey(const Key('team-task-events-one')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-events-two')), findsOneWidget);
+      // By owner: דנה's task before יוסי's, though its event is later.
+      expect(tester.getTopLeft(find.byKey(const Key('team-task-row-two'))).dy,
+          lessThan(tester.getTopLeft(find.byKey(const Key('team-task-row-one'))).dy));
+      // On "המשימות שלי" the switch is not there.
+      await tester.tap(find.byKey(const Key('team-tab-mine')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-tasks-group-by-events')), findsNothing);
+    });
+
     testWidgets('a category card: its tasks of several events on top with chips, then its events',
         (tester) async {
       final both = buildTeamTask(
