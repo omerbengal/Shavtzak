@@ -85,10 +85,16 @@ void main() {
     });
   });
 
-  test('pendingStoriesDue: only the version the refresh installed', () {
-    expect(pendingStoriesDue('V5.6.0', 'V5.6.0'), isTrue);
-    expect(pendingStoriesDue('V5.6.0', 'V5.7.0'), isFalse);
-    expect(pendingStoriesDue(null, 'V5.6.0'), isFalse);
-    expect(pendingStoriesDue('', ''), isFalse);
+  test('storiesUnseenFor: the running version, not opened here yet', () {
+    // Never opened here (old refresh button, new browser) = due.
+    expect(storiesUnseenFor(seen: null, cached: 'V5.6.0', remote: 'V5.6.0'), isTrue);
+    expect(storiesUnseenFor(seen: 'V5.5.0', cached: 'V5.6.0', remote: 'V5.6.0'), isTrue);
+    // Already opened for this version.
+    expect(storiesUnseenFor(seen: 'V5.6.0', cached: 'V5.6.0', remote: 'V5.6.0'), isFalse);
+    // Waiting for a refresh (runs an older version) = not yet.
+    expect(storiesUnseenFor(seen: null, cached: 'V5.5.0', remote: 'V5.6.0'), isFalse);
+    // No version on the server.
+    expect(storiesUnseenFor(seen: null, cached: null, remote: null), isFalse);
+    expect(storiesUnseenFor(seen: null, cached: '', remote: ''), isFalse);
   });
 }

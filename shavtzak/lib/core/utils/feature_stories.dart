@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-/// Feature stories (Omer, 20/11/2026): after the in-app refresh, the
+/// Feature stories (Omer, 20/11/2026): once per browser and version, the
 /// version's new features shown Instagram-style, one story per feature, an
 /// image (a short feature) or a video (a flow, up to 30 s). Chosen per
 /// version in `utilities/information` → `WhatsNewStories`:
@@ -102,7 +102,10 @@ Uri featureStoryUri(String file, Uri base) {
   return base.removeFragment().resolve(file);
 }
 
-/// The marker [refreshApp] leaves before the reload ([marker], the version
-/// being installed) is due when the app now runs that version ([current]).
-bool pendingStoriesDue(String? marker, String? current) =>
-    marker != null && marker.isNotEmpty && marker == current;
+/// The running version's stories are due in this browser: the version it
+/// runs ([cached]) is the server's ([remote], so not waiting for a refresh),
+/// and its stories were not opened here yet ([seen], the version last shown).
+bool storiesUnseenFor({String? seen, String? cached, String? remote}) {
+  final current = remote?.trim() ?? '';
+  return current.isNotEmpty && cached?.trim() == current && seen?.trim() != current;
+}

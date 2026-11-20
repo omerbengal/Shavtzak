@@ -9,15 +9,18 @@ import '../../../domain/entities/team_member.dart';
 import 'feature_stories_viewer.dart';
 import 'story_media.dart';
 
-/// Where the gate gets the version's stories and the refresh marker.
+/// Where the gate gets the version's stories and the "seen" mark.
 /// Default: [AppVersionService]; tests pass their own.
 abstract class FeatureStoriesSource implements Listenable {
   /// `utilities/information` has been read since sign-in.
   bool get ready;
   List<FeatureStory> get stories;
 
-  /// True once after the in-app refresh (see `AppVersionService`).
-  Future<bool> takePending();
+  /// This browser has not opened the running version's stories yet.
+  Future<bool> unseen();
+
+  /// Called when the stories screen opens (not on a `?stories=` link).
+  Future<void> markSeen();
 }
 
 class _VersionServiceSource implements FeatureStoriesSource {
@@ -29,7 +32,9 @@ class _VersionServiceSource implements FeatureStoriesSource {
   @override
   List<FeatureStory> get stories => service.stories;
   @override
-  Future<bool> takePending() => service.takePendingStories();
+  Future<bool> unseen() => service.storiesUnseen();
+  @override
+  Future<void> markSeen() => service.markStoriesSeen();
   @override
   void addListener(VoidCallback listener) => service.addListener(listener);
   @override
@@ -37,8 +42,10 @@ class _VersionServiceSource implements FeatureStoriesSource {
 }
 
 /// Opens [FeatureStoriesViewer] over the app once per app session, when the
-/// in-app refresh just installed a version with stories for this member
-/// (`storiesFor`), or when the address asks for some (`?stories=`, previews).
+/// running version has stories for this member (`storiesFor`) that this
+/// browser has not opened yet (Omer, 20/11/2026, option A: the first release
+/// reaches members still on the old refresh button too), or when the address
+/// asks for some (`?stories=`, previews; these never set the mark).
 /// Sits in `MaterialApp.router`'s builder, above every screen.
 class FeatureStoriesGate extends StatefulWidget {
   final Widget child;
@@ -113,8 +120,11 @@ class _FeatureStoriesGateState extends State<FeatureStoriesGate> {
     List<FeatureStory> stories = const [];
     if (fromQuery != null) {
       stories = fromQuery;
-    } else if (await _source.takePending()) {
+    } else if (await _source.unseen()) {
       stories = storiesFor(_source.stories, isAdmin: user.isAdmin, isPermanent: user.isPermanent);
+      // Marked as the screen opens, so a tab closed mid-story never loops.
+      // No story for this member = no mark (they may join the audience later).
+      if (stories.isNotEmpty) await _source.markSeen();
     }
     if (!mounted) return;
     Logger.action('stories:decided', {'count': stories.length, 'query': fromQuery != null});

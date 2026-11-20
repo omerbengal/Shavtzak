@@ -43,13 +43,21 @@ unknown audience reads as `all`. `file` is relative to the site (or an absolute 
 
 ## When it shows
 
-- `AppVersionService.refreshApp()` writes a pending marker (prefs `stories_pending_version` = the
-  version being installed) before the reload.
-- After the reload, once the user is signed in and `utilities/information` has been read: the
-  marker equals the current version, and stories match the user's audience = the stories screen
-  opens over the app. The marker is cleared as soon as that decision is made (shown or not), so it
-  shows once.
-- A new device / a normal open has no marker = nothing.
+Changed 20/11/2026 (Omer, msg 5408 option A, clarified 5412 / 5415): the first design used a pending
+marker written by the new refresh button, but every user still runs the old code, whose refresh
+button writes nothing, so the first release would have shown the stories to nobody. Now:
+
+- Per browser "seen" mark: prefs `stories_seen_version` = the version whose stories this browser
+  opened.
+- On app load, once the user is signed in and `utilities/information` has been read (and applied:
+  a new device first saves the version as its cached one): the running version equals the server's
+  (not waiting for a refresh), the mark is not that version, and stories match the user's audience
+  = the stories screen opens over the app, and the mark is set as it opens (a tab closed mid-story
+  never loops). Decided once per app session.
+- No matching story = no screen and no mark. The pending marker of the first design is gone.
+- Accepted consequences (Omer): a new device, cleared site data or a private window sees the
+  current version's stories once; a member who joins a story's audience while that version is live
+  (becomes permanent) sees them once on the next load.
 - Audience: `managers` = `isAdmin`; `permanent` = `isPermanent` or `isAdmin` (my call: managers
   see everything); `all` = everyone.
 - The notifications popup (`maybeShowPushPrompt`) waits until the stories close.
@@ -76,7 +84,7 @@ in-app refresh never re-downloads every story ever made; the stories screen fetc
 ## Checking without a version change
 
 `?stories=<file>,<file>` in the address (before the `#`) opens the stories screen with those files
-(`.mp4` = video, else image), audience ignored. Used by preview links and by the skill.
+(`.mp4` = video, else image), audience ignored, and never sets the "seen" mark. Used by preview links and by the skill.
 
 ## Producing stories (the skill)
 
@@ -94,4 +102,4 @@ member's "המשימות שלי" gets the task with the @ mark; they tick it don
 
 ## Non-goals
 
-No sound, no text in the media, no replay entry point, no per-user "seen" state on the server.
+No sound, no text in the media, no replay entry point, no per-user "seen" state on the server (the mark is per browser).

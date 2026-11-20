@@ -1,11 +1,16 @@
 ---
 name: feature-story
-description: Use when a Shavtzak release should show users a new feature after the in-app refresh - making the feature's "story" (a motion-graphics video up to 30 s, or a single image), from the app's real screens, and registering it for a version. Triggers - "סרטון לפיצ'ר", "סטורי לגרסה", "motion graphics for the feature", the post-merge question "סרטון לגרסה הזו?".
+description: Use when a Shavtzak release should show users a new feature once, after the version update - making the feature's "story" (a motion-graphics video up to 30 s, or a single image), from the app's real screens, and registering it for a version. Triggers - "סרטון לפיצ'ר", "סטורי לגרסה", "motion graphics for the feature", the post-merge question "סרטון לגרסה הזו?".
 ---
 
 # Feature story
 
-After the in-app refresh ("רענון האפליקציה"), the app plays the version's stories, Instagram-style
+The app plays the running version's stories, Instagram-style, once per browser: the first load of
+that version on a browser that has not opened them yet, after the user signed in (prefs
+`stories_seen_version`, set as the screen opens). Whatever refresh brought the user there (also the
+old "רענון האפליקציה" button), so the stories reach everyone in the audience. Accepted (Omer,
+20/11/2026): a new device, cleared site data or a private window sees the current stories once
+more, and so does a member who joins a story's audience later (e.g. becomes permanent).
 (`shavtzak/lib/presentation/widgets/feature_stories/`, design:
 `docs/superpowers/specs/2026-11-20-feature-stories-design.md`). This skill makes one story for one
 feature and registers it.
@@ -64,6 +69,8 @@ feature and registers it.
    `{type: 'video'|'image', file: 'stories/<id>.mp4', audience: 'all'|'managers'|'permanent'}`,
    in the order they should play, together with the version bump. Read it back after writing.
    A version with no stories: `WhatsNewStories: []`, never the previous version's (its files are gone).
+   Every signed-in member in the audience then sees the list once on their next load (no refresh
+   needed once they run this version), so write it only when the files are live on the site.
 
 ## Files
 

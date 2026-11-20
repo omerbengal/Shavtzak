@@ -37,10 +37,10 @@ class AppVersionService extends ChangeNotifier {
   static const String _whatsNewField = 'WhatsNew';
   static const String _storiesField = 'WhatsNewStories';
 
-  /// Left by [refreshApp] before the reload: the version being installed.
-  /// The stories screen shows once when the app then runs that version
-  /// (`takePendingStories`).
-  static const String _storiesPendingKey = 'stories_pending_version';
+  /// The version whose stories this browser already opened (Omer,
+  /// 20/11/2026, option A): every member sees the running version's stories
+  /// once, whatever refresh button brought them there (`storiesUnseen`).
+  static const String _storiesSeenKey = 'stories_seen_version';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -157,11 +157,12 @@ class AppVersionService extends ChangeNotifier {
     final data = snapshot.data();
     _stories = parseFeatureStories(data?[_storiesField]);
     final firstRead = !_hasRemoteData;
-    _hasRemoteData = true;
     try {
       await _applyVersion(data);
     } finally {
-      // The stories gate waits for the first read.
+      // The stories gate waits for the first read, and for the version to be
+      // applied (a new device saves it as its cached version first).
+      _hasRemoteData = true;
       if (firstRead) notifyListeners();
     }
   }
@@ -237,35 +238,38 @@ class AppVersionService extends ChangeNotifier {
     final currentRemoteVersion = _remoteVersion;
     if (currentRemoteVersion != null && currentRemoteVersion.isNotEmpty) {
       await _saveCachedVersion(currentRemoteVersion);
-      await _setStoriesPending(currentRemoteVersion.trim());
     }
     WebHelper.reloadPage();
   }
 
-  Future<void> _setStoriesPending(String version) async {
+  /// True when this browser has not yet opened the stories of the version it
+  /// runs now (and the server confirms it: [remoteVersion] is it too, so a
+  /// browser waiting for a refresh sees nothing yet).
+  Future<bool> storiesUnseen() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_storiesPendingKey, version);
+      return storiesUnseenFor(
+        seen: prefs.getString(_storiesSeenKey),
+        cached: _cachedVersion,
+        remote: _remoteVersion,
+      );
     } catch (e) {
-      developer.log('AppVersionService: Failed to mark stories: $e', name: 'AppVersion');
+      developer.log('AppVersionService: Failed to read the stories mark: $e',
+          name: 'AppVersion');
+      return false;
     }
   }
 
-  /// True once after the in-app refresh installed the version now running
-  /// (and confirmed by the server: [remoteVersion] is it too). The marker is
-  /// cleared whatever the answer, so the stories show at most once.
-  Future<bool> takePendingStories() async {
+  /// The stories of the version running now were opened in this browser.
+  Future<void> markStoriesSeen() async {
+    final version = _remoteVersion?.trim();
+    if (version == null || version.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final marker = prefs.getString(_storiesPendingKey);
-      if (marker == null) return false;
-      await prefs.remove(_storiesPendingKey);
-      return pendingStoriesDue(marker, _cachedVersion) &&
-          pendingStoriesDue(marker, _remoteVersion);
+      await prefs.setString(_storiesSeenKey, version);
     } catch (e) {
-      developer.log('AppVersionService: Failed to read the stories marker: $e',
+      developer.log('AppVersionService: Failed to mark stories seen: $e',
           name: 'AppVersion');
-      return false;
     }
   }
 
