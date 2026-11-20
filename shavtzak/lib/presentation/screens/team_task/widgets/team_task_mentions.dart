@@ -9,6 +9,7 @@ import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
 import '../../../widgets/rtl_arrow_keys.dart';
 import '../../task/task_style.dart';
+import 'team_task_style.dart';
 
 /// Tags ("@") in a task's update log (Omer, 19/11/2026), like Instagram /
 /// Facebook mentions: typing "@" in the update field lists the team members,
@@ -38,8 +39,9 @@ const Color mentionLight = Color(0xFFF3E5F5);
 }
 
 /// The members [query] picks: their name holds it (ignoring case, points and
-/// quotes), the ones whose name starts with it first, then by name.
-List<TeamMember> mentionCandidates(List<TeamMember> members, String query, {int limit = 6}) {
+/// quotes), the ones whose name starts with it first, then by name. All of
+/// them (Omer, msg 5313: a bare "@" lists the whole team; the list scrolls).
+List<TeamMember> mentionCandidates(List<TeamMember> members, String query) {
   final wanted = normalizeTeamTaskSearch(query.trim());
   final matches = [
     for (final member in members)
@@ -50,7 +52,7 @@ List<TeamMember> mentionCandidates(List<TeamMember> members, String query, {int 
     final byRank = rank(a).compareTo(rank(b));
     return byRank != 0 ? byRank : compareHebrewText(a.name, b.name);
   });
-  return matches.take(limit).toList();
+  return matches;
 }
 
 /// The ids among [picked] (name → id, the members picked from the list)
@@ -106,33 +108,63 @@ TextSpan mentionSpans(String text, Iterable<String> names, {TextStyle? style}) {
 }
 
 /// The suggestions above the update field (Omer, msg 5298) while the caret
-/// is in an "@" query; a tap calls [onPick].
-class MentionSuggestions extends StatelessWidget {
-  const MentionSuggestions({super.key, required this.members, required this.onPick});
+/// is in an "@" query; a tap calls [onPick]. Every match is listed, in a box
+/// of at most [maxHeight] that scrolls (Omer, msg 5313), each name with the
+/// permanent member's blue shield, as everywhere in the app.
+class MentionSuggestions extends StatefulWidget {
+  const MentionSuggestions({
+    super.key,
+    required this.members,
+    required this.onPick,
+    this.maxHeight = 264,
+  });
 
   final List<TeamMember> members;
   final ValueChanged<TeamMember> onPick;
+  final double maxHeight;
+
+  @override
+  State<MentionSuggestions> createState() => _MentionSuggestionsState();
+}
+
+class _MentionSuggestionsState extends State<MentionSuggestions> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final members = widget.members;
     if (members.isEmpty) return const SizedBox.shrink();
     return Container(
       key: const Key('team-task-mention-suggestions'),
       margin: const EdgeInsets.only(bottom: 4),
+      constraints: BoxConstraints(maxHeight: widget.maxHeight),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: TaskStyle.rest),
         borderRadius: BorderRadius.circular(8),
         boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 6, offset: Offset(0, -2))],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final member in members)
-            InkWell(
+      child: Scrollbar(
+        controller: _scroll,
+        thumbVisibility: true,
+        child: ListView.builder(
+          key: const Key('team-task-mention-list'),
+          controller: _scroll,
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          itemCount: members.length,
+          itemBuilder: (context, index) {
+            final member = members[index];
+            return InkWell(
               key: Key('team-task-mention-option-${member.id}'),
-              onTap: () => onPick(member),
+              onTap: () => widget.onPick(member),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 child: Row(
@@ -140,12 +172,13 @@ class MentionSuggestions extends StatelessWidget {
                     const Text('@',
                         style: TextStyle(color: mentionColor, fontWeight: FontWeight.w700)),
                     const SizedBox(width: 6),
-                    Expanded(child: Text(member.name)),
+                    Expanded(child: MemberNameText(name: member.name, permanent: member.isPermanent)),
                   ],
                 ),
               ),
-            ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }

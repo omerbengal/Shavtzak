@@ -38,6 +38,9 @@ void main() {
       final names = mentionCandidates([dana, yossi, manager], 'כה').map((m) => m.id);
       expect(names, ['m2']);
       expect(mentionCandidates([dana, yossi], '').length, 2);
+      // A bare "@" lists the whole team, not its first few (msg 5313).
+      final team = [for (var i = 0; i < 20; i++) buildMember(id: 'x$i', name: 'חבר $i')];
+      expect(mentionCandidates(team, '').length, 20);
     });
 
     test('mentionIdsInText keeps only the names still in the text', () {
@@ -113,6 +116,46 @@ void main() {
   });
 
   group('the screen', () {
+    testWidgets('the "@" list scrolls through every member, shield on the permanent',
+        (tester) async {
+      final team = [
+        for (var i = 0; i < 15; i++)
+          buildMember(id: 'x$i', name: 'חבר ${i.toString().padLeft(2, '0')}', isPermanent: i == 0),
+      ];
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: MentionSuggestions(members: team, onPick: (_) {}),
+          ),
+        ),
+      ));
+      // A box of at most 264 high (plus its 4 margin), not the whole team.
+      final box = find.byKey(const Key('team-task-mention-suggestions'));
+      expect(tester.getSize(box).height, lessThanOrEqualTo(268));
+      // The blue shield next to the permanent member only.
+      expect(
+        find.descendant(
+            of: find.byKey(const Key('team-task-mention-option-x0')),
+            matching: find.byIcon(Icons.verified_user)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+            of: find.byKey(const Key('team-task-mention-option-x1')),
+            matching: find.byIcon(Icons.verified_user)),
+        findsNothing,
+      );
+      // The last one is built only once the list is scrolled to it.
+      final last = find.byKey(const Key('team-task-mention-option-x14'));
+      expect(last, findsNothing);
+      await tester.scrollUntilVisible(last, 100,
+          scrollable: find.descendant(
+              of: find.byKey(const Key('team-task-mention-list')),
+              matching: find.byType(Scrollable)));
+      expect(last, findsOneWidget);
+    });
+
     testWidgets('typing "@" lists the team; the pick is sent as a tag', (tester) async {
       final mine = buildTeamTask(id: 'a', title: 'להזמין אולם', assigneeIds: ['m1'])
           .copyWith(owners: [dana]);

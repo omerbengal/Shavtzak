@@ -48,6 +48,7 @@ TeamMember buildMember({
   bool canManageTasks = false,
   bool isActive = true,
   bool isArchived = false,
+  bool isPermanent = false,
   String? phoneNumber,
 }) {
   return TeamMember(
@@ -63,6 +64,7 @@ TeamMember buildMember({
     uniqueKey: 'key-$id',
     isAdmin: isAdmin,
     canManageTasks: canManageTasks,
+    isPermanent: isPermanent,
   );
 }
 

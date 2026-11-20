@@ -47,6 +47,7 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
   /// the field does not move.
   final OverlayPortalController _suggestions = OverlayPortalController();
   final LayerLink _fieldLink = LayerLink();
+  final GlobalKey _fieldKey = GlobalKey();
 
   @override
   void initState() {
@@ -401,6 +402,11 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
       overlayChildBuilder: (context) {
         if (suggestions == null) return const SizedBox.shrink();
         final box = _fieldLink.leaderSize;
+        // The list opens upwards: never taller than the room above the field.
+        final fieldBox = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+        final room = fieldBox == null || !fieldBox.hasSize
+            ? double.infinity
+            : fieldBox.localToGlobal(Offset.zero).dy - MediaQuery.paddingOf(context).top - 8;
         return Align(
           alignment: Alignment.topLeft,
           child: CompositedTransformFollower(
@@ -413,14 +419,20 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
                 textDirection: TextDirection.rtl,
                 child: Material(
                   type: MaterialType.transparency,
-                  child: SizedBox(width: box?.width ?? 320, child: suggestions),
+                  child: SizedBox(
+                    width: box?.width ?? 320,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: room < 96 ? 96 : room),
+                      child: suggestions,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         );
       },
-      child: CompositedTransformTarget(link: _fieldLink, child: field),
+      child: CompositedTransformTarget(key: _fieldKey, link: _fieldLink, child: field),
     );
   }
 
