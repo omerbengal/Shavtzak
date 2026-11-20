@@ -155,6 +155,25 @@ class _FeatureStoriesViewerState extends State<FeatureStoriesViewer>
                         ),
                       ),
                       if (!_ended) _tapZones(width),
+                      // A shade under the bars and ✕, as on Instagram: a
+                      // light story would hide them.
+                      const Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 96,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0x73000000), Color(0x00000000)],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       _bars(),
                       PositionedDirectional(
                         top: 18,

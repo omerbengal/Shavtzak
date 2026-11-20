@@ -54,17 +54,22 @@ feature and registers it.
    `<preview url>/?stories=stories/<id>.mp4` (comma-separated for several; before the `#`). Send
    Omer that link and the mp4 itself in Telegram.
 
-6. **Register it for the version** - only after the merge, and only with Omer's OK (production
-   data): in `utilities/information` add to `WhatsNewStories`
+6. **Only this version's files in `shavtzak/web/stories/`** (Omer, msg 5390): the branch that adds
+   this version's stories also deletes every older story file there (`git rm`), so the site never
+   keeps old ones. A release with no stories: the release removes whatever is left in
+   `web/stories/` (a small commit before the version bump). The Remotion sources stay.
+
+7. **Register it for the version** - only after the merge, and only with Omer's OK (production
+   data): in `utilities/information` set `WhatsNewStories` to this version's list
    `{type: 'video'|'image', file: 'stories/<id>.mp4', audience: 'all'|'managers'|'permanent'}`,
    in the order they should play, together with the version bump. Read it back after writing.
-   A version with no stories: leave `WhatsNewStories` empty (`[]`), never the previous version's.
+   A version with no stories: `WhatsNewStories: []`, never the previous version's (its files are gone).
 
 ## Files
 
 - `feature_stories/` - the Remotion project (sources of every story, `render.mjs`).
 - `shavtzak/tool/story_capture/` - the capture scripts (not part of `flutter test`).
-- `shavtzak/web/stories/` - the rendered stories, served with the site, kept out of the service
-  worker's precache (fetched only when shown).
+- `shavtzak/web/stories/` - the current version's rendered stories only, served with the site,
+  kept out of the service worker's precache (fetched only when shown).
 - Licence: Remotion is free for individuals, companies of up to 3 employees and non-profits
   (checked 20/11/2026, https://www.remotion.dev/license).

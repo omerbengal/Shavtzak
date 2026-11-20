@@ -66,7 +66,10 @@ Player: the official `video_player` (web: an HTML `<video>`, muted autoplay work
 
 ## Files and caching
 
-Story files live in `shavtzak/web/stories/` and deploy with the merge (GitHub Pages). They are
+Story files live in `shavtzak/web/stories/` and deploy with the merge (GitHub Pages).
+`web/stories/` holds ONLY the current version's story files (Omer, msg 5390): a version with new
+stories deletes the previous version's files in the same merge, and a version with no stories
+empties the folder. The Remotion sources (`feature_stories/`) and git history stay. They are
 excluded from the service worker's precache manifest (`tool/generate_service_worker.mjs`), so the
 in-app refresh never re-downloads every story ever made; the stories screen fetches them on demand.
 
