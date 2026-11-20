@@ -61,7 +61,7 @@ Future<void> phone(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-/// tool/story_capture/out/<name>.png
+/// Writes `tool/story_capture/out/<name>.png`.
 Future<void> capture(WidgetTester tester, String name) async {
   await expectLater(find.byType(WidgetsApp), matchesGoldenFile('out/$name.png'));
 }
