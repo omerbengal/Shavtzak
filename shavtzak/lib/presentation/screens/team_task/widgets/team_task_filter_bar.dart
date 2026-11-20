@@ -11,26 +11,30 @@ import '../../task/task_style.dart';
 import 'task_link_picker.dart';
 import 'team_task_style.dart';
 
-/// The row above the list: a narrow search field, then the filters
-/// (status, owner, urgency, link, late) as chips. While the search is in use (focused or
-/// holding text) the chips fold into one funnel button whose menu holds the
-/// same three filters as rows (Omer, round 3).
+/// Above the list: the search field, a whole row of its own and always open,
+/// then the filters (status, owner, urgency, link, late) as one row of chips
+/// (Omer, 20/11/2026: no more folding into a funnel while searching).
+/// [leading] sits first in the chips row, where the search was ("קיבוץ לפי
+/// אירועים" in "כל המשימות").
 ///
 /// [showOwner] false hides the owner filter ("המשימות שלי": they are all the
 /// viewer's) and the two time chips, "יצירה" and "עדכון סטטוס" (Omer,
 /// 19/11/2026: "כל המשימות" only).
 class TeamTaskFilterBar extends StatefulWidget {
-  const TeamTaskFilterBar({super.key, required this.state, required this.showOwner});
+  const TeamTaskFilterBar({
+    super.key,
+    required this.state,
+    required this.showOwner,
+    this.leading,
+  });
 
   final TeamTasksLoaded state;
   final bool showOwner;
 
-  /// The search field's width while the chips are shown.
-  static const double searchWidth = 140;
+  /// First in the chips row (the group-by switch), or nothing.
+  final Widget? leading;
 
-  /// On a phone (narrower than [compactWidth]) the field and the chips are
-  /// tighter, so the four chips fit beside the field (round 7: "באיחור").
-  static const double compactSearchWidth = 90;
+  /// On a phone (narrower than [compactWidth]) the chips are tighter.
   static const double compactWidth = 480;
 
   @override
@@ -40,22 +44,6 @@ class TeamTaskFilterBar extends StatefulWidget {
 class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   late final TextEditingController _search = TextEditingController(text: widget.state.filter.query);
   final FocusNode _focus = FocusNode();
-  final MenuController _menu = MenuController();
-
-  /// Keeps the one search field alive when the tap that focuses it folds the
-  /// row into its wide layout. Without it the field is rebuilt under its new
-  /// parent: on the web that closes the browser input the tap focused and
-  /// opens a new one after the tap, and iPhone opens the keyboard only for
-  /// the input focused inside the tap (`web/ios_keyboard_fix.js`), so the
-  /// field turned blue with no keyboard.
-  final GlobalKey _fieldKey = GlobalKey(debugLabel: 'team-filter-search');
-  bool _menuOpen = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focus.addListener(() => setState(() {}));
-  }
 
   @override
   void dispose() {
@@ -70,8 +58,6 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
       context.read<TeamTaskBloc>().add(TeamTaskFilterChanged(filter));
 
   bool get _compact => MediaQuery.sizeOf(context).width < TeamTaskFilterBar.compactWidth;
-
-  bool get _folded => _focus.hasFocus || _search.text.isNotEmpty || _menuOpen;
 
   // ---- what each filter offers ----
 
@@ -147,14 +133,6 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   /// "יצירה" or "עדכון סטטוס", and the range once one is picked.
   static String _timeLabel(String name, TeamTaskTimeRange? range) =>
       range == null ? name : '$name: ${range.hebrewLabel}';
-
-  /// A title row inside the funnel's "זמן" submenu.
-  Widget _menuHeader(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-        child: Text(text,
-            style: const TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w600, color: TaskStyle.neutralText)),
-      );
 
   void _setCreated(TeamTaskTimeRange range) {
     Logger.action('tap:teamTasksCreatedFilter', {'range': range.name});
@@ -284,53 +262,43 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     return name == null ? 'שיוך' : '$name ✕';
   }
 
-  bool get _anyFilterSet =>
-      _filter.statusesChanged ||
-      (widget.showOwner && _filter.ownerIds.isNotEmpty) ||
-      _filter.urgencies.isNotEmpty ||
-      _filter.link != null ||
-      _filter.lateOnly ||
-      (widget.showOwner && (_filter.created != null || _filter.statusChanged != null));
-
   // ---- build ----
 
   @override
   Widget build(BuildContext context) {
-    final folded = _folded;
-    final field = _searchField();
-    if (!folded) {
-      // Closed: the field and the chips centred as one row (Omer, round 4),
-      // scrolling sideways only when they do not fit.
-      return Padding(
-        padding: EdgeInsets.symmetric(horizontal: _compact ? 4 : 8, vertical: 6),
-        child: Center(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: _compact
-                      ? TeamTaskFilterBar.compactSearchWidth
-                      : TeamTaskFilterBar.searchWidth,
-                  child: field,
-                ),
-                const SizedBox(width: 6),
-                ..._chips(),
-              ],
+    final leading = widget.leading;
+    final side = _compact ? 8.0 : 12.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The search as wide as the list below it.
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: side),
+                child: _searchField(),
+              ),
             ),
           ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          Expanded(child: field),
-          const SizedBox(width: 6),
-          // Tapping the funnel keeps the field's focus, so it stays folded.
-          TextFieldTapRegion(child: _funnel()),
+          const SizedBox(height: 6),
+          // The chips centred as one row (Omer, round 4), scrolling sideways
+          // only when they do not fit.
+          Center(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.symmetric(horizontal: side),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (leading != null) ...[leading, SizedBox(width: _compact ? 4 : 6)],
+                  ..._chips(),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -338,7 +306,6 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
 
   Widget _searchField() {
     return SizedBox(
-      key: _fieldKey,
       height: 34,
       child: RtlArrowKeys(
         child: TextField(
@@ -491,127 +458,6 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
             compact: _compact, label: 'באיחור', active: filter.lateOnly, dropdown: false),
       ),
     ];
-  }
-
-  /// The funnel sits at the far left of the screen (the row's end in RTL), so
-  /// Flutter has no room for a submenu on the left, where RTL puts it, and
-  /// opens it on the right. The arrow points there (round 4) and sits on the
-  /// right of the word, the side it opens to (round 5): it leads the label,
-  /// and the trailing slot stays empty so the menu keeps its width (a wider
-  /// menu leaves no room on a phone for the submenu beside it).
-  ///
-  /// [arrow] false keeps the arrow's room empty, so the words of every row
-  /// start at the same place (round 9).
-  static Widget _withArrow(Widget label, {bool arrow = true}) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          arrow
-              ? const Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: Icon(Icons.arrow_right, key: Key('team-filter-submenu-arrow'), size: 24),
-                )
-              : const SizedBox(width: 24),
-          // Arrow + gap = the checkbox + its gap of the "באיחור" row, so every
-          // word starts at the same place (round 9).
-          const SizedBox(width: 6),
-          Flexible(child: label),
-        ],
-      );
-  static const WidgetStateProperty<Widget?> _noTrailingArrow =
-      WidgetStatePropertyAll(SizedBox.shrink());
-
-  /// The three filters folded into one funnel; its menu lists them as rows.
-  Widget _funnel() {
-    final filter = _filter;
-    final active = _anyFilterSet;
-    return MenuAnchor(
-      controller: _menu,
-      onOpen: () => setState(() => _menuOpen = true),
-      onClose: () => setState(() => _menuOpen = false),
-      menuChildren: [
-        SubmenuButton(
-          key: const Key('team-filter-menu-status'),
-          submenuIcon: _noTrailingArrow,
-          menuChildren: [
-            for (final status in TeamTaskStatus.values)
-              CheckboxMenuButton(
-                key: Key('team-filter-menu-status-${status.name}'),
-                value: filter.statuses.contains(status),
-                closeOnActivate: false,
-                onChanged: (_) => _toggleStatus(status),
-                child: Text(status.hebrewLabel),
-              ),
-          ],
-          child: _withArrow(Text(_statusLabel)),
-        ),
-        if (widget.showOwner)
-          SubmenuButton(
-            key: const Key('team-filter-menu-owner'),
-            submenuIcon: _noTrailingArrow,
-            menuChildren: _ownerRows(keyPrefix: 'team-filter-menu-owner'),
-            child: _withArrow(Text(_ownerLabel)),
-          ),
-        SubmenuButton(
-          key: const Key('team-filter-menu-urgency'),
-          submenuIcon: _noTrailingArrow,
-          menuChildren: _urgencyRows(keyPrefix: 'team-filter-menu-urgency'),
-          child: _withArrow(Text(_urgencyLabel)),
-        ),
-        // "שיוך" opens the link picker, so it carries the same arrow as the
-        // rows above (Omer, round 9); once a link is set the row clears it
-        // ("<name> ✕") and the arrow's room stays empty.
-        MenuItemButton(
-          key: const Key('team-filter-menu-link'),
-          onPressed: _tapLink,
-          child: _withArrow(Text(_linkLabel), arrow: filter.link == null),
-        ),
-        // Both time chips in ONE row, "זמן": a row as long as "עדכון סטטוס"
-        // widens the menu until a phone has no room for a submenu beside it.
-        if (widget.showOwner)
-          SubmenuButton(
-            key: const Key('team-filter-menu-time'),
-            submenuIcon: _noTrailingArrow,
-            menuChildren: [
-              _menuHeader('יצירה'),
-              ..._timeRows(
-                  keyPrefix: 'team-filter-menu-created',
-                  selected: filter.created,
-                  onPick: _setCreated),
-              const Divider(height: 1),
-              _menuHeader('עדכון סטטוס'),
-              ..._timeRows(
-                  keyPrefix: 'team-filter-menu-status-changed',
-                  selected: filter.statusChanged,
-                  onPick: _setStatusChanged),
-            ],
-            child: _withArrow(Text(
-                filter.created != null || filter.statusChanged != null ? 'זמן •' : 'זמן')),
-          ),
-        // Last in the menu, as its chip is last in the row (round 8).
-        CheckboxMenuButton(
-          key: const Key('team-filter-menu-late'),
-          value: filter.lateOnly,
-          closeOnActivate: false,
-          onChanged: (_) => _toggleLate(),
-          child: const Text('באיחור'),
-        ),
-      ],
-      builder: (context, controller, _) => IconButton(
-        key: const Key('team-filter-funnel'),
-        tooltip: 'סינון',
-        style: IconButton.styleFrom(
-          backgroundColor: active ? TaskStyle.currentLight : null,
-        ),
-        icon: Icon(
-          active ? Icons.filter_alt : Icons.filter_alt_outlined,
-          color: active ? TaskStyle.mine : TaskStyle.neutralText,
-        ),
-        onPressed: () {
-          Logger.action('tap:teamTasksFunnel');
-          controller.isOpen ? controller.close() : controller.open();
-        },
-      ),
-    );
   }
 }
 

@@ -295,6 +295,10 @@ class MentionDoneBox extends StatelessWidget {
 /// "סמן כבוצע" for one tag (Omer, 19/11/2026): an optional line, "ביטול"
 /// leaves the box empty, "סמן כבוצע" ticks it and writes the line to the log,
 /// linked to the update that tagged (20/11/2026).
+///
+/// The dialog stays open with a spinner on its button until the server
+/// answers (Omer, 20/11/2026: it vanished and nothing showed until the item
+/// went); a failure keeps it open with the error under the field.
 Future<void> showMentionDoneDialog(
     BuildContext context, TeamTask task, TeamTaskMention mention) async {
   Logger.action('open:teamTaskMentionDone', {'taskId': task.id, 'updateId': mention.updateId});
@@ -304,69 +308,135 @@ Future<void> showMentionDoneDialog(
       ? state.members.where((m) => m.id == mention.memberId).firstOrNull?.name
       : null;
   final title = mentionItemTitle(task, mention, memberName: name);
-  final messenger = ScaffoldMessenger.maybeOf(context);
-  // Not disposed here: the dialog still draws it while it fades out.
-  final controller = TextEditingController();
-  final text = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          key: const Key('team-task-mention-done-dialog'),
-          title: const Text('סימון כבוצע'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                if (title != task.title)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text('במשימה: ${task.title}',
-                        style: const TextStyle(
-                            fontSize: TaskStyle.rowMetaSize, color: TaskStyle.neutralText)),
-                  ),
-                const SizedBox(height: 10),
-                RtlArrowKeys(
-                  multiline: true,
-                  child: TextField(
-                    key: const Key('team-task-mention-done-text'),
-                    controller: controller,
-                    autofocus: true,
-                    minLines: 1,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      hintText: 'מה עשית? (לא חובה)',
-                      border: OutlineInputBorder(),
-                    ),
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: _MentionDoneDialog(bloc: bloc, task: task, mention: mention, title: title),
+    ),
+  );
+}
+
+class _MentionDoneDialog extends StatefulWidget {
+  const _MentionDoneDialog({
+    required this.bloc,
+    required this.task,
+    required this.mention,
+    required this.title,
+  });
+
+  final TeamTaskBloc bloc;
+  final TeamTask task;
+  final TeamTaskMention mention;
+  final String title;
+
+  @override
+  State<_MentionDoneDialog> createState() => _MentionDoneDialogState();
+}
+
+class _MentionDoneDialogState extends State<_MentionDoneDialog> {
+  final TextEditingController _controller = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirm() async {
+    final completion = CrudActionCompleter();
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    widget.bloc.add(MarkTeamTaskMentionDone(
+        widget.task.id, widget.mention.updateId, _controller.text.trim(),
+        completion: completion));
+    final result = await completion.future;
+    if (!mounted) return;
+    if (result.isFailure) {
+      setState(() {
+        _saving = false;
+        _error = result.message ?? 'הפעולה נכשלה. נסו שוב.';
+      });
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final task = widget.task;
+    return PopScope(
+      canPop: !_saving,
+      child: AlertDialog(
+        key: const Key('team-task-mention-done-dialog'),
+        title: const Text('סימון כבוצע'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              if (widget.title != task.title)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text('במשימה: ${task.title}',
+                      style: const TextStyle(
+                          fontSize: TaskStyle.rowMetaSize, color: TaskStyle.neutralText)),
+                ),
+              const SizedBox(height: 10),
+              RtlArrowKeys(
+                multiline: true,
+                child: TextField(
+                  key: const Key('team-task-mention-done-text'),
+                  controller: _controller,
+                  autofocus: true,
+                  enabled: !_saving,
+                  minLines: 1,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: 'מה עשית? (לא חובה)',
+                    border: OutlineInputBorder(),
                   ),
                 ),
-              ],
-            ),
+              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _error!,
+                    key: const Key('team-task-mention-done-error'),
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+            ],
           ),
-          actions: [
-            TextButton(
-              key: const Key('team-task-mention-done-cancel'),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
-            ),
-            FilledButton(
-              key: const Key('team-task-mention-done-confirm'),
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text('סמן כבוצע'),
-            ),
-          ],
         ),
+        actions: [
+          TextButton(
+            key: const Key('team-task-mention-done-cancel'),
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          FilledButton(
+            key: const Key('team-task-mention-done-confirm'),
+            onPressed: _saving ? null : _confirm,
+            child: _saving
+                ? const SizedBox(
+                    key: Key('team-task-mention-done-spinner'),
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('סמן כבוצע'),
+          ),
+        ],
       ),
     );
-  if (text == null) return;
-  final completion = CrudActionCompleter();
-  bloc.add(MarkTeamTaskMentionDone(task.id, mention.updateId, text, completion: completion));
-  final result = await completion.future;
-  if (result.isFailure) {
-    messenger?.showSnackBar(SnackBar(content: Text(result.message ?? 'הפעולה נכשלה')));
   }
 }

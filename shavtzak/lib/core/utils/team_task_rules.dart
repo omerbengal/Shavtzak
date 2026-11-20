@@ -726,10 +726,11 @@ String teamTaskSearchText(
   return normalizeTeamTaskSearch(parts.join('\n'));
 }
 
-/// Whether [member] gets the "משימות" tab: a manager always; anyone else when
-/// one of [myTasks] (the tasks they own) is not cancelled or a duplicate.
+/// Whether [member] gets the "משימות" tab: a manager and a permanent team
+/// member always (Omer, 20/11/2026); anyone else when one of [myTasks] (the
+/// tasks they own) is not cancelled or a duplicate.
 bool showTeamTasksTab(TeamMember member, List<TeamTask> myTasks) {
-  if (canManageTeamTasks(member)) return true;
+  if (canManageTeamTasks(member) || member.isPermanent) return true;
   return myTasks.any(
       (task) => task.status != TeamTaskStatus.cancelled && task.status != TeamTaskStatus.duplicate);
 }

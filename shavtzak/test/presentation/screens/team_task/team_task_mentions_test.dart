@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -303,9 +305,35 @@ void main() {
         findsOneWidget,
       );
       await tester.enterText(find.byKey(const Key('team-task-mention-done-text')), 'שלחתי');
+      // The dialog waits for the server with a spinner (Omer, 20/11/2026).
+      final gate = harness.repository.gate = Completer<void>();
+      await tester.tap(find.byKey(const Key('team-task-mention-done-confirm')));
+      await tester.pump();
+      await tester.pump();
+      expect(harness.repository.calls, ['mentionDone:a:u1:שלחתי']);
+      expect(find.byKey(const Key('team-task-mention-done-dialog')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-mention-done-spinner')), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('team-task-mention-done-dialog')), findsNothing);
+    });
+
+    testWidgets('a failed "done" keeps the dialog open with the error', (tester) async {
+      final tagged = buildTeamTask(id: 'a', title: 'להזמין אולם', assigneeIds: ['m1'])
+          .copyWith(owners: [dana], updates: [
+        TaskUpdateEntry(id: 'u1', text: '@יוסי כהן מזרנים', at: DateTime(2026, 11, 15), byId: 'm1'),
+      ], mentions: [
+        TeamTaskMention(memberId: 'm2', updateId: 'u1', byId: 'm1', at: DateTime(2026, 11, 15)),
+      ]);
+      final harness = await pumpTeamTasks(tester, user: yossi, board: board([tagged]));
+      harness.repository.failWith = Exception('boom');
+      await tester.tap(find.byKey(const Key('team-task-mention-box-a-u1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('team-task-mention-done-confirm')));
       await tester.pumpAndSettle();
-      expect(harness.repository.calls, ['mentionDone:a:u1:שלחתי']);
+      expect(find.byKey(const Key('team-task-mention-done-dialog')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-mention-done-error')), findsOneWidget);
+      expect(find.byKey(const Key('team-task-mention-done-spinner')), findsNothing);
     });
 
     testWidgets('a done tag leaves its item; the other one stays', (tester) async {

@@ -343,68 +343,23 @@ void main() {
       expect(find.byKey(const Key('team-task-edit-title')), findsOneWidget);
     });
 
-    testWidgets('the search folds the chips into a funnel and filters', (tester) async {
+    testWidgets('the search is a whole row above the chips, always open, and filters',
+        (tester) async {
+      // Omer, 20/11/2026: no funnel, no folding.
       await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
-      expect(find.byKey(const Key('team-filter-funnel')), findsNothing);
+      final field = tester.getRect(find.byKey(const Key('team-filter-search')));
+      final status = tester.getRect(find.byKey(const Key('team-filter-status')));
+      expect(field.bottom, lessThanOrEqualTo(status.top));
+      expect(field.width, greaterThan(300));
       await tester.tap(find.byKey(const Key('team-filter-search')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-filter-funnel')), findsOneWidget);
-      expect(find.byKey(const Key('team-filter-status')), findsNothing);
+      expect(find.byKey(const Key('team-filter-funnel')), findsNothing);
+      expect(find.byKey(const Key('team-filter-status')), findsOneWidget);
       await tester.enterText(find.byKey(const Key('team-filter-search')), 'יוסי');
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('team-task-row-a')), findsNothing);
       expect(find.byKey(const Key('team-task-row-b')), findsOneWidget);
-
-      // The funnel's menu holds the three filters as rows.
-      await tester.tap(find.byKey(const Key('team-filter-funnel')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-filter-menu-status')), findsOneWidget);
-      expect(find.byKey(const Key('team-filter-menu-owner')), findsOneWidget);
-      expect(find.byKey(const Key('team-filter-menu-link')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('team-filter-menu-status')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-filter-menu-status-open')).first);
-      await tester.pumpAndSettle();
-      // "פתוחה" unticked: both open tasks go.
-      expect(find.byKey(const Key('team-task-row-b')), findsNothing);
-      final funnel = tester.widget<Icon>(find.descendant(
-        of: find.byKey(const Key('team-filter-funnel')),
-        matching: find.byType(Icon),
-      ));
-      expect(funnel.icon, Icons.filter_alt);
-
-      // Clearing the search brings the chips back.
-      await tester.tapAt(const Offset(200, 900));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-filter-search-clear')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-filter-funnel')), findsNothing);
       expect(find.byKey(const Key('team-filter-status')), findsOneWidget);
-    });
-
-    testWidgets('tapping the search keeps the same field while it widens, so the keyboard opens',
-        (tester) async {
-      // On the web the field's text connection is the browser's hidden input,
-      // and iPhone opens the keyboard only for the input focused in the tap.
-      // Folding into the wide row must move the field, not rebuild it: a new
-      // field would close that input and open another one after the tap.
-      await pumpTeamTasks(tester, user: manager, board: board([mine, theirs]));
-      final search = find.descendant(
-        of: find.byKey(const Key('team-filter-search')),
-        matching: find.byType(EditableText),
-      );
-      final before = tester.state<EditableTextState>(search);
-      await tester.tap(find.byKey(const Key('team-filter-search')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('team-filter-funnel')), findsOneWidget);
-      expect(tester.state<EditableTextState>(search), same(before));
-      expect(before.mounted, isTrue);
-      expect(tester.testTextInput.hasAnyClients, isTrue);
-      expect(
-        tester.testTextInput.log.where((call) => call.method == 'TextInput.clearClient'),
-        isEmpty,
-        reason: 'the text connection the tap opened stays open',
-      );
     });
 
     testWidgets('a row shows the status circle and the initials of the owners', (tester) async {
@@ -499,41 +454,14 @@ void main() {
       expect(find.byKey(const Key('team-task-status-tap-a')), findsNothing);
     });
 
-    testWidgets('the closed search row is centred', (tester) async {
+    testWidgets('the chips row is centred under the search', (tester) async {
       // Wide enough for every chip with the test font (its letters are squares).
       await pumpTeamTasks(tester, user: dana, board: board([mine]), size: const Size(600, 1000));
       final width = tester.view.physicalSize.width;
-      final field = tester.getRect(find.byKey(const Key('team-filter-search')));
+      final first = tester.getRect(find.byKey(const Key('team-filter-status')));
       final last = tester.getRect(find.byKey(const Key('team-filter-late')));
-      // RTL: the field on the right, "באיחור" last on the left (round 8).
-      expect(((width - field.right) - last.left).abs(), lessThan(2));
-    });
-
-    testWidgets("the funnel's submenu arrows point right, where the submenus open", (tester) async {
-      // A phone, a little wider than 400 for the test font's square letters.
-      await pumpTeamTasks(tester,
-          user: manager, board: board([mine, theirs]), size: const Size(480, 1000));
-      await tester.tap(find.byKey(const Key('team-filter-search')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-filter-funnel')));
-      await tester.pumpAndSettle();
-      final status = tester.getRect(find.byKey(const Key('team-filter-menu-status')));
-      await tester.tap(find.byKey(const Key('team-filter-menu-status')));
-      await tester.pumpAndSettle();
-      final submenu = tester.getRect(find.byKey(const Key('team-filter-menu-status-open')).first);
-      expect(submenu.left, greaterThanOrEqualTo(status.right - 1));
-      // Still pointing right, and now on the right of the word (round 5).
-      final arrow = find.descendant(
-        of: find.byKey(const Key('team-filter-menu-status')),
-        matching: find.byKey(const Key('team-filter-submenu-arrow')),
-      );
-      final icon = tester.widget<Icon>(arrow);
-      expect(icon.icon, Icons.arrow_right);
-      final word = find.descendant(
-        of: find.byKey(const Key('team-filter-menu-status')),
-        matching: find.byType(Text),
-      );
-      expect(tester.getCenter(arrow).dx, greaterThan(tester.getRect(word.first).right));
+      // RTL: "סטטוס" first on the right, "באיחור" last on the left (round 8).
+      expect(((width - first.right) - last.left).abs(), lessThan(2));
     });
 
   });
@@ -702,26 +630,14 @@ void main() {
       expect(find.byKey(const Key('team-task-row-d')), findsOneWidget);
     });
 
-    testWidgets('"באיחור" is the leftmost chip and the last row of the funnel', (tester) async {
+    testWidgets('"באיחור" is the leftmost chip', (tester) async {
       await pumpTeamTasks(tester, user: manager, board: board([mine]), size: const Size(700, 1000));
       final late = tester.getRect(find.byKey(const Key('team-filter-late')));
       for (final key in ['team-filter-status', 'team-filter-owner', 'team-filter-link']) {
         expect(late.right, lessThanOrEqualTo(tester.getRect(find.byKey(Key(key))).left));
       }
-      await tester.tap(find.byKey(const Key('team-filter-search')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-filter-funnel')));
-      await tester.pumpAndSettle();
-      final lateRow = tester.getRect(find.byKey(const Key('team-filter-menu-late')).first);
-      for (final key in [
-        'team-filter-menu-status',
-        'team-filter-menu-owner',
-        'team-filter-menu-link'
-      ]) {
-        expect(
-            lateRow.top, greaterThanOrEqualTo(tester.getRect(find.byKey(Key(key)).first).bottom));
-      }
     });
+
   });
 
   group('the time chips (19/11/2026)', () {
@@ -760,29 +676,6 @@ void main() {
       for (final key in ['team-filter-created', 'team-filter-status-changed']) {
         expect(late.right, lessThanOrEqualTo(tester.getRect(find.byKey(Key(key))).left));
       }
-    });
-  });
-
-  group('round 9', () {
-    testWidgets('the "שיוך" row of the funnel has the arrow, its word lined up with the others',
-        (tester) async {
-      await pumpTeamTasks(tester, user: manager, board: board([mine]), size: const Size(700, 1000));
-      await tester.tap(find.byKey(const Key('team-filter-search')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('team-filter-funnel')));
-      await tester.pumpAndSettle();
-      final link = find.byKey(const Key('team-filter-menu-link'));
-      expect(
-        find.descendant(of: link, matching: find.byKey(const Key('team-filter-submenu-arrow'))),
-        findsOneWidget,
-      );
-      double wordRight(String key, String word) => tester
-          .getRect(find.descendant(of: find.byKey(Key(key)).first, matching: find.text(word)))
-          .right;
-      final status = wordRight('team-filter-menu-status', 'סטטוס');
-      expect(wordRight('team-filter-menu-link', 'שיוך'), closeTo(status, 1));
-      expect(wordRight('team-filter-menu-owner', 'אחראי/ת'), closeTo(status, 1));
-      expect(wordRight('team-filter-menu-late', 'באיחור'), closeTo(status, 1));
     });
   });
 
@@ -830,6 +723,14 @@ void main() {
       // By owner: דנה's task before יוסי's, though its event is later.
       expect(tester.getTopLeft(find.byKey(const Key('team-task-row-two'))).dy,
           lessThan(tester.getTopLeft(find.byKey(const Key('team-task-row-one'))).dy));
+      // The switch is first in the chips row, its words inside it.
+      expect(
+          find.descendant(
+              of: find.byKey(const Key('team-tasks-group-by-events')),
+              matching: find.text('קיבוץ לפי אירועים')),
+          findsOneWidget);
+      expect(tester.getRect(find.byKey(const Key('team-tasks-group-by-events'))).left,
+          greaterThan(tester.getRect(find.byKey(const Key('team-filter-status'))).right));
       // On "המשימות שלי" the switch is not there.
       await tester.tap(find.byKey(const Key('team-tab-mine')));
       await tester.pumpAndSettle();
@@ -879,6 +780,9 @@ void main() {
       expect(find.byKey(const Key('team-task-urgency-h')), findsOneWidget);
       expect(find.byKey(const Key('team-task-urgency-n')), findsNothing);
       expect(find.text('דחיפות גבוהה'), findsOneWidget);
+      // On a phone the chips row scrolls sideways, the switch first.
+      await tester.ensureVisible(find.byKey(const Key('team-filter-urgency')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('team-filter-urgency')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('team-filter-urgency-high')).first);

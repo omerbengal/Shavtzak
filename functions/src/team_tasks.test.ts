@@ -505,12 +505,12 @@ test('marking a tag done closes it and logs a line linked to the tagging update'
   const done = markTeamTaskMentionDone(tagged, tagId, ' שלחתי ', {now: later, actor: ownerB});
   assert.deepEqual(done.mentions[0].doneAt, later);
   assert.equal(done.mentions[0].doneText, 'שלחתי');
-  assert.equal(done.updates[0].text, `${MENTION_DONE_PREFIX}: שלחתי`);
+  assert.equal(done.updates[0].text, '✅ שלחתי');
   assert.equal(done.updates[0].mentionDoneOf, tagId);
   assert.equal(done.status, 'open');
   expectTaskError(() => markTeamTaskMentionDone(done, tagId, '', {now, actor: ownerB}), 409);
   const bare = markTeamTaskMentionDone(tagged, tagId, '', {now, actor: ownerB});
-  assert.equal(bare.updates[0].text, MENTION_DONE_PREFIX);
+  assert.equal(bare.updates[0].text, '✅');
 });
 
 test('the same member tagged in two updates has two tags, each done on its own', () => {

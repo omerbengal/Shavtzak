@@ -825,7 +825,7 @@ export function markTeamTaskMentionDone(
   const entry: TaskUpdateEntry = {
     id: randomUUID(),
     text: note.length > 0
-      ? `${MENTION_DONE_PREFIX}: ${note}`
+      ? `${MENTION_DONE_PREFIX} ${note}`
       : MENTION_DONE_PREFIX,
     at: ctx.now,
     byId: ctx.actor.memberId,
@@ -840,8 +840,11 @@ export function markTeamTaskMentionDone(
   });
 }
 
-/** The log line of a tag marked done; the writer's name is beside it. */
-export const MENTION_DONE_PREFIX = '✅ ביצעתי את מה שתויגתי עליו';
+/**
+ * The log line of a tag marked done: just ✅ and the tagged member's note, if
+ * any (Omer, 20/11/2026); the writer's name is beside it.
+ */
+export const MENTION_DONE_PREFIX = '✅';
 
 // ---- editing the log (round 10) ----
 

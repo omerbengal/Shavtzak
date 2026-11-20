@@ -29,6 +29,7 @@ import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
 import 'widgets/task_link_picker.dart';
 import 'widgets/team_task_filter_bar.dart';
+import 'widgets/team_task_labeled_switch.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
 import 'widgets/team_task_split_view.dart';
@@ -436,8 +437,11 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     Widget list(List<TeamTaskGroup> groups, {required bool all}) {
       final column = Column(
         children: [
-          TeamTaskFilterBar(state: state, showOwner: all),
-          if (all) _groupByEventsSwitch(),
+          TeamTaskFilterBar(
+            state: state,
+            showOwner: all,
+            leading: all ? _groupByEventsSwitch() : null,
+          ),
           if (!all)
             _SpotlightBar(
               count: spotlightQueue(_uniqueTasks(groups), ownerId: state.viewer.id).length,
@@ -520,47 +524,18 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       ? state.allGroups
       : flattenTeamTaskGroups(state.allGroups, compare: compareTeamTasksByOwners);
 
-  /// The "קיבוץ לפי אירועים" switch, under the filters of "כל המשימות".
+  /// The "קיבוץ לפי אירועים" switch, first in the chips row of "כל המשימות"
+  /// with its words inside it (Omer, 20/11/2026).
   Widget _groupByEventsSwitch() {
-    final on = TeamTasksScreen.groupByEvents;
-    void toggle(bool value) {
-      Logger.action('toggle:teamTasksGroupByEvents', {'on': value});
-      setState(() => TeamTasksScreen.groupByEvents = value);
-      _holdPlace(null);
-    }
-
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 4, 2),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => toggle(!on),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                Text(
-                  'קיבוץ לפי אירועים',
-                  style: TextStyle(
-                    fontSize: TaskStyle.filterFontSize,
-                    color: on ? TaskStyle.mine : TaskStyle.neutralText,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Transform.scale(
-                  scale: 0.75,
-                  child: Switch(
-                    key: const Key('team-tasks-group-by-events'),
-                    value: on,
-                    onChanged: toggle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return TeamTaskLabeledSwitch(
+      key: const Key('team-tasks-group-by-events'),
+      label: 'קיבוץ לפי אירועים',
+      value: TeamTasksScreen.groupByEvents,
+      onChanged: (value) {
+        Logger.action('toggle:teamTasksGroupByEvents', {'on': value});
+        setState(() => TeamTasksScreen.groupByEvents = value);
+        _holdPlace(null);
+      },
     );
   }
 
@@ -574,16 +549,21 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
           child: SizedBox(
             width: double.infinity,
             child: SegmentedButton<bool>(
               showSelectedIcon: false,
               // Explicit colours: the app theme's defaults for a selected
               // segment are white text on light orange, which is unreadable.
+              // Low buttons (Omer, 20/11/2026: too much room above and below).
               style: SegmentedButton.styleFrom(
                 selectedBackgroundColor: AppTheme.primaryDark,
                 selectedForegroundColor: Colors.white,
+                visualDensity: const VisualDensity(vertical: -4),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 32),
               ),
               segments: const [
                 ButtonSegment(
