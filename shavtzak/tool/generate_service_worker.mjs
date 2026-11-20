@@ -29,6 +29,9 @@ const EXCLUDED = [
   /^icons\/Icon-512\.png$/,
   /^favicon\.png$/,
   /^lottie\/LICENSE\.md$/,
+  // Feature stories (images/videos): fetched only when the stories screen
+  // shows them, never re-downloaded by the in-app refresh.
+  /^stories\//,
   /\.symbols$/,
   /\.map$/,
   /\.info\.json$/,
