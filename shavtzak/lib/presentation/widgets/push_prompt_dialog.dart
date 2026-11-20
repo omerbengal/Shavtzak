@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/debug/logger.dart';
 import '../../core/services/push_notification_service.dart';
+import 'feature_stories/feature_stories_gate.dart';
 
 /// The steps that add the app to an iPhone's home screen, where its
 /// notifications live.
@@ -151,6 +152,9 @@ Future<void> maybeShowPushPrompt(
   PushNotificationService? service,
 }) async {
   if (!canReceive || _promptedThisSession) return;
+  // Never on top of the version's stories (feature_stories_gate.dart).
+  await FeatureStoriesGate.whenIdle();
+  if (!context.mounted) return;
   final push = service ?? PushNotificationService.instance;
   final status = await push.status();
   if (!await push.shouldPrompt(status, appVersion)) return;

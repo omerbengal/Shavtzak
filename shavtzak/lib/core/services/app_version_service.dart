@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/feature_stories.dart';
 import '../web/web_stub.dart' if (dart.library.js) '../web/web_helper.dart';
 
 /// Global app-version gate based on Firestore realtime updates.
@@ -34,6 +35,12 @@ class AppVersionService extends ChangeNotifier {
   static const String _document = 'information';
   static const String _field = 'version';
   static const String _whatsNewField = 'WhatsNew';
+  static const String _storiesField = 'WhatsNewStories';
+
+  /// The version whose stories this browser already opened (Omer,
+  /// 20/11/2026, option A): every member sees the running version's stories
+  /// once, whatever refresh button brought them there (`storiesUnseen`).
+  static const String _storiesSeenKey = 'stories_seen_version';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -46,11 +53,19 @@ class AppVersionService extends ChangeNotifier {
   String? _cachedVersion;
   String? _remoteVersion;
   List<String> _whatsNewItems = const [];
+  List<FeatureStory> _stories = const [];
+  bool _hasRemoteData = false;
 
   bool get isBlocked => _isBlocked;
   String? get cachedVersion => _cachedVersion;
   String? get remoteVersion => _remoteVersion;
   List<String> get whatsNewItems => List.unmodifiable(_whatsNewItems);
+
+  /// This version's feature stories (`WhatsNewStories`), every audience.
+  List<FeatureStory> get stories => _stories;
+
+  /// `utilities/information` has been read at least once since sign-in.
+  bool get hasRemoteData => _hasRemoteData;
 
   void initialize() {
     if (_initialized) return;
@@ -140,6 +155,19 @@ class AppVersionService extends ChangeNotifier {
     DocumentSnapshot<Map<String, dynamic>> snapshot,
   ) async {
     final data = snapshot.data();
+    _stories = parseFeatureStories(data?[_storiesField]);
+    final firstRead = !_hasRemoteData;
+    try {
+      await _applyVersion(data);
+    } finally {
+      // The stories gate waits for the first read, and for the version to be
+      // applied (a new device saves it as its cached version first).
+      _hasRemoteData = true;
+      if (firstRead) notifyListeners();
+    }
+  }
+
+  Future<void> _applyVersion(Map<String, dynamic>? data) async {
     _setWhatsNewItems(_parseWhatsNewItems(data?[_whatsNewField]));
 
     final rawVersion = data?[_field];
@@ -212,6 +240,37 @@ class AppVersionService extends ChangeNotifier {
       await _saveCachedVersion(currentRemoteVersion);
     }
     WebHelper.reloadPage();
+  }
+
+  /// True when this browser has not yet opened the stories of the version it
+  /// runs now (and the server confirms it: [remoteVersion] is it too, so a
+  /// browser waiting for a refresh sees nothing yet).
+  Future<bool> storiesUnseen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return storiesUnseenFor(
+        seen: prefs.getString(_storiesSeenKey),
+        cached: _cachedVersion,
+        remote: _remoteVersion,
+      );
+    } catch (e) {
+      developer.log('AppVersionService: Failed to read the stories mark: $e',
+          name: 'AppVersion');
+      return false;
+    }
+  }
+
+  /// The stories of the version running now were opened in this browser.
+  Future<void> markStoriesSeen() async {
+    final version = _remoteVersion?.trim();
+    if (version == null || version.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_storiesSeenKey, version);
+    } catch (e) {
+      developer.log('AppVersionService: Failed to mark stories seen: $e',
+          name: 'AppVersion');
+    }
   }
 
   @override

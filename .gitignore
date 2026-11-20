@@ -142,8 +142,14 @@ coverage/
 # Documentation
 /doc/
 
-# Claude Code
-.claude/
+# Claude Code (the repo's skills are shared, the rest is local)
+.claude/*
+!.claude/skills/
+
+# Feature stories: Remotion's packages and scratch renders; the capture's raw PNGs
+feature_stories/node_modules/
+feature_stories/out/
+shavtzak/tool/story_capture/out/
 
 # Local git worktrees
 .worktrees/

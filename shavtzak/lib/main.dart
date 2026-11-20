@@ -41,6 +41,7 @@ import 'core/services/app_version_service.dart';
 import 'core/services/firestore_reconnect_service.dart';
 import 'presentation/widgets/keep_focused_field_visible.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
+import 'presentation/widgets/feature_stories/feature_stories_gate.dart';
 import 'presentation/widgets/version_blocking_overlay.dart';
 
 // Presentation layer
@@ -611,7 +612,18 @@ class MyApp extends StatelessWidget {
                         theme: AppTheme.lightTheme,
                         debugShowCheckedModeBanner: false,
                         builder: (context, child) => KeepFocusedFieldVisible(
-                          child: child ?? const SizedBox.shrink(),
+                          // The version's feature stories, after the
+                          // in-app refresh (feature_stories_gate.dart).
+                          child: FeatureStoriesGate(
+                            currentUser: () =>
+                                switch (context.read<UserSelectionBloc>().state) {
+                              UserAuthenticated(:final user) => user,
+                              _ => null,
+                            },
+                            userChanges: context.read<UserSelectionBloc>().stream,
+                            queryStories: Uri.base.queryParameters['stories'],
+                            child: child ?? const SizedBox.shrink(),
+                          ),
                         ),
                         routerConfig: AppRouter.router(
                           userSelectionBloc: userSelectionBloc,
