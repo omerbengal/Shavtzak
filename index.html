@@ -293,7 +293,8 @@
       // Check if we're at the base URL (with or without trailing slash)
       const pathname = window.location.pathname;
       if (pathname === '/' || pathname === '/Shavtzak/' || pathname === '/Shavtzak') {
-        window.location.replace(window.location.origin + window.location.pathname.replace(/\/$/, '') + '/#/whoami');
+        // Keep the query: "?stories=" (feature stories) and "?refreshdemo" ride on it.
+        window.location.replace(window.location.origin + window.location.pathname.replace(/\/$/, '') + '/' + window.location.search + '#/whoami');
       }
     }
   </script>
