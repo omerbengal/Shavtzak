@@ -93,8 +93,6 @@ Future<void> main() async {
   // This is needed for the /db route to work correctly
   if (kIsWeb) {
     AppRouter.capturedInitialHash = WebHelper.getWindowLocationHash();
-    // "?stories=" too: the router's first redirect drops it.
-    FeatureStoriesGate.captureLaunchQuery(Uri.base);
   }
 
   // Our binding, so the animations play with "reduce motion" on too.
@@ -623,7 +621,7 @@ class MyApp extends StatelessWidget {
                               _ => null,
                             },
                             userChanges: context.read<UserSelectionBloc>().stream,
-                            queryStories: FeatureStoriesGate.launchQuery,
+                            queryStories: Uri.base.queryParameters['stories'],
                             child: child ?? const SizedBox.shrink(),
                           ),
                         ),

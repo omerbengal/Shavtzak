@@ -49,7 +49,7 @@ class FeatureStoriesGate extends StatefulWidget {
 
   final FeatureStoriesSource? source;
 
-  /// `?stories=` of the address at launch ([launchQuery]); null = none.
+  /// `?stories=` of the address; null = none.
   final String? queryStories;
   final StoryMediaBuilder mediaBuilder;
 
@@ -64,16 +64,6 @@ class FeatureStoriesGate extends StatefulWidget {
   });
 
   static _FeatureStoriesGateState? _active;
-
-  /// `?stories=` of the address the app was opened with. Taken in `main()`
-  /// before the router runs: the first redirect (to `#/whoami`, or home)
-  /// rewrites the address without it, long before anyone signs in
-  /// (Omer, msg 5395: the preview link showed nothing after signing in).
-  static String? launchQuery;
-
-  static void captureLaunchQuery(Uri address) {
-    launchQuery = address.queryParameters['stories'];
-  }
 
   /// Completes when the stories screen is not in the way: decided not to
   /// show (or nothing decided within [decideWithin]), or closed. Other

@@ -47,10 +47,7 @@ void main() {
   });
   tearDown(() => users.close());
 
-  tearDown(() => FeatureStoriesGate.launchQuery = null);
-
-  Future<void> pumpGate(WidgetTester tester, _Source source,
-      {String? query, bool fromLaunch = false}) async {
+  Future<void> pumpGate(WidgetTester tester, _Source source, {String? query}) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -59,7 +56,7 @@ void main() {
         currentUser: () => user,
         userChanges: users.stream,
         source: source,
-        queryStories: fromLaunch ? FeatureStoriesGate.launchQuery : query,
+        queryStories: query,
         mediaBuilder: fakeMedia(),
         child: child!,
       ),
@@ -115,28 +112,6 @@ void main() {
     expect(find.text('media:stories/a.mp4'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsNWidgets(2));
     expect(source.takes, 0);
-  });
-
-  testWidgets('?stories= read at launch still opens after the sign-in screen dropped it',
-      (tester) async {
-    // Omer, msg 5395: the link opened, he signed in, nothing showed. The
-    // first redirect to #/whoami drops "?stories=" from the address, so it
-    // must be taken at launch (main.dart), not when the member signs in.
-    FeatureStoriesGate.captureLaunchQuery(
-        Uri.parse('https://x.web.app/?stories=stories/a.mp4'));
-    user = null;
-    await pumpGate(tester, _Source(pending: false, ready: false), fromLaunch: true);
-    expect(find.textContaining('media:'), findsNothing);
-    user = buildMember(id: 'mgr', name: 'מנהלת', isAdmin: true);
-    users.add(1);
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('media:stories/a.mp4'), findsOneWidget);
-  });
-
-  test('captureLaunchQuery: no "stories" in the address = null', () {
-    FeatureStoriesGate.captureLaunchQuery(Uri.parse('https://x.web.app/#/whoami'));
-    expect(FeatureStoriesGate.launchQuery, isNull);
   });
 
   testWidgets('other start popups wait until the stories close', (tester) async {
