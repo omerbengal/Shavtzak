@@ -88,6 +88,7 @@ class _FeatureStoriesGateState extends State<FeatureStoriesGate> {
   final Completer<void> _decided = Completer<void>();
   bool _deciding = false;
   List<FeatureStory>? _showing;
+  bool _fromQuery = false;
 
   /// Pending while the stories are on screen.
   Completer<void>? _closed;
@@ -118,6 +119,7 @@ class _FeatureStoriesGateState extends State<FeatureStoriesGate> {
     if (!mounted) return;
     Logger.action('stories:decided', {'count': stories.length, 'query': fromQuery != null});
     if (stories.isNotEmpty) {
+      _fromQuery = fromQuery != null;
       _closed = Completer<void>();
       setState(() => _showing = stories);
     }
@@ -153,6 +155,8 @@ class _FeatureStoriesGateState extends State<FeatureStoriesGate> {
               stories: showing,
               onClose: _close,
               mediaBuilder: widget.mediaBuilder,
+              // A preview link (`?stories=`) shows why a story was skipped.
+              showErrors: _fromQuery,
             ),
           ),
       ],

@@ -9,10 +9,10 @@ import '../../../core/utils/feature_stories.dart';
 
 /// What a story's media tells the viewer: it is showing and how long it
 /// lasts ([onReady], an image: [featureStoryImageDuration], a video: its
-/// length), or it cannot be shown ([onError], the viewer skips it).
+/// length), or it cannot be shown ([onError] with why; the viewer skips it).
 class StoryMediaCallbacks {
   final void Function(Duration length) onReady;
-  final VoidCallback onError;
+  final void Function(String reason) onError;
 
   /// True while the viewer holds the story (a long press, the end screen).
   final ValueListenable<bool> paused;
@@ -54,7 +54,7 @@ class _ImageStoryState extends State<_ImageStory> {
     // Never during build: the viewer rebuilds on it.
     scheduleMicrotask(() => ok
         ? widget.callbacks.onReady(featureStoryImageDuration)
-        : widget.callbacks.onError());
+        : widget.callbacks.onError('image did not load'));
   }
 
   @override
@@ -141,7 +141,7 @@ class _VideoStoryState extends State<_VideoStory> {
     if (_failed || _started) return;
     _failed = true;
     Logger.warning('stories:videoFailed', {'stage': stage, 'error': error.toString()});
-    widget.callbacks.onError();
+    widget.callbacks.onError('$stage: $error');
   }
 
   void _onPaused() {

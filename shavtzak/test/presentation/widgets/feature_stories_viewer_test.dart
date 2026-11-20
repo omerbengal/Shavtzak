@@ -43,7 +43,7 @@ class _FakeMediaState extends State<_FakeMedia> {
     super.initState();
     if (widget.silent) return;
     scheduleMicrotask(() => widget.fail
-        ? widget.callbacks.onError()
+        ? widget.callbacks.onError('MEDIA_ERR_SRC_NOT_SUPPORTED')
         : widget.callbacks.onReady(widget.story.type == FeatureStoryType.video
             ? const Duration(seconds: 8)
             : featureStoryImageDuration));
@@ -57,6 +57,7 @@ Future<List<int>> pumpViewer(
   WidgetTester tester,
   List<FeatureStory> stories, {
   StoryMediaBuilder? media,
+  bool showErrors = false,
 }) async {
   final closed = <int>[];
   tester.view.physicalSize = const Size(390, 844);
@@ -68,6 +69,7 @@ Future<List<int>> pumpViewer(
       stories: stories,
       onClose: () => closed.add(1),
       mediaBuilder: media ?? fakeMedia(),
+      showErrors: showErrors,
     ),
   ));
   await tester.pump();
@@ -160,6 +162,36 @@ void main() {
     await pumpViewer(tester, [_b], media: fakeMedia(failing: {'b.mp4'}));
     await tester.pump();
     expect(find.text('צפייה מחדש'), findsOneWidget);
+    // Never a silent end (Omer, msg 5402): it says a video did not load.
+    expect(find.byKey(const Key('stories-failed')), findsOneWidget);
+    expect(find.text('סרטון אחד לא נטען'), findsOneWidget);
+    expect(find.textContaining('MEDIA_ERR'), findsNothing);
+  });
+
+  testWidgets('a preview link also shows why it was skipped', (tester) async {
+    await pumpViewer(tester, [_b], media: fakeMedia(failing: {'b.mp4'}), showErrors: true);
+    await tester.pump();
+    expect(find.text('b.mp4: MEDIA_ERR_SRC_NOT_SUPPORTED'), findsOneWidget);
+  });
+
+  testWidgets('a popup card in the story shape over the dimmed app, not the whole screen',
+      (tester) async {
+    await pumpViewer(tester, [_a]);
+    final card = tester.getSize(find.byKey(const Key('stories-card')));
+    expect(card.width, lessThan(390 * 0.9));
+    expect(card.height, lessThan(844 * 0.8));
+    expect(card.width / card.height, closeTo(9 / 16, 0.01));
+    // The bars and ✕ are inside it.
+    final box = tester.getRect(find.byKey(const Key('stories-card')));
+    expect(box.contains(tester.getCenter(find.byKey(const Key('story-bar-0')))), isTrue);
+    expect(box.contains(tester.getCenter(find.byKey(const Key('stories-close')))), isTrue);
+  });
+
+  test('cardSize: 9:16, at most 86% wide, 78% high, 380 px', () {
+    expect(FeatureStoriesViewer.cardSize(const Size(390, 844)).width, closeTo(335.4, 0.1));
+    final tall = FeatureStoriesViewer.cardSize(const Size(390, 600));
+    expect(tall.height, closeTo(468, 0.1));
+    expect(FeatureStoriesViewer.cardSize(const Size(1400, 2600)).width, 380);
   });
 
   testWidgets('a story that never loads is skipped after 10 s', (tester) async {

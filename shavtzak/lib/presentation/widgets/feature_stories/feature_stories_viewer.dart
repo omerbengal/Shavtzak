@@ -6,12 +6,14 @@ import '../../../core/debug/logger.dart';
 import '../../../core/utils/feature_stories.dart';
 import 'story_media.dart';
 
-/// The stories screen (Omer, 20/11/2026), exactly like Instagram / WhatsApp
-/// stories: a bar per story at the top (the first on the right, the current
-/// one fills while it plays), each story moves on by itself, a tap on the
-/// left half = next and on the right half = previous (Hebrew Instagram), a
-/// long press holds it, ✕ closes. After the last one: "צפייה מחדש" (from
-/// the first) and "סגירה". A story that cannot load is skipped.
+/// The stories popup (Omer, 20/11/2026), exactly like Instagram / WhatsApp
+/// stories: a card in the story's shape over the dimmed app (not a whole
+/// page: msg 5402), a bar per story at its top (the first on the right, the
+/// current one fills while it plays), each story moves on by itself, a tap on
+/// the left half = next and on the right half = previous (Hebrew Instagram),
+/// a long press holds it, ✕ closes. After the last one: "צפייה מחדש" (from
+/// the first) and "סגירה". A story that cannot load is skipped, and the end
+/// says so ([showErrors] adds why: previews, `?stories=`).
 class FeatureStoriesViewer extends StatefulWidget {
   final List<FeatureStory> stories;
   final VoidCallback onClose;
@@ -19,12 +21,33 @@ class FeatureStoriesViewer extends StatefulWidget {
   /// Tests swap the real image / video for a stand-in.
   final StoryMediaBuilder mediaBuilder;
 
+  /// The end lists why a story was skipped (the player's error).
+  final bool showErrors;
+
   const FeatureStoriesViewer({
     super.key,
     required this.stories,
     required this.onClose,
     this.mediaBuilder = defaultStoryMedia,
+    this.showErrors = false,
   });
+
+  /// The card's largest share of the screen.
+  static const double maxWidthShare = 0.86;
+  static const double maxHeightShare = 0.78;
+  static const double maxCardWidth = 380;
+
+  /// The card for a [screen]: 9:16, as large as the shares above allow.
+  static Size cardSize(Size screen) {
+    var width = (screen.width * maxWidthShare).clamp(0.0, maxCardWidth).toDouble();
+    var height = width * 16 / 9;
+    final maxHeight = screen.height * maxHeightShare;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * 9 / 16;
+    }
+    return Size(width, height);
+  }
 
   @override
   State<FeatureStoriesViewer> createState() => _FeatureStoriesViewerState();
@@ -46,6 +69,9 @@ class _FeatureStoriesViewerState extends State<FeatureStoriesViewer>
   /// entered, so the end screen keeps the last story's frame.
   int _mediaEpoch = 0;
 
+  /// The stories skipped in this pass, with why (file: reason).
+  final Map<String, String> _failures = {};
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +88,7 @@ class _FeatureStoriesViewerState extends State<FeatureStoriesViewer>
     _progress.stop();
     _progress.value = 0;
     _generation++;
+    if (index == 0) _failures.clear();
     if (index >= widget.stories.length) {
       setState(() => _ended = true);
       _paused.value = true;
@@ -75,7 +102,9 @@ class _FeatureStoriesViewerState extends State<FeatureStoriesViewer>
     _paused.value = false;
     final generation = _generation;
     _loadTimeout = Timer(featureStoryLoadTimeout, () {
-      if (generation == _generation) _skip(generation);
+      if (generation == _generation) {
+        _skip(generation, 'not ready within ${featureStoryLoadTimeout.inSeconds} s');
+      }
     });
   }
 
@@ -86,9 +115,11 @@ class _FeatureStoriesViewerState extends State<FeatureStoriesViewer>
     if (!_paused.value) _progress.forward(from: 0);
   }
 
-  void _skip(int generation) {
+  void _skip(int generation, String reason) {
     if (generation != _generation || !mounted) return;
-    Logger.warning('stories:skipped', {'file': widget.stories[_index].file});
+    final file = widget.stories[_index].file;
+    _failures[file] = reason;
+    Logger.warning('stories:skipped', {'file': file, 'reason': reason});
     _next();
   }
 
@@ -126,67 +157,71 @@ class _FeatureStoriesViewerState extends State<FeatureStoriesViewer>
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Material(
-        color: Colors.black,
+        color: Colors.black54,
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              // A portrait story: on a wide screen it stays phone-shaped.
-              final width = constraints.maxWidth
-                  .clamp(0.0, constraints.maxHeight * 9 / 16 + 1)
-                  .toDouble();
+              final card = FeatureStoriesViewer.cardSize(constraints.biggest);
+              final width = card.width;
               return Center(
-                child: SizedBox(
-                  width: width,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Center(
-                        child: KeyedSubtree(
-                          key: ValueKey('story-media-$_mediaEpoch'),
-                          child: widget.mediaBuilder(
-                            context,
-                            story,
-                            StoryMediaCallbacks(
-                              onReady: (length) => _onReady(generation, length),
-                              onError: () => _skip(generation),
-                              paused: _paused,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (!_ended) _tapZones(width),
-                      // A shade under the bars and ✕, as on Instagram: a
-                      // light story would hide them.
-                      const Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: 96,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [Color(0x73000000), Color(0x00000000)],
+                child: ClipRRect(
+                  key: const Key('stories-card'),
+                  borderRadius: BorderRadius.circular(20),
+                  child: SizedBox(
+                    width: card.width,
+                    height: card.height,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        const ColoredBox(color: Colors.black),
+                        Center(
+                          child: KeyedSubtree(
+                            key: ValueKey('story-media-$_mediaEpoch'),
+                            child: widget.mediaBuilder(
+                              context,
+                              story,
+                              StoryMediaCallbacks(
+                                onReady: (length) => _onReady(generation, length),
+                                onError: (reason) => _skip(generation, reason),
+                                paused: _paused,
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      _bars(),
-                      PositionedDirectional(
-                        top: 18,
-                        end: 4,
-                        child: IconButton(
-                          key: const Key('stories-close'),
-                          color: Colors.white,
-                          icon: const Icon(Icons.close_rounded, size: 28),
-                          onPressed: _close,
+                        if (!_ended) _tapZones(width),
+                        // A shade under the bars and ✕, as on Instagram: a
+                        // light story would hide them.
+                        const Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 96,
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Color(0x73000000), Color(0x00000000)],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                      if (_ended) _endScreen(),
-                    ],
+                        _bars(),
+                        PositionedDirectional(
+                          top: 18,
+                          end: 4,
+                          child: IconButton(
+                            key: const Key('stories-close'),
+                            color: Colors.white,
+                            icon: const Icon(Icons.close_rounded, size: 28),
+                            onPressed: _close,
+                          ),
+                        ),
+                        if (_ended) _endScreen(),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -284,6 +319,25 @@ class _FeatureStoriesViewerState extends State<FeatureStoriesViewer>
                 ),
                 child: const Text('סגירה'),
               ),
+              if (_failures.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  key: const Key('stories-failed'),
+                  _failures.length == 1
+                      ? 'סרטון אחד לא נטען'
+                      : '${_failures.length} סרטונים לא נטענו',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                if (widget.showErrors)
+                  for (final failure in _failures.entries)
+                    Text(
+                      '${failure.key}: ${failure.value}',
+                      textAlign: TextAlign.center,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+              ],
             ],
           ),
         ),
