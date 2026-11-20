@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/debug/logger.dart';
+import '../../../../core/web/keep_input_focus.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_member.dart';
@@ -62,12 +63,47 @@ List<String> mentionIdsInText(String text, Map<String, String> picked) => [
         if (text.contains('@${entry.key}')) entry.value,
     ];
 
+/// One character deleted inside or at the end of a tag (Omer, 20/11/2026:
+/// "כמו בכל הפלטפורמות"): [next] is [old] with one character gone (a
+/// backspace or a forward delete, nothing selected), and that character is
+/// part of an "@<name>" of [names] in [old]. Then the whole tag goes, the
+/// caret where it began; otherwise null (leave [next] as it is).
+TextEditingValue? removeWholeMention(
+    TextEditingValue old, TextEditingValue next, Iterable<String> names) {
+  if (next.text.length != old.text.length - 1) return null;
+  if (!old.selection.isValid || !old.selection.isCollapsed) return null;
+  if (!next.selection.isValid || !next.selection.isCollapsed) return null;
+  final at = next.selection.baseOffset;
+  if (at < 0 || at >= old.text.length) return null;
+  if (old.text.replaceRange(at, at + 1, '') != next.text) return null;
+  final sorted = names.where((n) => n.isNotEmpty).toSet().toList()
+    ..sort((a, b) => b.length.compareTo(a.length));
+  if (sorted.isEmpty) return null;
+  final pattern = RegExp(sorted.map((n) => RegExp.escape('@$n')).join('|'));
+  for (final match in pattern.allMatches(old.text)) {
+    if (match.start <= at && at < match.end) {
+      return TextEditingValue(
+        text: old.text.replaceRange(match.start, match.end, ''),
+        selection: TextSelection.collapsed(offset: match.start),
+      );
+    }
+  }
+  return null;
+}
+
 /// The update field (Omer, msg 5298): a name picked from the "@" list shows
 /// in the tag's colour while the update is still being written, so it is
-/// clear the tag took.
+/// clear the tag took. One delete on a tag removes all of it (20/11/2026).
 class MentionTextEditingController extends TextEditingController {
   /// The names picked from the list (their "@<name>" is coloured).
   final Set<String> picked = {};
+
+  @override
+  set value(TextEditingValue newValue) {
+    final names = [for (final name in picked) if (text.contains('@$name')) name];
+    final whole = names.isEmpty ? null : removeWholeMention(value, newValue, names);
+    super.value = whole ?? newValue;
+  }
 
   @override
   TextSpan buildTextSpan({
@@ -129,17 +165,31 @@ class MentionSuggestions extends StatefulWidget {
 
 class _MentionSuggestionsState extends State<MentionSuggestions> {
   final ScrollController _scroll = ScrollController();
+  final GlobalKey _box = GlobalKey();
 
   @override
   void dispose() {
+    keepInputFocusIn(this, null);
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// A touch on the list must not take the focus from the field, or the
+  /// phone's keyboard goes down mid-sentence (Omer, 20/11/2026).
+  void _keepFocusOverList() {
+    if (!mounted) return;
+    final box = _box.currentContext?.findRenderObject() as RenderBox?;
+    keepInputFocusIn(
+      this,
+      box == null || !box.hasSize ? null : box.localToGlobal(Offset.zero) & box.size,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final members = widget.members;
     if (members.isEmpty) return const SizedBox.shrink();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _keepFocusOverList());
     return Container(
       key: const Key('team-task-mention-suggestions'),
       margin: const EdgeInsets.only(bottom: 4),
@@ -152,6 +202,7 @@ class _MentionSuggestionsState extends State<MentionSuggestions> {
         boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 6, offset: Offset(0, -2))],
       ),
       child: Scrollbar(
+        key: _box,
         controller: _scroll,
         thumbVisibility: true,
         child: ListView.builder(

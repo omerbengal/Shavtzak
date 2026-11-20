@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/team_task_rules.dart';
@@ -85,6 +86,46 @@ void main() {
       // A link inside another sits inside it.
       final nested = teamTaskLogLinks([entry('a', 'd'), entry('b', 'c'), entry('c'), entry('d')]);
       expect(nested.map((l) => (l.doneIndex, l.lane)), [(0, 1), (1, 0)]);
+    });
+
+    test('removeWholeMention: one delete inside or at the end of a tag removes all of it', () {
+      TextEditingValue v(String text, int caret) =>
+          TextEditingValue(text: text, selection: TextSelection.collapsed(offset: caret));
+      const text = 'תבדוק @יוסי כהן מחר';
+      final names = ['יוסי כהן'];
+      // Backspace right after the name (caret 15 → 14).
+      final back = removeWholeMention(v(text, 15), v('תבדוק @יוסי כה מחר', 14), names);
+      expect(back?.text, 'תבדוק  מחר');
+      expect(back?.selection.baseOffset, 6);
+      // Backspace in the middle of it.
+      expect(removeWholeMention(v(text, 9), v('תבדוק @יסי כהן מחר', 8), names)?.text, 'תבדוק  מחר');
+      // Forward delete on its "@".
+      expect(removeWholeMention(v(text, 6), v('תבדוק יוסי כהן מחר', 6), names)?.text, 'תבדוק  מחר');
+      // The space after it, or plain text: an ordinary delete.
+      expect(removeWholeMention(v(text, 16), v('תבדוק @יוסי כהןמחר', 15), names), isNull);
+      expect(removeWholeMention(v(text, 5), v('תבדו @יוסי כהן מחר', 4), names), isNull);
+      // A name that was never picked is plain text.
+      expect(removeWholeMention(v(text, 15), v('תבדוק @יוסי כה מחר', 14), ['דנה']), isNull);
+      // Typing, or deleting a selection: left alone.
+      expect(removeWholeMention(v(text, 15), v('תבדוק @יוסי כהןא מחר', 16), names), isNull);
+    });
+
+    test('the field controller applies it only to picked names', () {
+      final controller = MentionTextEditingController()
+        ..value = const TextEditingValue(
+            text: '@דנה שלום', selection: TextSelection.collapsed(offset: 4));
+      controller.value = const TextEditingValue(
+          text: '@דנ שלום', selection: TextSelection.collapsed(offset: 3));
+      expect(controller.text, '@דנ שלום');
+      controller
+        ..picked.add('דנה')
+        ..value = const TextEditingValue(
+            text: '@דנה שלום', selection: TextSelection.collapsed(offset: 4));
+      controller.value = const TextEditingValue(
+          text: '@דנ שלום', selection: TextSelection.collapsed(offset: 3));
+      expect(controller.text, ' שלום');
+      expect(controller.selection.baseOffset, 0);
+      controller.dispose();
     });
 
     test('mentionSpans colours each tagged name', () {
@@ -186,6 +227,41 @@ void main() {
       await tester.tap(find.byKey(const Key('team-task-update-send')));
       await tester.pumpAndSettle();
       expect(harness.repository.calls, ['log:a:תבדוק @יוסי כהן:@m2']);
+    });
+
+    testWidgets('a pick by finger keeps the field focused, the caret after the tag',
+        (tester) async {
+      final mine = buildTeamTask(id: 'a', title: 'להזמין אולם', assigneeIds: ['m1'])
+          .copyWith(owners: [dana]);
+      await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      await tester.tap(find.byKey(const Key('team-task-quick-update-a')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const Key('team-task-update-field'));
+      await tester.showKeyboard(field);
+      await tester.enterText(field, 'תבדוק @יו');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-task-mention-option-m2')),
+          kind: PointerDeviceKind.touch);
+      await tester.pumpAndSettle();
+      final editable = tester.state<EditableTextState>(
+          find.descendant(of: field, matching: find.byType(EditableText)));
+      expect(editable.widget.focusNode.hasFocus, isTrue);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      final controller = tester.widget<TextField>(field).controller!;
+      expect(controller.selection, const TextSelection.collapsed(offset: 16));
+      // Typing goes on right after it.
+      tester.testTextInput.updateEditingValue(const TextEditingValue(
+          text: 'תבדוק @יוסי כהן מחר', selection: TextSelection.collapsed(offset: 19)));
+      await tester.pump();
+      expect(controller.text, 'תבדוק @יוסי כהן מחר');
+      // One backspace at the tag's end takes all of it.
+      controller.selection = const TextSelection.collapsed(offset: 15);
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(const TextEditingValue(
+          text: 'תבדוק @יוסי כה מחר', selection: TextSelection.collapsed(offset: 14)));
+      await tester.pump();
+      expect(controller.text, 'תבדוק  מחר');
+      expect(controller.selection.baseOffset, 6);
     });
 
     testWidgets('each tag is its own item, titled by its update; "סמן כבוצע" asks first',
