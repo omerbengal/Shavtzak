@@ -4,6 +4,7 @@ import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../task/task_style.dart';
 import 'team_task_actions.dart';
+import 'team_task_mentions.dart';
 import 'team_task_style.dart';
 
 /// One task in the list (design A, Omer round 3): the status circle, the
@@ -27,7 +28,20 @@ class TeamTaskRow extends StatelessWidget {
     this.onAddUpdate,
     this.selected = false,
     this.showCreated = false,
+    this.mention,
+    this.mentionTitle,
+    this.mentionByName,
   });
+
+  /// One tag of the viewer, who is only tagged ("@") in the task
+  /// (19/11/2026): the box they tick when they did what they were tagged for
+  /// stands where the status is, and a coloured @ marks the title. Each tag
+  /// is a row of its own (20/11/2026), titled [mentionTitle] (the text of
+  /// the update that tagged them), with the task's title under it and
+  /// [mentionByName] (who tagged them) and when.
+  final TeamTaskMention? mention;
+  final String? mentionTitle;
+  final String? mentionByName;
 
   /// "כל המשימות" (msg 4480): the creation date in the row's bottom-left
   /// corner.
@@ -54,7 +68,9 @@ class TeamTaskRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final faded = !task.status.isActive;
     return InkWell(
-      key: Key('team-task-row-${task.id}'),
+      key: Key(mention == null
+          ? 'team-task-row-${task.id}'
+          : 'team-task-row-${task.id}-${mention!.updateId}'),
       onTap: onTap,
       // Visible on a mouse hover (desktop) over every row (Omer, round 4).
       hoverColor: TeamTaskStyle.rowHover,
@@ -80,6 +96,10 @@ class TeamTaskRow extends StatelessWidget {
 
   /// The status circle, opening the status menu when [canChangeStatus].
   Widget _status(double size) {
+    final mention = this.mention;
+    if (mention != null) {
+      return MentionDoneBox(task: task, mention: mention, size: size);
+    }
     final icon = TeamTaskStatusIcon(status: task.status, size: size);
     if (!canChangeStatus) return icon;
     return TeamTaskStatusMenu(
@@ -91,7 +111,8 @@ class TeamTaskRow extends StatelessWidget {
 
   /// The width the status circle and the gap after it take: what the lines
   /// under the title are indented by.
-  double _lead(double size) => canChangeStatus ? size + 2 * _tapPadding + 2 : size + 8;
+  double _lead(double size) =>
+      canChangeStatus || mention != null ? size + 2 * _tapPadding + 2 : size + 8;
 
   List<Widget> _owners(double size) => [
         for (final owner in teamTaskOwnerChips(task))
@@ -118,10 +139,14 @@ class TeamTaskRow extends StatelessWidget {
           Row(
             children: [
               _status(TeamTaskStyle.statusIconSize),
-              SizedBox(width: canChangeStatus ? 2 : 8),
+              SizedBox(width: canChangeStatus || mention != null ? 2 : 8),
+              if (mention != null) ...[
+                MentionMark(key: Key('team-task-mention-mark-${task.id}')),
+                const SizedBox(width: 6),
+              ],
               Expanded(
                 child: Text(
-                  task.title,
+                  mention == null ? task.title : (mentionTitle ?? task.title),
                   style: _titleStyle(TaskStyle.rowTitleSize, FontWeight.w600),
                 ),
               ),
@@ -135,7 +160,8 @@ class TeamTaskRow extends StatelessWidget {
                 ),
             ],
           ),
-          if (events.isNotEmpty)
+          if (mention != null) ..._mentionLines(lead),
+          if (mention == null && events.isNotEmpty)
             Padding(
               padding: EdgeInsetsDirectional.only(start: lead, top: 4),
               child: Wrap(
@@ -145,7 +171,7 @@ class TeamTaskRow extends StatelessWidget {
                 children: [for (final event in events) TeamTaskEventChip(name: event.name)],
               ),
             ),
-          if (urgent || deadline != null || owners.isNotEmpty || showCreated)
+          if (mention == null && (urgent || deadline != null || owners.isNotEmpty || showCreated))
             Padding(
               padding: EdgeInsetsDirectional.only(start: lead, top: 5),
               child: _withCreated(Wrap(
@@ -175,6 +201,36 @@ class TeamTaskRow extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// A tag's lines under its title (Omer, 20/11/2026): the task it is in,
+  /// smaller, as a chip like an event's, then who tagged them and when.
+  List<Widget> _mentionLines(double lead) {
+    final mention = this.mention!;
+    const meta = TextStyle(fontSize: TaskStyle.rowMetaSize, color: TaskStyle.neutralText);
+    final by = mentionByName;
+    return [
+      if ((mentionTitle ?? task.title) != task.title)
+        Padding(
+          padding: EdgeInsetsDirectional.only(start: lead, top: 4),
+          child: Wrap(
+            key: Key('team-task-mention-parent-${task.id}-${mention.updateId}'),
+            spacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Text('במשימה:', style: meta),
+              TeamTaskEventChip(name: task.title),
+            ],
+          ),
+        ),
+      Padding(
+        padding: EdgeInsetsDirectional.only(start: lead, top: 4),
+        child: Text(
+          '${by == null ? 'תויגת' : 'תויגת ע"י $by'} · ${logStamp(mention.at)}',
+          style: meta,
+        ),
+      ),
+    ];
   }
 
   /// [meta] with the creation date at the row's end (left in Hebrew), on its

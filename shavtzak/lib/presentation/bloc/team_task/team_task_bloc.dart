@@ -66,8 +66,10 @@ class TeamTaskBloc extends Bloc<TeamTaskEvent, TeamTaskState> {
         (event, emit) => _send(event.completion, () => _repository.insertTask(event.task)));
     on<DeleteTeamTask>(
         (event, emit) => _send(event.completion, () => _repository.deleteTask(event.id)));
-    on<AddTeamTaskUpdate>((event, emit) =>
-        _send(event.completion, () => _repository.addUpdate(event.id, event.text)));
+    on<AddTeamTaskUpdate>((event, emit) => _send(event.completion,
+        () => _repository.addUpdate(event.id, event.text, mentionIds: event.mentionIds)));
+    on<MarkTeamTaskMentionDone>((event, emit) =>
+        _send(event.completion, () => _repository.setMentionDone(event.id, event.updateId, event.text)));
     on<EditTeamTaskUpdate>((event, emit) => _send(
         event.completion, () => _repository.editUpdate(event.id, event.updateId, event.text)));
     on<DeleteTeamTaskUpdate>((event, emit) =>

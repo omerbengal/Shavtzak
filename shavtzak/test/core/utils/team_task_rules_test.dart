@@ -336,6 +336,10 @@ void main() {
       expect(showTeamTasksTab(buildMember(isAdmin: true), const []), isTrue);
     });
 
+    test('tab shown for a permanent member with no tasks (20/11/2026)', () {
+      expect(showTeamTasksTab(buildMember(isPermanent: true), const []), isTrue);
+    });
+
     test('only cancelled or duplicate tasks do not show the tab', () {
       expect(
         showTeamTasksTab(buildMember(), [

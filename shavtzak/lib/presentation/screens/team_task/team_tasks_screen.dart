@@ -29,6 +29,7 @@ import 'team_tasks_place.dart';
 import 'widgets/new_team_task_dialog.dart';
 import 'widgets/task_link_picker.dart';
 import 'widgets/team_task_filter_bar.dart';
+import 'widgets/team_task_labeled_switch.dart';
 import 'widgets/team_task_row.dart';
 import 'widgets/team_task_sheet.dart';
 import 'widgets/team_task_split_view.dart';
@@ -115,7 +116,9 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// "בליץ" over [rows] (their tasks still to be done, the quietest
   /// first); [title] = what the pass covers (a long-pressed card).
   Future<void> _spotlight(List<TeamTask> rows, {String? title}) async {
-    final queue = spotlightQueue(rows);
+    final state = context.read<TeamTaskBloc>().state;
+    final queue =
+        spotlightQueue(rows, ownerId: state is TeamTasksLoaded ? state.viewer.id : null);
     Logger.action('tap:spotlightOpen', {'count': queue.length, 'scoped': title != null});
     if (queue.isEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -272,7 +275,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   /// The hidden "בליץ" while it warms up (see [_warmupDelay]), else nothing.
   Widget _blitzWarmup(TeamTaskState state) {
     if (!_warm || _blitzWarmed || state is! TeamTasksLoaded) return const SizedBox.shrink();
-    final queue = spotlightQueue(state.mine);
+    final queue = spotlightQueue(state.mine, ownerId: state.viewer.id);
     if (queue.isEmpty) return const SizedBox.shrink();
     if (!_blitzWarming) {
       _blitzWarming = true;
@@ -434,11 +437,14 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     Widget list(List<TeamTaskGroup> groups, {required bool all}) {
       final column = Column(
         children: [
-          TeamTaskFilterBar(state: state, showOwner: all),
-          if (all) _groupByEventsSwitch(),
+          TeamTaskFilterBar(
+            state: state,
+            showOwner: all,
+            leading: all ? _groupByEventsSwitch() : null,
+          ),
           if (!all)
             _SpotlightBar(
-              count: spotlightQueue(_uniqueTasks(groups)).length,
+              count: spotlightQueue(_uniqueTasks(groups), ownerId: state.viewer.id).length,
               onStart: () => _spotlight(_uniqueTasks(groups)),
             ),
           const Divider(height: 1),
@@ -518,47 +524,18 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       ? state.allGroups
       : flattenTeamTaskGroups(state.allGroups, compare: compareTeamTasksByOwners);
 
-  /// The "קיבוץ לפי אירועים" switch, under the filters of "כל המשימות".
+  /// The "קיבוץ לפי אירועים" switch, first in the chips row of "כל המשימות"
+  /// with its words inside it (Omer, 20/11/2026).
   Widget _groupByEventsSwitch() {
-    final on = TeamTasksScreen.groupByEvents;
-    void toggle(bool value) {
-      Logger.action('toggle:teamTasksGroupByEvents', {'on': value});
-      setState(() => TeamTasksScreen.groupByEvents = value);
-      _holdPlace(null);
-    }
-
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 4, 2),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => toggle(!on),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                Text(
-                  'קיבוץ לפי אירועים',
-                  style: TextStyle(
-                    fontSize: TaskStyle.filterFontSize,
-                    color: on ? TaskStyle.mine : TaskStyle.neutralText,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Transform.scale(
-                  scale: 0.75,
-                  child: Switch(
-                    key: const Key('team-tasks-group-by-events'),
-                    value: on,
-                    onChanged: toggle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return TeamTaskLabeledSwitch(
+      key: const Key('team-tasks-group-by-events'),
+      label: 'קיבוץ לפי אירועים',
+      value: TeamTasksScreen.groupByEvents,
+      onChanged: (value) {
+        Logger.action('toggle:teamTasksGroupByEvents', {'on': value});
+        setState(() => TeamTasksScreen.groupByEvents = value);
+        _holdPlace(null);
+      },
     );
   }
 
@@ -572,16 +549,21 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
           child: SizedBox(
             width: double.infinity,
             child: SegmentedButton<bool>(
               showSelectedIcon: false,
               // Explicit colours: the app theme's defaults for a selected
               // segment are white text on light orange, which is unreadable.
+              // Low buttons (Omer, 20/11/2026: too much room above and below).
               style: SegmentedButton.styleFrom(
                 selectedBackgroundColor: AppTheme.primaryDark,
                 selectedForegroundColor: Colors.white,
+                visualDensity: const VisualDensity(vertical: -4),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 32),
               ),
               segments: const [
                 ButtonSegment(
@@ -810,7 +792,38 @@ class _GroupedListState extends State<_GroupedList> {
 
   /// One task's row; [showEvents] adds the chips of a task of several
   /// events (16/11/2026).
-  Widget _row(TeamTask task) => _flashed(
+  Widget _row(TeamTask task) {
+    // "המשימות שלי" of a member only tagged in it: a row per open tag, the @
+    // box instead of the status (19/11/2026), each titled by the update that
+    // tagged them (20/11/2026).
+    if (!widget.editing && isTeamTaskTaggedOnly(task, widget.viewerId)) {
+      final mentions = task.openMentionsOf(widget.viewerId);
+      final names = {for (final m in widget.state.members) m.id: m.name};
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, mention) in mentions.indexed) ...[
+            if (i > 0) _rowDivider,
+            _flashed(
+              task.id,
+              TeamTaskRow(
+                task: task,
+                now: widget.now,
+                viewerId: widget.viewerId,
+                mention: mention,
+                mentionTitle:
+                    mentionItemTitle(task, mention, memberName: names[widget.viewerId]),
+                mentionByName: names[mention.byId],
+                selected: task.id == widget.selectedId,
+                onAddUpdate: () => showTeamTaskUpdatesDialog(context, task.id),
+                onTap: () => showTeamTaskSheet(context, task.id, manage: false),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+    return _flashed(
         task.id,
         TeamTaskRow(
           task: task,
@@ -829,6 +842,16 @@ class _GroupedListState extends State<_GroupedList> {
           onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
         ),
       );
+  }
+
+  /// The rows [tasks] show: in "המשימות שלי" a task the viewer is only
+  /// tagged in shows a row per open tag (20/11/2026).
+  int _itemCount(Iterable<TeamTask> tasks) => tasks.fold(
+      0,
+      (sum, task) => sum +
+          (!widget.editing && isTeamTaskTaggedOnly(task, widget.viewerId)
+              ? task.openMentionsOf(widget.viewerId).length
+              : 1));
 
   static const Widget _rowDivider =
       Divider(height: 1, thickness: 1, color: TaskStyle.stageCardDivider);
@@ -843,7 +866,7 @@ class _GroupedListState extends State<_GroupedList> {
         DateTime(event.endDate.year, event.endDate.month, event.endDate.day)
             .isBefore(IsraelCalendar.calendarDay(widget.now));
     final days = event == null ? '' : _eventDays(event);
-    final count = section.tasks.length;
+    final count = _itemCount(section.tasks);
     return [
       Material(
         color: TeamTaskStyle.sectionHeader,
@@ -986,7 +1009,7 @@ class _GroupedListState extends State<_GroupedList> {
       if (rows.isNotEmpty) rows.add(_rowDivider);
       rows.addAll(_section(group, section, state));
     }
-    final count = group.allTasks.length;
+    final count = _itemCount(group.allTasks);
     // Folded by a tap on its header (round 7); a search opens it.
     final folded = widget.collapsed.contains(group.key) && state.filter.searchText.isEmpty;
     return Container(

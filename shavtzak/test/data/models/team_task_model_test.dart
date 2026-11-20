@@ -147,4 +147,54 @@ void main() {
     expect(old.hasSeveralEvents, isFalse);
     expect(old.urgency, TeamTaskUrgency.normal);
   });
+
+  test('tags: the mentions and the tagged ids of an update (19/11/2026)', () {
+    final task = TeamTaskModel.fromMap('t1', {
+      'title': 'x',
+      'status': 'open',
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
+      'updates': [
+        {
+          'id': 'u1',
+          'text': '@יוסי',
+          'at': Timestamp.fromDate(updatedAt),
+          'byId': 'a',
+          'mentionIds': ['b'],
+        },
+        {
+          'id': 'u2',
+          'text': '✅',
+          'at': Timestamp.fromDate(updatedAt),
+          'byId': 'c',
+          'mentionDoneOf': 'u0',
+        },
+      ],
+      'mentions': [
+        {
+          'memberId': 'b',
+          'updateId': 'u1',
+          'byId': 'a',
+          'at': Timestamp.fromDate(updatedAt),
+          'doneAt': null,
+        },
+        {'memberId': 'b', 'updateId': 'u1', 'byId': 'a', 'at': Timestamp.fromDate(updatedAt)},
+        {'memberId': 'b', 'updateId': 'u9', 'byId': 'a', 'at': Timestamp.fromDate(updatedAt)},
+        {'memberId': 'c', 'at': Timestamp.fromDate(updatedAt), 'doneAt': Timestamp.fromDate(updatedAt),
+          'doneText': 'בוצע'},
+        {'byId': 'a'},
+      ],
+    });
+    expect(task.updates.first.mentionIds, ['b']);
+    expect(task.updates.last.mentionDoneOf, 'u0');
+    // One per tag (20/11/2026): b twice, for two updates.
+    expect(task.mentions.map((m) => m.memberId), ['b', 'b', 'c']);
+    expect(task.mentionsOf('b').map((m) => m.updateId), ['u1', 'u9']);
+    expect(task.openMentionsOf('b').length, 2);
+    expect(task.mentionsOf('c').single.doneText, 'בוצע');
+    expect(task.mentionsOf('c').single.updateId, '');
+    expect(task.updateOf(task.mentionsOf('b').first)!.id, 'u1');
+    expect(task.updateOf(task.mentionsOf('b').last), isNull);
+    expect(TeamTaskModel.fromMap('t2', {'title': 'y'}).mentions, isEmpty);
+  });
 }

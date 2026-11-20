@@ -44,11 +44,17 @@ String teamTaskQuietLabel(TeamTask task, DateTime now) {
 /// done (פתוחה / בטיפול), in [rows]' own order, the order "המשימות שלי" shows
 /// them (its cards, and inside each the list's order; Omer, msg 4500: it
 /// was the quietest first). Each task once.
-List<TeamTask> spotlightQueue(Iterable<TeamTask> rows) {
+///
+/// With [ownerId], only the tasks they own: a task they are only tagged in
+/// ("@", 19/11/2026) has no status of theirs to change.
+List<TeamTask> spotlightQueue(Iterable<TeamTask> rows, {String? ownerId}) {
   final seen = <String>{};
   return [
     for (final task in rows)
-      if (task.status.isActive && seen.add(task.id)) task,
+      if (task.status.isActive &&
+          (ownerId == null || task.ownerIds.contains(ownerId)) &&
+          seen.add(task.id))
+        task,
   ];
 }
 

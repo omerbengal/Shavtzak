@@ -53,8 +53,77 @@ List<String> teamTaskOwnerIds(TeamTask task) => task.assigneeIds.toSet().toList(
 /// What the "המשימות שלי" tab lists for [viewerId]: every task they own.
 List<TeamTask> myTeamTaskRows(List<TeamTask> tasks, String viewerId) => [
       for (final task in tasks)
-        if (task.ownerIds.contains(viewerId)) task,
+        if (task.ownerIds.contains(viewerId) || isTeamTaskTaggedOpen(task, viewerId)) task,
     ];
+
+/// [viewerId] has a tag ("@") in [task] not marked done yet, and is not one
+/// of its owners (19/11/2026): each such tag is an item of its own in their
+/// "המשימות שלי" (20/11/2026) until they mark it done.
+bool isTeamTaskTaggedOpen(TeamTask task, String viewerId) =>
+    !task.ownerIds.contains(viewerId) && task.openMentionsOf(viewerId).isNotEmpty;
+
+/// [viewerId] is tagged in [task] (done or not) without owning it: they
+/// may write in its log, never change its status.
+bool isTeamTaskTaggedOnly(TeamTask task, String viewerId) =>
+    !task.ownerIds.contains(viewerId) && task.mentionsOf(viewerId).isNotEmpty;
+
+/// The title of a tag's item in "המשימות שלי" (Omer, 20/11/2026): the text of
+/// the update that tagged them, without their own "@<name>"; the task's title
+/// when that update is gone (or the tag is from before 20/11/2026).
+String mentionItemTitle(TeamTask task, TeamTaskMention mention, {String? memberName}) {
+  final text = task.updateOf(mention)?.text;
+  if (text == null) return task.title;
+  final own = memberName == null || memberName.isEmpty ? text : text.replaceAll('@$memberName', '');
+  final title = own
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .replaceAll(RegExp(r' *\n *'), '\n')
+      .trim();
+  return title.isEmpty ? task.title : title;
+}
+
+/// A "done" line of the update log linked to the update that tagged its
+/// writer (Omer, 20/11/2026): [doneIndex] and [tagIndex] are positions in the
+/// log (newest first, so the done line is above), [lane] the bracket's track
+/// on the log's right side, 0 nearest the lines.
+class TeamTaskLogLink extends Equatable {
+  final int doneIndex;
+  final int tagIndex;
+  final int lane;
+
+  const TeamTaskLogLink(this.doneIndex, this.tagIndex, this.lane);
+
+  bool spans(int index) => index >= doneIndex && index <= tagIndex;
+
+  @override
+  List<Object?> get props => [doneIndex, tagIndex, lane];
+}
+
+/// The brackets of [updates] (newest first): every done line whose tagging
+/// update is still in the log. Lanes so no two overlapping links share one:
+/// the shortest link takes the innermost free lane, so a link inside another
+/// is drawn inside it.
+List<TeamTaskLogLink> teamTaskLogLinks(List<TaskUpdateEntry> updates) {
+  final indexOf = {for (final (i, entry) in updates.indexed) entry.id: i};
+  final spans = <(int, int)>[];
+  for (final (i, entry) in updates.indexed) {
+    final tag = entry.mentionDoneOf == null ? null : indexOf[entry.mentionDoneOf];
+    if (tag != null && tag > i) spans.add((i, tag));
+  }
+  spans.sort((a, b) {
+    final byLength = (a.$2 - a.$1).compareTo(b.$2 - b.$1);
+    return byLength != 0 ? byLength : a.$1.compareTo(b.$1);
+  });
+  final links = <TeamTaskLogLink>[];
+  for (final (done, tag) in spans) {
+    var lane = 0;
+    while (links.any((l) => l.lane == lane && !(tag < l.doneIndex || done > l.tagIndex))) {
+      lane++;
+    }
+    links.add(TeamTaskLogLink(done, tag, lane));
+  }
+  links.sort((a, b) => a.doneIndex.compareTo(b.doneIndex));
+  return links;
+}
 
 /// One event inside a category's card (16/11/2026): its title row and the
 /// tasks linked to that event alone.
@@ -657,10 +726,11 @@ String teamTaskSearchText(
   return normalizeTeamTaskSearch(parts.join('\n'));
 }
 
-/// Whether [member] gets the "משימות" tab: a manager always; anyone else when
-/// one of [myTasks] (the tasks they own) is not cancelled or a duplicate.
+/// Whether [member] gets the "משימות" tab: a manager and a permanent team
+/// member always (Omer, 20/11/2026); anyone else when one of [myTasks] (the
+/// tasks they own) is not cancelled or a duplicate.
 bool showTeamTasksTab(TeamMember member, List<TeamTask> myTasks) {
-  if (canManageTeamTasks(member)) return true;
+  if (canManageTeamTasks(member) || member.isPermanent) return true;
   return myTasks.any(
       (task) => task.status != TeamTaskStatus.cancelled && task.status != TeamTaskStatus.duplicate);
 }

@@ -35,7 +35,7 @@ List<String> memberTabRoutes({required bool withTeamTasks}) => [
 const int kTeamTasksTab = 3;
 
 /// Whether the member bar shows "משימות" (back on 17/11/2026): to a manager
-/// always, to anyone else once they own a task that is not cancelled or a
+/// and a permanent member always (20/11/2026), to anyone else once they own a task that is not cancelled or a
 /// duplicate. A member who is already on that tab (a link) keeps it.
 bool memberShowsTeamTasksTab(
   TeamMember user,

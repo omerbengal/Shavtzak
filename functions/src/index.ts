@@ -65,6 +65,7 @@ import {
   VAPID_PUBLIC_KEY,
   parseSubscription,
   sendTaskAssignedPush,
+  sendTaskMentionedPush,
   subscriptionDocId,
 } from './push';
 import {TeamTaskDoc, teamTaskAuditDetails} from './team_tasks';
@@ -6686,7 +6687,8 @@ async function executeMutation(
     case 'teamTask.setSubtaskDone':
     case 'teamTask.addUpdate':
     case 'teamTask.editUpdate':
-    case 'teamTask.deleteUpdate': {
+    case 'teamTask.deleteUpdate':
+    case 'teamTask.setMentionDone': {
       const taskActor = taskActorFrom(actor);
       const now = Timestamp.now();
       // Categories and topics live in utilities/Lists, outside the transaction
@@ -6711,6 +6713,17 @@ async function executeMutation(
         // Awaited: on Cloud Run work left after the response is throttled.
         // Never throws (sendTaskAssignedPush).
         await sendTaskAssignedPush(pushStoreFor(collections), sendWebPush, {
+          before: result.before,
+          after: result.after,
+          actorId: actor.memberId,
+          site,
+          routePrefix: environment === 'test' ? '/test' : '',
+        });
+      }
+      if (operation === 'teamTask.addUpdate') {
+        // "@ תויגת במשימה" to every member the update newly tagged
+        // (19/11/2026). Never throws.
+        await sendTaskMentionedPush(pushStoreFor(collections), sendWebPush, {
           before: result.before,
           after: result.after,
           actorId: actor.memberId,

@@ -7,7 +7,9 @@ import {
   addedOwnerIds,
   canReceiveTaskPush,
   parseSubscription,
+  openedMentionIds,
   sendTaskAssignedPush,
+  taskMentionedMessage,
   subscriptionDocId,
   taskAssignedMessage,
 } from './push';
@@ -158,4 +160,28 @@ test('send: a store failure never throws', async () => {
     before: null, after: task(['a']), actorId: 'me', site: 'main', routePrefix: '',
   });
   assert.equal(result.sent, 0);
+});
+
+test('a tag tells the newly tagged member only, never the writer', () => {
+  const before = {mentions: [
+    {memberId: 'b', updateId: 'u1', doneAt: null},
+    {memberId: 'c', updateId: 'u1', doneAt: 1},
+  ]};
+  const after = {mentions: [
+    {memberId: 'b', updateId: 'u1', doneAt: null},
+    {memberId: 'c', updateId: 'u1', doneAt: 1},
+    {memberId: 'b', updateId: 'u2', doneAt: null},
+    {memberId: 'c', updateId: 'u2', doneAt: null},
+    {memberId: 'd', updateId: 'u2', doneAt: null},
+    {memberId: 'me', updateId: 'u2', doneAt: null},
+  ]};
+  // b already had an open tag, and still hears of the new one.
+  assert.deepEqual(openedMentionIds(before, after, 'me'), ['b', 'c', 'd']);
+  assert.deepEqual(openedMentionIds(after, after, 'me'), []);
+  assert.deepEqual(openedMentionIds(null, null, 'me'), []);
+  const message = taskMentionedMessage({id: 't 1', title: 'אולם'}, '/test');
+  assert.equal(message.title, '@ תויגת במשימה');
+  assert.equal(message.body, 'אולם');
+  assert.equal(message.path, '/test/team-tasks?task=t%201');
+  assert.equal(taskMentionedMessage({id: 't', title: 'אולם'}, '', '@b תזמין').body, 'אולם: @b תזמין');
 });

@@ -624,7 +624,14 @@ abstract class DatabaseInterface {
   Future<void> setTeamSubtaskDone(String id, String subtaskId, bool isDone);
 
   /// With [subtaskId], into that subtask's own log.
-  Future<void> addTeamTaskUpdate(String id, String text, {String? subtaskId});
+  /// [mentionIds]: the members the update tags ("@", 19/11/2026).
+  Future<void> addTeamTaskUpdate(String id, String text,
+      {String? subtaskId, List<String> mentionIds = const []});
+
+  /// The viewer marks what update [updateId] of task [id] tagged them for as
+  /// done (one tag of theirs, 20/11/2026), with
+  /// an optional [text] for the log (19/11/2026).
+  Future<void> setTeamTaskMentionDone(String id, String updateId, String text);
 
   /// A new text for update [updateId] of task [id] (with [subtaskId], of that
   /// subtask's log): its writer, or a manager (round 10).
