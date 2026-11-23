@@ -214,7 +214,7 @@ void main() {
         tester.getBottomLeft(find.byKey(const Key('team-task-mention-suggestions'))).dy,
         lessThanOrEqualTo(tester.getTopLeft(field).dy),
       );
-      // The writer is not offered.
+      // Only the names that hold the query.
       expect(find.byKey(const Key('team-task-mention-option-m1')), findsNothing);
       await tester.tap(find.byKey(const Key('team-task-mention-option-m2')));
       await tester.pumpAndSettle();
@@ -229,6 +229,23 @@ void main() {
       await tester.tap(find.byKey(const Key('team-task-update-send')));
       await tester.pumpAndSettle();
       expect(harness.repository.calls, ['log:a:תבדוק @יוסי כהן:@m2']);
+    });
+
+    testWidgets('the writer may tag themself (23/11/2026)', (tester) async {
+      final mine = buildTeamTask(id: 'a', title: 'להזמין אולם', assigneeIds: ['m1'])
+          .copyWith(owners: [dana]);
+      final harness = await pumpTeamTasks(tester, user: dana, board: board([mine]));
+      await tester.tap(find.byKey(const Key('team-task-quick-update-a')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const Key('team-task-update-field'));
+      await tester.enterText(field, 'לזכור @דנ');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('team-task-mention-option-m1')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).controller!.text, 'לזכור @דנה ');
+      await tester.tap(find.byKey(const Key('team-task-update-send')));
+      await tester.pumpAndSettle();
+      expect(harness.repository.calls, ['log:a:לזכור @דנה:@m1']);
     });
 
     testWidgets('a pick by finger keeps the field focused, the caret after the tag',

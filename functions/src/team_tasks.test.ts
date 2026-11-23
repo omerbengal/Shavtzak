@@ -475,7 +475,7 @@ test('an edit with no subtasks key keeps the stored subtasks', () => {
 test('a tag gives the member a mention: not an owner, may write, never changes the status', () => {
   const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
   const tagged = appendTeamTaskUpdate(task, 'יוסי תבדוק', {now, actor: ownerA}, null, ['b', 'a']);
-  // The writer never tags themself; b is tagged.
+  // a owns the task, so needs no tag; b is tagged.
   assert.deepEqual(tagged.mentionIds, ['b']);
   assert.deepEqual(tagged.ownerIds, ['a']);
   assert.deepEqual(tagged.updates[0].mentionIds, ['b', 'a']);
@@ -486,6 +486,14 @@ test('a tag gives the member a mention: not an owner, may write, never changes t
   expectTaskError(() => applyTeamTaskStatus(tagged, 'done', null, {now, actor: ownerB}), 403);
   // A stranger still may not write.
   expectTaskError(() => appendTeamTaskUpdate(tagged, 'x', {now, actor: stranger}), 403);
+});
+
+test('the writer may tag themself (23/11/2026)', () => {
+  const task = buildNewTeamTask(input({assigneeIds: ['a']}), {now, actor: manager});
+  const tagged = appendTeamTaskUpdate(task, 'לבדוק', {now, actor: manager}, null, ['m-admin']);
+  assert.deepEqual(tagged.mentionIds, ['m-admin']);
+  assert.equal(tagged.mentions[0].memberId, 'm-admin');
+  assert.equal(tagged.mentions[0].byId, 'm-admin');
 });
 
 test('tagging an owner adds no mention', () => {

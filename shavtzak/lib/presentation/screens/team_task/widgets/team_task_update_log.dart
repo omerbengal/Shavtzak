@@ -256,13 +256,14 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
     final members = state is TeamTasksLoaded ? state.members : const <TeamMember>[];
     final nameById = {for (final m in members) m.id: m.name};
     final query = widget.canWrite ? _mentionQuery : null;
-    // Who can be tagged: the active team, not the writer.
+    // Who can be tagged: the active team, the writer too (Omer, 23/11/2026:
+    // a member may tag themself).
     final candidates = query == null
         ? const <TeamMember>[]
         : mentionCandidates(
             [
               for (final m in members)
-                if (m.isActive && !m.isArchived && m.id != viewerId) m,
+                if (m.isActive && !m.isArchived) m,
             ],
             query.query,
           );
