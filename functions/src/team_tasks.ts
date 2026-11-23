@@ -235,9 +235,9 @@ export function parseMentionIds(value: unknown): string[] {
 /**
  * [mentions] after update [updateId] of the actor tagged [ids]: every tagged
  * member gets a tag of their own for that update (Omer, 20/11/2026: two
- * updates = two tags, whatever the earlier one's state). The actor never tags
- * themself, and an owner needs no tag (the task is theirs): both stay
- * highlighted in the text only.
+ * updates = two tags, whatever the earlier one's state). The actor may tag
+ * themself (Omer, 23/11/2026). An owner needs no tag (the task is theirs):
+ * stays highlighted in the text only.
  */
 export function addMentions(
   task: TeamTaskDoc,
@@ -247,7 +247,7 @@ export function addMentions(
 ): TeamTaskMention[] {
   const mentions = [...task.mentions];
   for (const id of ids) {
-    if (id === ctx.actor.memberId || task.ownerIds.includes(id)) continue;
+    if (task.ownerIds.includes(id)) continue;
     mentions.push({
       memberId: id,
       updateId,
