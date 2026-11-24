@@ -72,6 +72,8 @@
 
   function flutterInput(el) {
     if (!el || el.id === DUMMY_ID) return null;
+    // A real browser field (prototype) opens its keyboard by itself.
+    if (el.hasAttribute && el.hasAttribute('data-native-field')) return null;
     if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return null;
     return el.closest && el.closest('flutter-view') ? el : null;
   }

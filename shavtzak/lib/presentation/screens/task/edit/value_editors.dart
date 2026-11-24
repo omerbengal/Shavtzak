@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/utils/phone_input_formatter.dart';
+import '../../../../core/web/native_text_field.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/task_schedule.dart';
@@ -58,6 +59,15 @@ class _TextValueEditorState extends State<TextValueEditor> {
 
   @override
   Widget build(BuildContext context) {
+    // PROTOTYPE: the browser's own field on the web.
+    final native = nativeTextField(
+      initial: widget.initial,
+      onChanged: widget.onChanged,
+      onSubmit: widget.onSubmit,
+      multiline: widget.multiline,
+      hint: widget.hint,
+    );
+    if (native != null) return native;
     final field = RtlArrowKeys(
         multiline: widget.multiline,
         child: TextField(
