@@ -83,6 +83,10 @@ class FakeTaskRepository extends Fake implements TaskRepository {
       _record('complete:$taskId:$isComplete');
 
   @override
+  Future<void> setTaskHidden(String taskId, bool isHidden) =>
+      _record('hidden:$taskId:$isHidden');
+
+  @override
   Future<void> setTaskAssigneeUpdate(String taskId, String text) =>
       _record('note:$taskId:$text');
 

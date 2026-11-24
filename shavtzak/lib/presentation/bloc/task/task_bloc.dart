@@ -311,6 +311,30 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
         () => _repository.setTaskComplete(event.taskId, event.isComplete),
       ),
     );
+    on<SetTaskHidden>((event, emit) {
+      return _run(
+        event.completion,
+        () => _repository.setTaskHidden(event.taskId, event.isHidden),
+        awaited: _AwaitedWrite(
+          'taskHidden',
+          (board) => board.tasks.any(
+            (live) => live.id == event.taskId && live.isHidden == event.isHidden,
+          ),
+          onTimeout: () => _taskOverlay.failed(event.taskId),
+        ),
+        onSuccess: () {
+          final live = _board?.tasks
+              .where((task) => task.id == event.taskId)
+              .firstOrNull;
+          if (live != null) {
+            // Only the flag changes, so an edit still on its way is kept.
+            final shown = _taskOverlay.resolve(live.id, live);
+            _taskOverlay.sent(live.id, shown.copyWith(isHidden: event.isHidden));
+          }
+          _emitBoard(emit);
+        },
+      );
+    });
     on<SaveAssigneeUpdate>(
       (event, emit) => _run(
         event.completion,

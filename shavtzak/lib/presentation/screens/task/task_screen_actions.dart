@@ -354,6 +354,30 @@ mixin TaskScreenActions<T extends StatefulWidget> on State<T> {
     );
   }
 
+  /// Hides [task] from team members, or shows it to them again.
+  Future<void> setHidden(TaskItem task, bool isHidden) async {
+    Logger.action('toggle:taskHidden', {'on': isHidden});
+    final result = await sendTaskEvent(
+      (completion) => SetTaskHidden(
+        taskId: task.id,
+        isHidden: isHidden,
+        completion: completion,
+      ),
+    );
+    if (!mounted) return;
+    if (!result.isSuccess) {
+      _showError(result.message ?? 'הפעולה נכשלה. נסו שוב.');
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(isHidden
+            ? 'המשימה הוסתרה מחברי הצוות'
+            : 'המשימה גלויה שוב לחברי הצוות'),
+      ));
+  }
+
   Future<void> callPhone(String phone) async {
     Logger.action('tap:stageContactCall');
     final uri =

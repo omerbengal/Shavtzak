@@ -38,6 +38,10 @@ class TaskItem extends Equatable {
   final DateTime? completedAt;
   final String? completedById;
 
+  /// Hidden from team members until a manager shows it again (a task that
+  /// may not happen). Managers still see it, marked as hidden.
+  final bool isHidden;
+
   final DateTime createdAt;
   final String createdById;
   final DateTime updatedAt; // Bumped by every write to the task
@@ -64,6 +68,7 @@ class TaskItem extends Equatable {
     this.isComplete = false,
     this.completedAt,
     this.completedById,
+    this.isHidden = false,
     required this.createdAt,
     required this.createdById,
     required this.updatedAt,
@@ -121,6 +126,7 @@ class TaskItem extends Equatable {
     bool? isComplete,
     DateTime? completedAt,
     String? completedById,
+    bool? isHidden,
     DateTime? createdAt,
     String? createdById,
     DateTime? updatedAt,
@@ -147,6 +153,7 @@ class TaskItem extends Equatable {
       isComplete: isComplete ?? this.isComplete,
       completedAt: completedAt ?? this.completedAt,
       completedById: completedById ?? this.completedById,
+      isHidden: isHidden ?? this.isHidden,
       createdAt: createdAt ?? this.createdAt,
       createdById: createdById ?? this.createdById,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -174,6 +181,7 @@ class TaskItem extends Equatable {
         isComplete,
         completedAt,
         completedById,
+        isHidden,
         createdAt,
         createdById,
         updatedAt,

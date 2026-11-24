@@ -36,6 +36,7 @@ class TaskItemModel {
       isComplete: data['isComplete'] == true,
       completedAt: _date(data['completedAt']),
       completedById: _string(data['completedById']),
+      isHidden: data['isHidden'] == true,
       createdAt: _date(data['createdAt']) ?? _epoch,
       createdById: _string(data['createdById']) ?? '',
       updatedAt: _date(data['updatedAt']) ?? _epoch,
@@ -61,6 +62,9 @@ class TaskItemModel {
       'subtasks': task.subtasks
           .map((subtask) => {'id': subtask.id, 'title': subtask.title})
           .toList(),
+      // Read by task.insert / stage.import (a new task) and by task.update;
+      // an Excel update (stage.sync) never changes it on an existing task.
+      'isHidden': task.isHidden,
     };
   }
 

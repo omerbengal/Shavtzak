@@ -114,6 +114,9 @@ class TaskRepository {
   Future<void> setTaskComplete(String taskId, bool isComplete) =>
       _database.setTaskComplete(taskId, isComplete);
 
+  Future<void> setTaskHidden(String taskId, bool isHidden) =>
+      _database.setTaskHidden(taskId, isHidden);
+
   Future<void> setTaskAssigneeUpdate(String taskId, String text) =>
       _database.setTaskAssigneeUpdate(taskId, text);
 

@@ -5,6 +5,7 @@ import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
 import 'assignee_chips.dart';
+import 'hidden_task_badge.dart';
 
 /// A stage's tasks as a table, for the wide sheet: what a phone [TaskRow]
 /// carries, laid out as columns.
@@ -24,6 +25,7 @@ class StageTaskTable extends StatelessWidget {
     required this.onOpen,
     required this.onEdit,
     required this.onDelete,
+    required this.onToggleHidden,
     required this.onCallPhone,
   });
 
@@ -49,6 +51,7 @@ class StageTaskTable extends StatelessWidget {
   final ValueChanged<TaskItem> onOpen;
   final ValueChanged<TaskItem> onEdit;
   final ValueChanged<TaskItem> onDelete;
+  final ValueChanged<TaskItem> onToggleHidden;
   final ValueChanged<String> onCallPhone;
 
   @override
@@ -72,6 +75,7 @@ class StageTaskTable extends StatelessWidget {
             onOpen: () => onOpen(task),
             onEdit: () => onEdit(task),
             onDelete: () => onDelete(task),
+            onToggleHidden: () => onToggleHidden(task),
             onCallPhone: onCallPhone,
           ),
           const Divider(height: 1),
@@ -125,6 +129,7 @@ class _TableRow extends StatefulWidget {
     required this.onOpen,
     required this.onEdit,
     required this.onDelete,
+    required this.onToggleHidden,
     required this.onCallPhone,
   });
 
@@ -138,6 +143,7 @@ class _TableRow extends StatefulWidget {
   final VoidCallback onOpen;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onToggleHidden;
   final ValueChanged<String> onCallPhone;
 
   @override
@@ -158,7 +164,8 @@ class _TableRowState extends State<_TableRow> {
       child: InkWell(
         key: Key('table-row-${task.id}'),
         onTap: widget.onOpen,
-        child: Padding(
+        // A hidden task (only managers get one) sits on a grey background.
+        child: greyIfHidden(task, Padding(
           padding: const EdgeInsets.symmetric(
               vertical: TaskStyle.tableRowVerticalPadding),
           child: Row(
@@ -197,7 +204,7 @@ class _TableRowState extends State<_TableRow> {
                 ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }
@@ -263,6 +270,10 @@ class _TableRowState extends State<_TableRow> {
                   ),
                 ),
               ),
+              if (task.isHidden) ...[
+                const SizedBox(width: 6),
+                HiddenTaskBadge(key: Key('table-hidden-${task.id}')),
+              ],
               if (isLate) ...[
                 const SizedBox(width: 6),
                 Container(
@@ -324,6 +335,7 @@ class _TableRowState extends State<_TableRow> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          HideTaskButton(task: task, onPressed: widget.onToggleHidden),
           IconButton(
             key: Key('table-edit-${task.id}'),
             tooltip: 'עריכה',

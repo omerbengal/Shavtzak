@@ -137,6 +137,8 @@ CycleCopy copyCycle(
         ],
         assemblyTime: task.assemblyTime,
         assigneeIds: [for (final member in people) member.id],
+        // A task hidden in the earlier cycle stays hidden in the copy.
+        isHidden: task.isHidden,
         createdAt: now,
         createdById: currentUser.id,
         updatedAt: now,

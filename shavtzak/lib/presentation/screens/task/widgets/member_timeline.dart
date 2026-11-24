@@ -11,6 +11,7 @@ import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
+import 'hidden_task_badge.dart';
 import 'subtask_ticks.dart';
 import 'update_note_box.dart';
 
@@ -723,10 +724,11 @@ class _TaskLine extends StatelessWidget {
       for (final member in task.assignees)
         if (member.id != viewerId) member.name,
     ];
-    // A white row inside its stage's card, under the tinted header.
+    // A white row inside its stage's card, under the tinted header; grey
+    // when hidden (only a manager gets a hidden task).
     return Material(
       key: Key('my-task-${task.id}'),
-      color: TaskStyle.stageCard,
+      color: task.isHidden ? TaskStyle.hiddenRow : TaskStyle.stageCard,
       child: InkWell(
         // A tap opens the task; only the arrow opens and folds subtasks.
         onTap: onOpen,
@@ -788,6 +790,10 @@ class _TaskLine extends StatelessWidget {
                   style: _titleStyle(TaskStyle.rowTitleSize),
                 ),
               ),
+              if (task.isHidden) ...[
+                HiddenTaskBadge(key: Key('my-task-hidden-${task.id}')),
+                const SizedBox(width: 6),
+              ],
               if (task.hasSubtasks) ...[
                 Text(
                   ltr('${task.doneSubtaskCount}/${task.subtasks.length}'),
@@ -889,6 +895,12 @@ class _TaskLine extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(task.title, style: _titleStyle(14)),
+                  if (task.isHidden)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: HiddenTaskBadge(
+                          key: Key('my-task-hidden-${task.id}')),
+                    ),
                   if (others.isNotEmpty) _withOthers(others),
                   if (update != null) update,
                   if (isExpanded && task.hasSubtasks) _subtasks(),

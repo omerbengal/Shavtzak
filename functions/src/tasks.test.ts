@@ -7,6 +7,7 @@ import {
   TaskError,
   applyAssigneeUpdate,
   applySetComplete,
+  applySetHidden,
   applySubtaskToggle,
   applyTaskEdit,
   buildNewTask,
@@ -546,4 +547,42 @@ test('planTaskReorder refuses a task that is not in the stage', () => {
     () => planTaskReorder(tasks, ['a', 'zz'], later),
     (e: unknown) => e instanceof TaskError && e.status === 409,
   );
+});
+
+// ---- hiding ----
+
+test('a new task is visible unless the payload hides it', () => {
+  assert.equal(newTask().isHidden, false);
+  assert.equal(newTask({isHidden: true}).isHidden, true);
+  assert.equal(newTask({isHidden: 'yes'}).isHidden, false);
+});
+
+test('a stored task without isHidden reads as visible', () => {
+  assert.equal(taskFromStored('t1', {title: 'x'}).isHidden, false);
+  assert.equal(taskFromStored('t1', {title: 'x', isHidden: true}).isHidden, true);
+});
+
+test('applyTaskEdit changes isHidden only with applyHidden and a boolean key', () => {
+  const hidden = newTask({isHidden: true});
+  const ctx = {now: later, actor: manager};
+  // An Excel update (no applyHidden) keeps it, even if the key is sent.
+  assert.equal(applyTaskEdit(hidden, baseInput({isHidden: false}), ctx).isHidden, true);
+  // An older client sends no key: kept.
+  assert.equal(
+    applyTaskEdit(hidden, baseInput(), ctx, {applyHidden: true}).isHidden,
+    true,
+  );
+  assert.equal(
+    applyTaskEdit(hidden, baseInput({isHidden: false}), ctx, {applyHidden: true}).isHidden,
+    false,
+  );
+});
+
+test('applySetHidden flips only isHidden and stamps updatedAt', () => {
+  const task = newTask();
+  const hidden = applySetHidden(task, true, {now: later, actor: manager});
+  assert.equal(hidden.isHidden, true);
+  assert.equal(hidden.updatedAt, later);
+  assert.deepEqual({...hidden, isHidden: false, updatedAt: now}, task);
+  assert.equal(applySetHidden(hidden, false, {now: later, actor: manager}).isHidden, false);
 });

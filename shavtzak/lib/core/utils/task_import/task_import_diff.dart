@@ -261,6 +261,8 @@ TaskImportDiff diffTaskImport(
         isComplete: before.isComplete,
         completedAt: before.completedAt,
         completedById: before.completedById,
+        // The file has no such column; the backend keeps it either way.
+        isHidden: before.isHidden,
         createdAt: before.createdAt,
         createdById: before.createdById,
         updatedAt: before.updatedAt,

@@ -1707,6 +1707,14 @@ class LoggingDatabase implements DatabaseInterface {
         action: () => _inner.setTaskComplete(taskId, isComplete),
       );
 
+  @override
+  Future<void> setTaskHidden(String taskId, bool isHidden) => _runFuture(
+        op: 'setTaskHidden',
+        ctx: {'collection': 'tasks', 'id': taskId, 'isHidden': isHidden},
+        countOf: (_) => null,
+        action: () => _inner.setTaskHidden(taskId, isHidden),
+      );
+
   // The note's text is deliberately left out of the log context: the debug
   // logger never records what a member typed.
   @override

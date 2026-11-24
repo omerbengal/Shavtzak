@@ -16,6 +16,7 @@ void main() {
   late List<String> opens;
   late List<String> edits;
   late List<String> deletes;
+  late List<String> hides;
   late List<String> calls;
 
   Future<void> pumpTable(
@@ -34,6 +35,7 @@ void main() {
     opens = [];
     edits = [];
     deletes = [];
+    hides = [];
     calls = [];
     await tester.pumpWidget(MaterialApp(
       home: Directionality(
@@ -52,6 +54,7 @@ void main() {
               onOpen: (task) => opens.add(task.id),
               onEdit: (task) => edits.add(task.id),
               onDelete: (task) => deletes.add(task.id),
+              onToggleHidden: (task) => hides.add(task.id),
               onCallPhone: calls.add,
             ),
           ),
@@ -149,6 +152,30 @@ void main() {
     await pumpTable(tester, [tWsLater], canManage: false);
     expect(find.byKey(const Key('table-edit-ws-later')), findsNothing);
     expect(find.byKey(const Key('table-delete-ws-later')), findsNothing);
+  });
+
+  testWidgets('a hidden task carries the "מוסתרת" chip; the eye toggles it',
+      (tester) async {
+    await pumpTable(tester, [tWsLater.copyWith(isHidden: true), tWsUntimed]);
+
+    expect(find.byKey(const Key('table-hidden-ws-later')), findsOneWidget);
+    expect(find.byKey(const Key('table-hidden-ws-untimed')), findsNothing);
+    // The hidden row sits on a grey background; the other does not.
+    Iterable<Color?> inkColors(String id) => tester
+        .widgetList<Ink>(find.descendant(
+            of: find.byKey(Key('table-row-$id')), matching: find.byType(Ink)))
+        .map((ink) => (ink.decoration as BoxDecoration?)?.color);
+    expect(inkColors('ws-later'), contains(TaskStyle.hiddenRow));
+    expect(inkColors('ws-untimed'), isNot(contains(TaskStyle.hiddenRow)));
+    await hover(tester, 'ws-later');
+    // The icon shows the state: crossed out = hidden, plain = visible.
+    Icon eye(String id) => tester.widget<Icon>(find.descendant(
+        of: find.byKey(Key('task-hide-$id')), matching: find.byType(Icon)));
+    expect(eye('ws-later').icon, Icons.visibility_off);
+    expect(eye('ws-untimed').icon, Icons.visibility);
+    await tester.tap(find.byKey(const Key('task-hide-ws-later')));
+    expect(hides, ['ws-later']);
+    expect(opens, isEmpty);
   });
 
   testWidgets('a hidden pencil is still reachable by touch', (tester) async {

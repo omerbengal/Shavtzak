@@ -568,6 +568,9 @@ abstract class DatabaseInterface {
   /// Complete or reopen a task that has no subtasks (task managers and assignees)
   Future<void> setTaskComplete(String taskId, bool isComplete);
 
+  /// Hide a task from team members, or show it again (managers only)
+  Future<void> setTaskHidden(String taskId, bool isHidden);
+
   /// Save the assignees' status note; an empty text clears it
   Future<void> setTaskAssigneeUpdate(String taskId, String text);
 

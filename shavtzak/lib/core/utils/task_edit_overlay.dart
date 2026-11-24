@@ -11,6 +11,7 @@ bool sameTaskEdit(TaskItem a, TaskItem b) {
   const list = ListEquality<String>();
   return a.stageId == b.stageId &&
       a.order == b.order &&
+      a.isHidden == b.isHidden &&
       a.title == b.title &&
       a.description == b.description &&
       (a.assemblyTime ?? '') == (b.assemblyTime ?? '') &&

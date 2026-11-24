@@ -75,6 +75,7 @@ import {
   TaskError,
   applyAssigneeUpdate,
   applySetComplete,
+  applySetHidden,
   applySubtaskToggle,
   applyTaskEdit,
   buildNewTask,
@@ -6107,7 +6108,7 @@ async function executeMutation(
           existing,
           input,
           {now, actor: taskActor},
-          {allowStageMove: true},
+          {allowStageMove: true, applyHidden: true},
         ),
         async (transaction, existing, next) => {
           await requireWritableEventInTransaction(transaction, collections, next.eventId);
@@ -6225,6 +6226,27 @@ async function executeMutation(
       );
       await writeAuditLog(db, collections, actor, operation, 'task', taskId, taskAuditDetails(after, {
         isComplete,
+      }), {
+        before,
+        after,
+      });
+      return {ok: true};
+    }
+
+    case 'task.setHidden': {
+      // A manager hides a task from team members, or shows it again.
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const taskId = requireString(payload['taskId'], 'taskId');
+      const isHidden = requireBooleanField(payload['isHidden'], 'isHidden');
+      const now = Timestamp.now();
+      const {before, after} = await mutateTaskInTransaction(
+        collections,
+        taskId,
+        (existing) => applySetHidden(existing, isHidden, {now, actor: taskActor}),
+      );
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, taskAuditDetails(after, {
+        isHidden,
       }), {
         before,
         after,

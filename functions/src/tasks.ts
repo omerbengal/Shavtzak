@@ -56,6 +56,11 @@ export type TaskDoc = {
   isComplete: boolean;
   completedAt: Timestamp | null;
   completedById: string | null;
+  /**
+   * Hidden from team members until a manager shows it (a task that may not
+   * happen). Managers still see it, marked. Missing on older documents = false.
+   */
+  isHidden: boolean;
   createdAt: Timestamp;
   createdById: string;
   updatedAt: Timestamp;
@@ -143,6 +148,7 @@ export function taskFromStored(id: string, raw: Record<string, unknown>): TaskDo
     isComplete: raw['isComplete'] === true,
     completedAt: storedTimestamp(raw['completedAt']),
     completedById: storedString(raw['completedById']),
+    isHidden: raw['isHidden'] === true,
     createdAt: storedTimestamp(raw['createdAt']) ?? Timestamp.fromMillis(0),
     createdById: typeof raw['createdById'] === 'string' ? raw['createdById'] : '',
     updatedAt: storedTimestamp(raw['updatedAt']) ?? Timestamp.fromMillis(0),
@@ -327,6 +333,8 @@ export function buildNewTask(input: Record<string, unknown>, ctx: TaskContext): 
     isComplete: false,
     completedAt: null,
     completedById: null,
+    // The form can create a task already hidden; an Excel file never does.
+    isHidden: input['isHidden'] === true,
     createdAt: ctx.now,
     createdById: ctx.actor.memberId,
     updatedAt: ctx.now,
@@ -337,7 +345,7 @@ export function applyTaskEdit(
   existing: TaskDoc,
   input: Record<string, unknown>,
   ctx: TaskContext,
-  options: {allowStageMove?: boolean} = {},
+  options: {allowStageMove?: boolean; applyHidden?: boolean} = {},
 ): TaskDoc {
   if (input['id'] !== existing.id) {
     throw new TaskError(400, 'מזהה משימה לא תואם');
@@ -365,9 +373,23 @@ export function applyTaskEdit(
       ...subtask,
       isDone: doneById.get(subtask.id) ?? false,
     })),
+    // Only the form's save (`task.update`) changes it, and only when it sends
+    // the key: an older client, or an Excel update, keeps the stored value.
+    isHidden: options.applyHidden === true && typeof input['isHidden'] === 'boolean'
+      ? input['isHidden']
+      : existing.isHidden,
     updatedAt: ctx.now,
   };
   return withCompletion(existing, next, existing.isComplete, ctx);
+}
+
+/** Hide a task from team members, or show it again (`task.setHidden`). */
+export function applySetHidden(
+  existing: TaskDoc,
+  isHidden: boolean,
+  ctx: TaskContext,
+): TaskDoc {
+  return {...existing, isHidden, updatedAt: ctx.now};
 }
 
 export function applySubtaskToggle(

@@ -58,6 +58,10 @@ class _FakeTaskRepository extends Fake implements TaskRepository {
       _record('complete:$taskId:$isComplete');
 
   @override
+  Future<void> setTaskHidden(String taskId, bool isHidden) =>
+      _record('hidden:$taskId:$isHidden');
+
+  @override
   Future<void> setTaskAssigneeUpdate(String taskId, String text) =>
       _record('note:$taskId:$text');
 
@@ -305,6 +309,10 @@ void main() {
         ),
         await dispatch(
           bloc,
+          (c) => SetTaskHidden(taskId: 't1', isHidden: true, completion: c),
+        ),
+        await dispatch(
+          bloc,
           (c) => CreateStage(buildStage(id: 's1'), completion: c),
         ),
         await dispatch(
@@ -330,6 +338,7 @@ void main() {
         'subtask:t1:a:true',
         'complete:t1:false',
         'note:t1:בטיפול',
+        'hidden:t1:true',
         'insertStage:s1',
         'updateStage:s1',
         'deleteStage:s1',
