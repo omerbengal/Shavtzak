@@ -92,23 +92,14 @@ class _NativeTextFieldState extends State<_NativeTextField> {
         }).toJS);
     // The element is in the page only after this frame; measure then, and
     // once more after the font arrives.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _markParentRtl();
-      _fit();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
     Future<void>.delayed(const Duration(milliseconds: 300), _fit);
     Future<void>.delayed(const Duration(milliseconds: 1200), _fit);
   }
 
-  // Safari takes a form control's direction partly from its container: the
-  // platform view's wrapper is marked right to left too.
-  void _markParentRtl() {
-    var node = _el?.parentElement;
-    for (var i = 0; i < 2 && node != null; i++) {
-      node.setAttribute('dir', 'rtl');
-      node = node.parentElement;
-    }
-  }
+  // Only the field itself is marked right to left. Never its wrappers: the
+  // one above it is Flutter's own glass pane, and dir="rtl" there moved the
+  // whole canvas off the screen (a white page, 25/11/2026).
 
   String get _value {
     final el = _el;
