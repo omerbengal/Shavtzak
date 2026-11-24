@@ -2894,6 +2894,14 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> setTaskHidden(String taskId, bool isHidden) async {
+    await _invokeMutation(
+      'task.setHidden',
+      payload: {'taskId': taskId, 'isHidden': isHidden},
+    );
+  }
+
+  @override
   Future<void> setTaskAssigneeUpdate(String taskId, String text) async {
     await _invokeMutation(
       'task.setAssigneeUpdate',

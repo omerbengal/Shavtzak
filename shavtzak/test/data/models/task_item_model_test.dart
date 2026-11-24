@@ -144,6 +144,25 @@ void main() {
     });
   });
 
+  group('isHidden', () {
+    test('missing reads as visible; true reads as hidden', () {
+      expect(TaskItemModel.fromMap('t1', fullMap()).isHidden, isFalse);
+      expect(
+        TaskItemModel.fromMap('t1', {...fullMap(), 'isHidden': true}).isHidden,
+        isTrue,
+      );
+    });
+
+    test('is sent with the task', () {
+      expect(TaskItemModel.toMutationPayload(buildTask())['isHidden'], isFalse);
+      expect(
+        TaskItemModel.toMutationPayload(buildTask().copyWith(isHidden: true))[
+            'isHidden'],
+        isTrue,
+      );
+    });
+  });
+
   group('TaskItemModel.toMutationPayload', () {
     test('sends the editable fields only', () {
       final payload = TaskItemModel.toMutationPayload(buildTask(
@@ -169,6 +188,7 @@ void main() {
         'assemblyTime',
         'assigneeIds',
         'subtasks',
+        'isHidden',
       });
       expect(payload['id'], 't1');
       expect(payload['eventId'], 'e1');

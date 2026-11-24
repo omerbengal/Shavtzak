@@ -30,6 +30,10 @@ abstract final class TaskStyle {
   static const Color neutralText = Color(0xFF616161);
   static const Color faintText = Color(0xFF9E9E9E);
 
+  // A hidden task, as a manager sees it: a grey "מוסתרת" chip and a faded row.
+  static const Color hiddenChip = Color(0xFF757575);
+  static const double hiddenRowOpacity = 0.6;
+
   // The day calendar.
   static const double hourHeight = 56;
   static const double hourLabelWidth = 40;
@@ -132,7 +136,7 @@ abstract final class TaskStyle {
   static const double tableSubtasksWidth = 72;
 
   /// Room for the pencil and the bin, at the end of a manager's rows.
-  static const double tableActionsWidth = 96;
+  static const double tableActionsWidth = 144;
   static const double tableHeaderSize = 12.5;
   static const double tableCellGap = 8;
   static const double tableRowVerticalPadding = 8;

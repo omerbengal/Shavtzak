@@ -7,6 +7,7 @@ import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../task_style.dart';
+import 'hidden_task_badge.dart';
 import 'update_note_box.dart';
 
 final DateFormat _dateTimeFormat = DateFormat('dd/MM/yyyy HH:mm');
@@ -29,6 +30,7 @@ class TaskDetail extends StatelessWidget {
     required this.onEditUpdate,
     required this.onEdit,
     required this.onDelete,
+    required this.onToggleHidden,
     required this.onCallPhone,
   });
 
@@ -52,6 +54,7 @@ class TaskDetail extends StatelessWidget {
   final VoidCallback onEditUpdate;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onToggleHidden;
   final ValueChanged<String> onCallPhone;
 
   @override
@@ -132,6 +135,10 @@ class TaskDetail extends StatelessWidget {
             ),
           ),
         ),
+        if (task.isHidden) ...[
+          const SizedBox(width: 8),
+          HiddenTaskBadge(key: Key('task-detail-hidden-${task.id}')),
+        ],
         if (label != null) ...[
           const SizedBox(width: 8),
           Container(
@@ -151,6 +158,7 @@ class TaskDetail extends StatelessWidget {
           ),
         ],
         if (canManage) ...[
+          HideTaskButton(task: task, onPressed: onToggleHidden, compact: true),
           IconButton(
             key: Key('task-edit-${task.id}'),
             tooltip: 'עריכה',

@@ -159,6 +159,22 @@ class SetTaskComplete extends TaskEvent {
   List<Object?> get props => [taskId, isComplete];
 }
 
+/// Hide a task from team members, or show it again (managers only).
+class SetTaskHidden extends TaskEvent {
+  final String taskId;
+  final bool isHidden;
+  final CrudActionCompleter? completion;
+
+  const SetTaskHidden({
+    required this.taskId,
+    required this.isHidden,
+    this.completion,
+  });
+
+  @override
+  List<Object?> get props => [taskId, isHidden];
+}
+
 /// Save the assignees' status note. An empty [text] clears it.
 class SaveAssigneeUpdate extends TaskEvent {
   final String taskId;

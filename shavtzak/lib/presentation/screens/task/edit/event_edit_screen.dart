@@ -458,6 +458,7 @@ class _EventEditScreenState extends State<EventEditScreen>
         onReorder: _reorder,
         onCopyField: _copyField,
         onDeleteTask: deleteTask,
+        onToggleHidden: (task) => setHidden(task, !task.isHidden),
         onDeleteStage: deleteStage,
         onAddTask: (stage) => createTask(board.event, stage, user),
         highlightId: _highlightId,

@@ -6,6 +6,7 @@ import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
 import 'assignee_chips.dart';
+import 'hidden_task_badge.dart';
 import 'subtask_ticks.dart';
 import 'update_note_box.dart';
 
@@ -79,7 +80,8 @@ class TaskRow extends StatelessWidget {
       key: Key('task-row-${task.id}'),
       // A tap opens the task; only the arrow opens and folds subtasks.
       onTap: onOpen,
-      child: Padding(
+      // A hidden task (managers only see one) is drawn faded.
+      child: fadeIfHidden(task, Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(4, 6, 12, 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,7 +132,7 @@ class TaskRow extends StatelessWidget {
               ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -179,6 +181,10 @@ class TaskRow extends StatelessWidget {
               ),
             ),
           ),
+          if (task.isHidden) ...[
+            const SizedBox(width: 6),
+            HiddenTaskBadge(key: Key('task-row-hidden-${task.id}')),
+          ],
           if (isLate) ...[
             const SizedBox(width: 6),
             Container(

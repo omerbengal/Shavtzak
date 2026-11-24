@@ -105,4 +105,32 @@ void main() {
     expect(board.stageById('other'), isNull);
     expect(board.taskById('in')!.id, 'in');
   });
+
+  group('hidden tasks', () {
+    final hidden = buildTask(id: 'hidden', stage: stLunch, assemblyTime: '13:00')
+        .copyWith(isHidden: true);
+
+    test('a member board leaves them out; a manager board keeps them', () {
+      final tasks = [
+        buildTask(id: 'shown', stage: stWorkshops, assemblyTime: '15:00'),
+        hidden,
+      ];
+      final member = eventTaskBoard(sampleEvent,
+          stages: [stWorkshops, stLunch], tasks: tasks, includeHidden: false);
+      final manager = eventTaskBoard(sampleEvent,
+          stages: [stWorkshops, stLunch], tasks: tasks);
+      expect(ids(member.tasks), ['shown']);
+      expect(ids(manager.tasks), containsAll(['shown', 'hidden']));
+    });
+
+    test('they are never counted, nor listed as late or due soon', () {
+      final hiddenSoon = soon.copyWith(id: 'hs', isHidden: true);
+      expect(
+        taskProgress([done, late, hidden, hiddenSoon], sampleNow),
+        const TaskProgress(total: 2, done: 1, late: 1),
+      );
+      expect(ids(lateTasks([late, hidden], sampleNow)), ['late']);
+      expect(ids(dueSoonTasks([soon, hiddenSoon], sampleNow)), ['soon']);
+    });
+  });
 }

@@ -23,6 +23,7 @@ class EditContext {
     required this.onReorder,
     required this.onCopyField,
     required this.onDeleteTask,
+    required this.onToggleHidden,
     required this.onDeleteStage,
     required this.onAddTask,
     required this.highlightId,
@@ -54,6 +55,9 @@ class EditContext {
   /// [from]'s [field] was dragged onto [to]'s.
   final void Function(TaskItem from, TaskItem to, TaskField field) onCopyField;
   final ValueChanged<TaskItem> onDeleteTask;
+
+  /// Hides the task from team members, or shows it to them again.
+  final ValueChanged<TaskItem> onToggleHidden;
   final void Function(Stage stage, int taskCount) onDeleteStage;
   final ValueChanged<Stage> onAddTask;
 

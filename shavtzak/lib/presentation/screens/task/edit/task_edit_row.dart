@@ -4,6 +4,7 @@ import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../task_style.dart';
+import '../widgets/hidden_task_badge.dart';
 import 'edit_context.dart';
 import 'edit_rules.dart';
 import 'editable_value.dart';
@@ -77,8 +78,21 @@ class _TaskValues {
         value: task.title,
         wide: ctx.wide,
         sheetTitle: 'שם המשימה',
-        display: Text(task.title,
-            style: const TextStyle(fontWeight: FontWeight.w500)),
+        display: task.isHidden
+            ? Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(task.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: TaskStyle.faintText)),
+                  HiddenTaskBadge(key: Key('edit-task-hidden-${task.id}')),
+                ],
+              )
+            : Text(task.title,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
         validate: (value) => validateRequiredText(value, 'שם למשימה'),
         editor: (context, draft, onChanged, onSubmit) => TextValueEditor(
           initial: draft,
@@ -155,6 +169,10 @@ class _TaskValues {
             ctx.onDeleteTask(task);
             return;
           }
+          if (choice == 'hide') {
+            ctx.onToggleHidden(task);
+            return;
+          }
           final to = await pickStage(
             context,
             stages: ctx.stages,
@@ -162,8 +180,8 @@ class _TaskValues {
           );
           if (to != null) ctx.onMoveTask(task, to);
         },
-        itemBuilder: (context) => const [
-          PopupMenuItem(
+        itemBuilder: (context) => [
+          const PopupMenuItem(
             value: 'move',
             key: Key('edit-task-move'),
             child: ListTile(
@@ -173,6 +191,16 @@ class _TaskValues {
             ),
           ),
           PopupMenuItem(
+            value: 'hide',
+            key: const Key('edit-task-hide'),
+            child: ListTile(
+              leading: Icon(
+                  task.isHidden ? Icons.visibility : Icons.visibility_off),
+              title: Text(task.isHidden ? 'הצגה לצוות' : 'הסתרה מהצוות'),
+              dense: true,
+            ),
+          ),
+          const PopupMenuItem(
             value: 'delete',
             key: Key('edit-task-delete'),
             child: ListTile(

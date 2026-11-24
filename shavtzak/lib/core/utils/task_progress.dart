@@ -48,11 +48,14 @@ class EventTaskBoard extends Equatable {
   List<Object?> get props => [event, stages, tasks];
 }
 
-/// [event]'s board out of every stage and task.
+/// [event]'s board out of every stage and task. A team member's board
+/// ([includeHidden] false) leaves out the hidden tasks, so no screen of
+/// theirs ever shows one; a manager's keeps them, marked.
 EventTaskBoard eventTaskBoard(
   Event event, {
   required List<Stage> stages,
   required List<TaskItem> tasks,
+  bool includeHidden = true,
 }) {
   final eventStages = sortStages(
     stages.where((stage) => stage.eventId == event.id).toList(),
@@ -64,7 +67,9 @@ EventTaskBoard eventTaskBoard(
     tasks: sortTasks(
       tasks
           .where((task) =>
-              task.eventId == event.id && stageIds.contains(task.stageId))
+              task.eventId == event.id &&
+              stageIds.contains(task.stageId) &&
+              (includeHidden || !task.isHidden))
           .toList(),
     ),
   );
@@ -95,12 +100,15 @@ class TaskProgress extends Equatable {
   List<Object?> get props => [total, done, late, dueSoon];
 }
 
+/// A hidden task is never counted, also on a manager's screen, so a
+/// manager's numbers are the ones the team sees.
 TaskProgress taskProgress(Iterable<TaskItem> tasks, DateTime now) {
   var total = 0;
   var done = 0;
   var late = 0;
   var dueSoon = 0;
   for (final task in tasks) {
+    if (task.isHidden) continue;
     total++;
     if (task.isComplete) {
       done++;
@@ -134,18 +142,24 @@ String hebrewCount(int n, {required String one, required String many}) =>
     n == 1 ? one : '$n $many';
 
 /// The unfinished tasks whose due time has passed, longest overdue first.
+/// Hidden ones are left out, as in [taskProgress]'s counts.
 List<TaskItem> lateTasks(Iterable<TaskItem> tasks, DateTime now) => sortTasks(
       filterTasks(
-        tasks.toList(),
+        tasks.where((task) => !task.isHidden).toList(),
         now: now,
         statuses: const {TaskDueStatus.overdue},
       ),
     );
 
 /// The unfinished tasks reporting in the next half hour, soonest first.
+/// Hidden ones are left out, as in [taskProgress]'s counts.
 List<TaskItem> dueSoonTasks(Iterable<TaskItem> tasks, DateTime now) =>
     sortTasks(
-      filterTasks(tasks.toList(), now: now, dueWithin: taskDueSoonWindow),
+      filterTasks(
+        tasks.where((task) => !task.isHidden).toList(),
+        now: now,
+        dueWithin: taskDueSoonWindow,
+      ),
     );
 
 /// [task]'s assignees who are no longer assigned to its event, in the

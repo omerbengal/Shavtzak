@@ -42,6 +42,7 @@ void main() {
               onEditUpdate: () => calls.editUpdate++,
               onEdit: () => calls.edit++,
               onDelete: () => calls.delete++,
+              onToggleHidden: () => calls.toggleHidden++,
               onCallPhone: calls.phoneCalls.add,
             ),
           ),
@@ -381,6 +382,18 @@ void main() {
       expect(find.byType(PopupMenuButton<String>), findsNothing);
     });
   });
+
+  testWidgets('a hidden task shows its chip; the eye is for managers only',
+      (tester) async {
+    final task = buildTask().copyWith(isHidden: true);
+    await pumpDetail(tester, task);
+    expect(find.byKey(Key('task-detail-hidden-${task.id}')), findsOneWidget);
+    expect(find.byKey(Key('task-hide-${task.id}')), findsNothing);
+
+    final calls = await pumpDetail(tester, task, canManage: true);
+    await tester.tap(find.byKey(Key('task-hide-${task.id}')));
+    expect(calls.toggleHidden, 1);
+  });
 }
 
 class _Calls {
@@ -390,4 +403,5 @@ class _Calls {
   int editUpdate = 0;
   int edit = 0;
   int delete = 0;
+  int toggleHidden = 0;
 }

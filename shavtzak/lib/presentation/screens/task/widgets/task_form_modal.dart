@@ -125,6 +125,10 @@ class _TaskFormModalState extends State<_TaskFormModal> {
 
   String? _assemblyTimeError;
 
+  // Hidden from team members (a task that may not happen); managers only
+  // ever open this form.
+  late bool _isHidden = widget.existing?.isHidden ?? false;
+
   // Who is assigned, by id, in the order they were picked. The members
   // themselves are kept so that someone picked stays listed after they drop
   // out of the event's own list.
@@ -168,6 +172,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
             draft.controller.text.trim(),
           ],
       ],
+      _isHidden,
     ];
   }
 
@@ -306,6 +311,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
         subtasks: subtasks,
         assemblyTime: assemblyTime.isEmpty ? null : assemblyTime,
         assigneeIds: assigneeIds,
+        isHidden: _isHidden,
         // Placeholders: the backend stamps the real times.
         createdAt: widget.now,
         createdById: widget.currentUserId,
@@ -322,6 +328,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
         assemblyTime: assemblyTime.isEmpty ? null : assemblyTime,
         clearAssemblyTime: assemblyTime.isEmpty,
         assigneeIds: assigneeIds,
+        isHidden: _isHidden,
         event: widget.event,
         stage: widget.stage,
         assignees: assignees,
@@ -419,6 +426,8 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                           _buildAssignees(theme),
                           const SizedBox(height: 20),
                           _buildSubtasks(theme),
+                          const SizedBox(height: 12),
+                          _buildHidden(theme),
                         ],
                       ),
                     ),
@@ -679,6 +688,21 @@ class _TaskFormModalState extends State<_TaskFormModal> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildHidden(ThemeData theme) {
+    return CheckboxListTile(
+      key: const Key('task-form-hidden'),
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      title: const Text('משימה מוסתרת'),
+      subtitle: const Text('חברי הצוות לא יראו אותה, גם לא המשובצים אליה'),
+      secondary: const Icon(Icons.visibility_off),
+      value: _isHidden,
+      onChanged: _isSaving
+          ? null
+          : (value) => setState(() => _isHidden = value ?? false),
     );
   }
 

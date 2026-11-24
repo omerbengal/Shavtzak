@@ -16,6 +16,7 @@ void main() {
   late List<String> opens;
   late List<String> edits;
   late List<String> deletes;
+  late List<String> hides;
   late List<String> calls;
 
   Future<void> pumpTable(
@@ -34,6 +35,7 @@ void main() {
     opens = [];
     edits = [];
     deletes = [];
+    hides = [];
     calls = [];
     await tester.pumpWidget(MaterialApp(
       home: Directionality(
@@ -52,6 +54,7 @@ void main() {
               onOpen: (task) => opens.add(task.id),
               onEdit: (task) => edits.add(task.id),
               onDelete: (task) => deletes.add(task.id),
+              onToggleHidden: (task) => hides.add(task.id),
               onCallPhone: calls.add,
             ),
           ),
@@ -149,6 +152,18 @@ void main() {
     await pumpTable(tester, [tWsLater], canManage: false);
     expect(find.byKey(const Key('table-edit-ws-later')), findsNothing);
     expect(find.byKey(const Key('table-delete-ws-later')), findsNothing);
+  });
+
+  testWidgets('a hidden task carries the "מוסתרת" chip; the eye toggles it',
+      (tester) async {
+    await pumpTable(tester, [tWsLater.copyWith(isHidden: true), tWsUntimed]);
+
+    expect(find.byKey(const Key('table-hidden-ws-later')), findsOneWidget);
+    expect(find.byKey(const Key('table-hidden-ws-untimed')), findsNothing);
+    await hover(tester, 'ws-later');
+    await tester.tap(find.byKey(const Key('task-hide-ws-later')));
+    expect(hides, ['ws-later']);
+    expect(opens, isEmpty);
   });
 
   testWidgets('a hidden pencil is still reachable by touch', (tester) async {

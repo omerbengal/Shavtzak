@@ -311,6 +311,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
                       event,
                       stages: loaded!.stages,
                       tasks: loaded.tasks,
+                      includeHidden: canManageTasks(user),
                     );
               return Scaffold(
                 appBar: _buildAppBar(event, user),
@@ -918,6 +919,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             onEditUpdate: () => editUpdate(task),
             onEdit: () => editTask(task, board.event, stage, user),
             onDelete: () => deleteTask(task),
+            onToggleHidden: () => setHidden(task, !task.isHidden),
             onCallPhone: callPhone,
           ),
         );
@@ -1078,6 +1080,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
       onEdit: (task) =>
           editTask(task, board.event, board.stageById(task.stageId)!, user),
       onDelete: deleteTask,
+      onToggleHidden: (task) => setHidden(task, !task.isHidden),
       onCallPhone: callPhone,
     );
   }

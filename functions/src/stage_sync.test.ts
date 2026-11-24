@@ -41,7 +41,7 @@ function storedTask(id: string, stageId: string, overrides: Partial<TaskDoc> = {
     id, eventId: 'e1', stageId, title: `משימה ${id}`, description: '', subtasks: [],
     assemblyTime: null, order: null, assigneeIds: ['m1'],
     assigneeUpdate: null, assigneeUpdateAt: null, assigneeUpdateById: null, assigneeUpdateByName: null,
-    isComplete: false, completedAt: null, completedById: null,
+    isComplete: false, completedAt: null, completedById: null, isHidden: false,
     createdAt: earlier, createdById: 'm-old', updatedAt: earlier,
     ...overrides,
   };
@@ -104,6 +104,19 @@ test('an updated task keeps its ticks, completion and note', () => {
   assert.equal(task.isComplete, true);
   assert.equal(task.completedById, 'm1');
   assert.equal(task.assigneeUpdate, 'בדרך');
+});
+
+test('an Excel update never changes whether a task is hidden', () => {
+  const built = sync({
+    tasks: {update: [
+      taskInput('t1', 's1', {isHidden: false}),
+      taskInput('t2', 's1', {isHidden: true}),
+    ]},
+  }, [storedStage('s1')], [
+    storedTask('t1', 's1', {isHidden: true}),
+    storedTask('t2', 's1'),
+  ]);
+  assert.deepEqual(built.taskWrites.map((task) => task.isHidden), [true, false]);
 });
 
 test('a new subtask on a complete task reopens it', () => {
