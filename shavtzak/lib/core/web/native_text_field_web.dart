@@ -47,7 +47,20 @@ class _NativeTextFieldState extends State<_NativeTextField> {
       widget.multiline ? _lineHeight * 3 + _padV * 2 : _lineHeight + _padV * 2;
 
   void _created(Object element) {
-    final el = element as web.HTMLElement;
+    // The platform view's root is OUR own <div>, marked right to left, with
+    // the field inside it. iOS Safari draws the caret of an empty line (and
+    // of an empty field) from the direction of the field's container, not the
+    // field's own dir, so a dir="rtl" field inside Flutter's LTR wrapper still
+    // put that caret on the left (25/11/2026). This div is ours, so marking it
+    // is safe (unlike Flutter's glass pane, see below).
+    final host = element as web.HTMLElement;
+    host.setAttribute('dir', 'rtl');
+    host.setAttribute('lang', 'he');
+    host.style.cssText = 'width:100%;height:100%;margin:0;padding:0;'
+        'direction:rtl;text-align:right;';
+    final el = web.document.createElement(
+        widget.multiline ? 'textarea' : 'input') as web.HTMLElement;
+    host.appendChild(el);
     _el = el;
     final color = Theme.of(context).colorScheme.onSurface;
     String css(Color c) =>
@@ -62,7 +75,7 @@ class _NativeTextFieldState extends State<_NativeTextField> {
     el.style.cssText = 'width:100%;height:100%;box-sizing:border-box;'
         'margin:0;border:0;outline:none;resize:none;background:transparent;'
         'padding:${_padV}px 12px;font:16px/${_lineHeight}px Rubik, -apple-system, sans-serif;'
-        'color:${css(color)};caret-color:#1565C0;direction:rtl;unicode-bidi:isolate;text-align:right;'
+        'color:${css(color)};caret-color:#1565C0;direction:rtl;text-align:right;'
         '-webkit-user-select:text;user-select:text;touch-action:pan-y;'
         'overflow-y:${widget.multiline ? 'auto' : 'hidden'};';
     if (widget.multiline) {
@@ -132,7 +145,7 @@ class _NativeTextFieldState extends State<_NativeTextField> {
         borderRadius: BorderRadius.circular(4),
       ),
       child: HtmlElementView.fromTagName(
-        tagName: widget.multiline ? 'textarea' : 'input',
+        tagName: 'div',
         onElementCreated: _created,
       ),
     );
