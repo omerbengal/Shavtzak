@@ -52,14 +52,17 @@ class _NativeTextFieldState extends State<_NativeTextField> {
     final color = Theme.of(context).colorScheme.onSurface;
     String css(Color c) =>
         'rgba(${(c.r * 255).round()},${(c.g * 255).round()},${(c.b * 255).round()},${c.a})';
+    // Right to left like the app's own fields (Directionality is RTL in the
+    // whole app): every line starts at the right, whatever its first letter.
     el.setAttribute('dir', 'rtl');
+    el.setAttribute('lang', 'he');
     el.setAttribute('data-native-field', '');
     if (widget.hint != null) el.setAttribute('placeholder', widget.hint!);
     // 16px: below it the iPhone zooms the page in on focus.
     el.style.cssText = 'width:100%;height:100%;box-sizing:border-box;'
         'margin:0;border:0;outline:none;resize:none;background:transparent;'
         'padding:${_padV}px 12px;font:16px/${_lineHeight}px Rubik, -apple-system, sans-serif;'
-        'color:${css(color)};caret-color:#1565C0;direction:rtl;text-align:right;'
+        'color:${css(color)};caret-color:#1565C0;direction:rtl;unicode-bidi:isolate;text-align:right;'
         '-webkit-user-select:text;user-select:text;touch-action:pan-y;'
         'overflow-y:${widget.multiline ? 'auto' : 'hidden'};';
     if (widget.multiline) {
@@ -87,7 +90,24 @@ class _NativeTextFieldState extends State<_NativeTextField> {
             widget.onSubmit();
           }
         }).toJS);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+    // The element is in the page only after this frame; measure then, and
+    // once more after the font arrives.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markParentRtl();
+      _fit();
+    });
+    Future<void>.delayed(const Duration(milliseconds: 300), _fit);
+    Future<void>.delayed(const Duration(milliseconds: 1200), _fit);
+  }
+
+  // Safari takes a form control's direction partly from its container: the
+  // platform view's wrapper is marked right to left too.
+  void _markParentRtl() {
+    var node = _el?.parentElement;
+    for (var i = 0; i < 2 && node != null; i++) {
+      node.setAttribute('dir', 'rtl');
+      node = node.parentElement;
+    }
   }
 
   String get _value {
@@ -114,7 +134,8 @@ class _NativeTextFieldState extends State<_NativeTextField> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: _height,
+      // + the 2 px border above and below.
+      height: _height + 4,
       decoration: BoxDecoration(
         border: Border.all(color: scheme.primary, width: 2),
         borderRadius: BorderRadius.circular(4),
