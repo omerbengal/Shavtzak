@@ -41,7 +41,9 @@ Widget greyIfHidden(TaskItem task, Widget child) => task.isHidden
     ? Ink(color: TaskStyle.hiddenRow, child: child)
     : child;
 
-/// The eye button that hides a task or shows it again.
+/// The eye button that hides a task or shows it again. The icon is the
+/// task's state, not the action (Omer, msg 6357): a plain eye = visible to
+/// the team, a crossed-out eye = hidden. The tooltip names the action.
 class HideTaskButton extends StatelessWidget {
   const HideTaskButton({
     super.key,
@@ -61,7 +63,7 @@ class HideTaskButton extends StatelessWidget {
       tooltip: task.isHidden ? 'הצגה לצוות' : 'הסתרה מהצוות',
       visualDensity: compact ? VisualDensity.compact : null,
       icon: Icon(
-        task.isHidden ? Icons.visibility : Icons.visibility_off,
+        task.isHidden ? Icons.visibility_off : Icons.visibility,
         color: TaskStyle.hiddenChip,
       ),
       onPressed: onPressed,

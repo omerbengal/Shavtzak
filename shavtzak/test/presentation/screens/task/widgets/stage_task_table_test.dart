@@ -168,6 +168,11 @@ void main() {
     expect(inkColors('ws-later'), contains(TaskStyle.hiddenRow));
     expect(inkColors('ws-untimed'), isNot(contains(TaskStyle.hiddenRow)));
     await hover(tester, 'ws-later');
+    // The icon shows the state: crossed out = hidden, plain = visible.
+    Icon eye(String id) => tester.widget<Icon>(find.descendant(
+        of: find.byKey(Key('task-hide-$id')), matching: find.byType(Icon)));
+    expect(eye('ws-later').icon, Icons.visibility_off);
+    expect(eye('ws-untimed').icon, Icons.visibility);
     await tester.tap(find.byKey(const Key('task-hide-ws-later')));
     expect(hides, ['ws-later']);
     expect(opens, isEmpty);

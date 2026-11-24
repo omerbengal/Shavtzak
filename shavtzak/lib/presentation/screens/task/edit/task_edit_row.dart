@@ -194,8 +194,9 @@ class _TaskValues {
             value: 'hide',
             key: const Key('edit-task-hide'),
             child: ListTile(
+              // The icon is the state (msg 6357); the text is the action.
               leading: Icon(
-                  task.isHidden ? Icons.visibility : Icons.visibility_off),
+                  task.isHidden ? Icons.visibility_off : Icons.visibility),
               title: Text(task.isHidden ? 'הצגה לצוות' : 'הסתרה מהצוות'),
               dense: true,
             ),
