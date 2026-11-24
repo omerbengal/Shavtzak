@@ -459,7 +459,9 @@ class _TaskCardBox extends StatelessWidget {
         TaskStyle.editTaskCardGap / 2,
       ),
       decoration: BoxDecoration(
-        color: highlighted ? TaskStyle.editHighlight : TaskStyle.editTaskCard,
+        color: highlighted
+            ? TaskStyle.editHighlight
+            : (task.isHidden ? TaskStyle.hiddenRow : TaskStyle.editTaskCard),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: TaskStyle.editTaskCardBorder),
         boxShadow: TaskStyle.editTaskCardShadow,

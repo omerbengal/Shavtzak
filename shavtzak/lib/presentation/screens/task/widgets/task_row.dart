@@ -80,8 +80,8 @@ class TaskRow extends StatelessWidget {
       key: Key('task-row-${task.id}'),
       // A tap opens the task; only the arrow opens and folds subtasks.
       onTap: onOpen,
-      // A hidden task (managers only see one) is drawn faded.
-      child: fadeIfHidden(task, Padding(
+      // A hidden task (only managers get one) sits on a grey background.
+      child: greyIfHidden(task, Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(4, 6, 12, 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,

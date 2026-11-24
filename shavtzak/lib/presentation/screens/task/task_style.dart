@@ -30,9 +30,10 @@ abstract final class TaskStyle {
   static const Color neutralText = Color(0xFF616161);
   static const Color faintText = Color(0xFF9E9E9E);
 
-  // A hidden task, as a manager sees it: a grey "מוסתרת" chip and a faded row.
+  // A hidden task, as a manager sees it: a grey "מוסתרת" chip on a grey row
+  // (Omer, 25/11/2026: "רקע אפור - שיהיה ברור שהן מוסתרות").
   static const Color hiddenChip = Color(0xFF757575);
-  static const double hiddenRowOpacity = 0.6;
+  static const Color hiddenRow = Color(0xFFE0E0E0);
 
   // The day calendar.
   static const double hourHeight = 56;

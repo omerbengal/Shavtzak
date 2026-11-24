@@ -164,8 +164,8 @@ class _TableRowState extends State<_TableRow> {
       child: InkWell(
         key: Key('table-row-${task.id}'),
         onTap: widget.onOpen,
-        // A hidden task (managers only see one) is drawn faded.
-        child: fadeIfHidden(task, Padding(
+        // A hidden task (only managers get one) sits on a grey background.
+        child: greyIfHidden(task, Padding(
           padding: const EdgeInsets.symmetric(
               vertical: TaskStyle.tableRowVerticalPadding),
           child: Row(

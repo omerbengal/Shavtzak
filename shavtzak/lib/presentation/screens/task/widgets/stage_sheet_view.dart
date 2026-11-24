@@ -84,9 +84,15 @@ class StageSheetBody extends StatelessWidget {
     required this.onAddTask,
     required this.onCallPhone,
     this.tableBuilder,
+    this.taskCount,
   });
 
   final Stage stage;
+
+  /// How many tasks the stage lists, hidden ones included for a manager;
+  /// null = [progress]'s total. A stage whose only tasks are hidden still
+  /// lists them (the counts leave hidden tasks out).
+  final int? taskCount;
   final List<TaskItem> rows;
 
   /// On a wide screen the rows are one table, built by this.
@@ -117,7 +123,7 @@ class StageSheetBody extends StatelessWidget {
             children: _buildSections(theme),
           ),
         ),
-        if (progress.total == 0)
+        if ((taskCount ?? progress.total) == 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(

@@ -35,9 +35,10 @@ class HiddenTaskBadge extends StatelessWidget {
   }
 }
 
-/// A hidden task's row is drawn faded, so it reads as "not out yet".
-Widget fadeIfHidden(TaskItem task, Widget child) => task.isHidden
-    ? Opacity(opacity: TaskStyle.hiddenRowOpacity, child: child)
+/// A hidden task's row sits on a grey background, so it reads as "not out
+/// yet" at a glance. [Ink] keeps the row's tap ripple visible on it.
+Widget greyIfHidden(TaskItem task, Widget child) => task.isHidden
+    ? Ink(color: TaskStyle.hiddenRow, child: child)
     : child;
 
 /// The eye button that hides a task or shows it again.

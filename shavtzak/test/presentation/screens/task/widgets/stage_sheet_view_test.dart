@@ -62,6 +62,7 @@ void main() {
     TaskProgress withProgress = progress,
     bool missingOnly = false,
     bool canManage = false,
+    int? taskCount,
   }) {
     adds = 0;
     switches = [];
@@ -78,6 +79,7 @@ void main() {
               stage: of ?? stage,
               rows: rows,
               progress: withProgress,
+              taskCount: taskCount,
               missingOnly: missingOnly,
               onSwitch: switches.add,
               rowBuilder: (task) => Text('row:${task.id}'),
@@ -182,6 +184,22 @@ void main() {
     expect(find.text('אין עדיין משימות בשלב זה'), findsOneWidget);
     expect(find.byKey(const Key('stage-switch')), findsNothing);
     expect(find.byKey(const Key('stage-add-task-rooms')), findsOneWidget);
+  });
+
+  testWidgets('a stage whose only tasks are hidden still lists them (manager)',
+      (tester) async {
+    final hidden = buildTask(id: 'h1').copyWith(isHidden: true);
+    await pumpBody(
+      tester,
+      of: stRooms,
+      rows: [hidden],
+      withProgress: const TaskProgress(),
+      taskCount: 1,
+      canManage: true,
+    );
+
+    expect(find.text('אין עדיין משימות בשלב זה'), findsNothing);
+    expect(find.text('row:h1'), findsOneWidget);
   });
 
   testWidgets('a missing list with nothing in it says the stage is done',

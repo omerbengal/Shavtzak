@@ -978,6 +978,46 @@ void main() {
     });
   });
 
+  group('hidden tasks (Omer, msg 6352)', () {
+    Future<void> pumpHidden(WidgetTester tester, TeamMember user) async {
+      final tasks = [
+        for (final task in sampleTasks)
+          task.id == 'dinner-guests' ? task.copyWith(isHidden: true) : task,
+      ];
+      final harness = await pumpEventTasks(
+        tester,
+        user: user,
+        size: tallPhoneSize,
+        clock: () => sampleNow,
+        board: sampleTaskBoard(tasks: tasks),
+      );
+      repository = harness.repository;
+      if (!canManageTasks(user)) await openTab(tester, 'כל השלבים');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage-block-dinner')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a manager sees them in כל השלבים, on a grey row with the chip',
+        (tester) async {
+      await pumpHidden(tester, admin);
+
+      expect(inSheet(find.byKey(const Key('task-row-dinner-guests'))),
+          findsOneWidget);
+      expect(inSheet(find.byKey(const Key('task-row-hidden-dinner-guests'))),
+          findsOneWidget);
+      expect(find.text('אין עדיין משימות בשלב זה'), findsNothing);
+    });
+
+    testWidgets('a team member never gets them, also when assigned',
+        (tester) async {
+      await pumpHidden(tester, sDana);
+
+      expect(find.byKey(const Key('task-row-dinner-guests')), findsNothing);
+      expect(find.text('אין עדיין משימות בשלב זה'), findsOneWidget);
+    });
+  });
+
   group('stages on the calendar', () {
     /// Opens the arrival stage from its block on the calendar.
     Future<void> openArrival(WidgetTester tester) async {

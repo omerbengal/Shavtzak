@@ -160,6 +160,13 @@ void main() {
 
     expect(find.byKey(const Key('table-hidden-ws-later')), findsOneWidget);
     expect(find.byKey(const Key('table-hidden-ws-untimed')), findsNothing);
+    // The hidden row sits on a grey background; the other does not.
+    Iterable<Color?> inkColors(String id) => tester
+        .widgetList<Ink>(find.descendant(
+            of: find.byKey(Key('table-row-$id')), matching: find.byType(Ink)))
+        .map((ink) => (ink.decoration as BoxDecoration?)?.color);
+    expect(inkColors('ws-later'), contains(TaskStyle.hiddenRow));
+    expect(inkColors('ws-untimed'), isNot(contains(TaskStyle.hiddenRow)));
     await hover(tester, 'ws-later');
     await tester.tap(find.byKey(const Key('task-hide-ws-later')));
     expect(hides, ['ws-later']);

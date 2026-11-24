@@ -947,6 +947,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
             stage: stage,
             rows: rows,
             progress: taskProgress(stageTasks, _now),
+            taskCount: stageTasks.length,
             missingOnly: missingOnly,
             onSwitch: (missing) =>
                 _openSheet(StageView(stageId, missingOnly: missing)),
