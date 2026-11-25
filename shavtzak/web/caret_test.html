@@ -3,7 +3,8 @@
 <style>body{font:16px -apple-system,sans-serif;margin:16px;background:#fff;color:#222}textarea{width:100%;height:96px;box-sizing:border-box;font:16px/24px -apple-system,sans-serif;padding:10px 12px;border:2px solid #1565C0;border-radius:4px;caret-color:#1565C0}h3{margin:18px 0 6px;font-size:16px}</style></head><body>
 <p>בכל שדה: לכתוב מילה, ללחוץ Enter, ולראות באיזה צד הסמן בשורה הריקה.</p>
 <h3>1. שדה רגיל מימין לשמאל, בלי שום טריק</h3><textarea dir="rtl"></textarea>
-<h3>2. עם תו כיוון בלתי נראה בכל שורה חדשה (כמו באפליקציה עכשיו)</h3><textarea dir="rtl" id="rlm"></textarea>
+<h3>2. עם תו כיוון בלתי נראה בכל שורה חדשה (הגרסה הקודמת)</h3><textarea dir="rtl" id="rlm"></textarea>
+<h3>4. כמו 2 + תיקון נגיעה (כמו באפליקציה עכשיו): Enter כמה פעמים, ואז לגעת באצבע בשורה ריקה למעלה</h3><textarea dir="rtl" id="tap"></textarea>
 <h3>3. text-align:start</h3><textarea dir="rtl" style="text-align:start"></textarea>
 <script>
 var t=document.getElementById('rlm');
@@ -11,4 +12,20 @@ t.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();t.setRangeText('\n\u200F',t.selectionStart,t.selectionEnd,'end');}
   else if(e.key==='Backspace'&&t.selectionStart===t.selectionEnd&&t.value.substring(t.selectionStart-2,t.selectionStart)==='\n\u200F'){e.preventDefault();var s=t.selectionStart;t.setRangeText('',s-2,s,'end');}
 });
+var R='\u200F',a=document.getElementById('tap'),comp=false;
+function mk(p){return p?R+p.split('\n').join('\n'+R):'';}
+function mo(p,i){if(!p)return 0;return i+1+(p.substring(0,i).split('\n').length-1);}
+function norm(){if(comp)return;var t=a.value,s=a.selectionStart,e=a.selectionEnd;
+ function pa(i){return i-(t.substring(0,i).split(R).length-1);}
+ var p=t.split(R).join(''),w=mk(p),ws=mo(p,pa(s)),we=mo(p,pa(e));
+ if(w!==t){a.value=w;a.setSelectionRange(ws,we);}else if(ws!==s||we!==e)a.setSelectionRange(ws,we);}
+a.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();a.setRangeText('\n'+R,a.selectionStart,a.selectionEnd,'end');norm();}
+  else if(e.key==='Backspace'&&a.selectionStart===a.selectionEnd&&a.value.substring(a.selectionStart-2,a.selectionStart)==='\n'+R){e.preventDefault();var s=a.selectionStart;a.setRangeText('',s-2,s,'end');norm();}
+});
+a.addEventListener('input',norm);
+a.addEventListener('compositionstart',function(){comp=true;});
+a.addEventListener('compositionend',function(){comp=false;norm();});
+document.addEventListener('selectionchange',function(){if(document.activeElement===a)norm();});
+['focus','touchend','mouseup','click'].forEach(function(ty){a.addEventListener(ty,function(){norm();setTimeout(norm,60);});});
 </script></body></html>

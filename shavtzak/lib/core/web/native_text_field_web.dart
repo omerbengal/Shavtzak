@@ -80,8 +80,7 @@ class _NativeTextFieldState extends State<_NativeTextField> {
         '-webkit-user-select:text;user-select:text;touch-action:pan-y;'
         'overflow-y:${widget.multiline ? 'auto' : 'hidden'};';
     if (widget.multiline) {
-      (el as web.HTMLTextAreaElement).value =
-          widget.initial.replaceAll('\n', '\n$_rlm');
+      (el as web.HTMLTextAreaElement).value = _marked(widget.initial);
     } else {
       final input = el as web.HTMLInputElement;
       input.type = 'text';
@@ -91,6 +90,7 @@ class _NativeTextFieldState extends State<_NativeTextField> {
     el.addEventListener(
         'input',
         ((web.Event _) {
+          if (widget.multiline) _normalize();
           widget.onChanged(_value);
           _fit();
         }).toJS);
@@ -113,17 +113,55 @@ class _NativeTextFieldState extends State<_NativeTextField> {
       el.addEventListener(
           'beforeinput',
           ((web.InputEvent e) {
-            if (e.inputType != 'insertLineBreak' &&
-                e.inputType != 'insertParagraph') {
+            final ta = el as web.HTMLTextAreaElement;
+            final start = ta.selectionStart;
+            final end = ta.selectionEnd;
+            if (e.inputType == 'insertLineBreak' ||
+                e.inputType == 'insertParagraph') {
+              e.preventDefault();
+              ta.setRangeText('\n$_rlm', start, end, 'end');
+            } else if (e.inputType == 'deleteContentBackward' &&
+                start == end &&
+                start >= 2 &&
+                ta.value.substring(start - 2, start) == '\n$_rlm') {
+              // Backup of the Backspace keydown (a keyboard that sends none):
+              // the mark and the line break go together.
+              e.preventDefault();
+              ta.setRangeText('', start - 2, start, 'end');
+            } else {
               return;
             }
-            final ta = el as web.HTMLTextAreaElement;
-            e.preventDefault();
-            ta.setRangeText(
-                '\n$_rlm', ta.selectionStart, ta.selectionEnd, 'end');
+            _normalize();
             widget.onChanged(_value);
             _fit();
           }).toJS);
+      el.addEventListener('compositionstart',
+          ((web.Event _) => _composing = true).toJS);
+      el.addEventListener(
+          'compositionend',
+          ((web.Event _) {
+            _composing = false;
+            _normalize();
+          }).toJS);
+      // A tap on an earlier empty line puts the caret BEFORE that line's
+      // mark, where iOS draws it on the left (25/11/2026, Omer's iPhone:
+      // Enter several times, then a finger back up to an empty line). Every
+      // caret move is checked, and a caret in front of a line's mark moves
+      // just after it, where it is drawn on the right.
+      _onSelection = ((web.Event _) {
+        if (web.document.activeElement == _el) _normalize();
+      }).toJS;
+      web.document.addEventListener('selectionchange', _onSelection);
+      // iOS may settle the caret only after the touch ends: check again then.
+      for (final type in ['focus', 'touchend', 'mouseup', 'click']) {
+        el.addEventListener(
+            type,
+            ((web.Event _) {
+              _normalize();
+              Future<void>.delayed(
+                  const Duration(milliseconds: 60), _normalize);
+            }).toJS);
+      }
     }
     // The element is in the page only after this frame; measure then, and
     // once more after the font arrives.
@@ -155,6 +193,52 @@ class _NativeTextFieldState extends State<_NativeTextField> {
   // takes one press.
   static const String _rlm = '\u200F';
 
+  bool _composing = false;
+  JSFunction? _onSelection;
+
+  // [plain] with a mark opening every line, the first one too (an empty first
+  // line above others needs it as much). An empty field stays empty, so its
+  // hint still shows.
+  static String _marked(String plain) =>
+      plain.isEmpty ? '' : _rlm + plain.replaceAll('\n', '\n$_rlm');
+
+  // Where offset [p] of the plain text lands in _marked(plain): after its
+  // line's mark, never before it.
+  static int _markedOffset(String plain, int p) {
+    if (plain.isEmpty) return 0;
+    return p + 1 + '\n'.allMatches(plain.substring(0, p)).length;
+  }
+
+  // Makes the textarea exactly _marked(its text) and moves a caret (or a
+  // selection end) sitting before a line's mark to just after it. Does
+  // nothing when both already hold, so it is safe on every selectionchange.
+  void _normalize() {
+    final el = _el;
+    if (el == null || !widget.multiline || _composing || !mounted) return;
+    final ta = el as web.HTMLTextAreaElement;
+    final text = ta.value;
+    final start = ta.selectionStart.clamp(0, text.length);
+    final end = ta.selectionEnd.clamp(0, text.length);
+    int plainAt(int i) => i - _rlm.allMatches(text.substring(0, i)).length;
+    final plain = text.replaceAll(_rlm, '');
+    final want = _marked(plain);
+    final ws = _markedOffset(plain, plainAt(start));
+    final we = _markedOffset(plain, plainAt(end));
+    if (want != text) {
+      ta.value = want;
+      ta.setSelectionRange(ws, we);
+    } else if (ws != start || we != end) {
+      ta.setSelectionRange(ws, we);
+    }
+  }
+
+  @override
+  void dispose() {
+    final f = _onSelection;
+    if (f != null) web.document.removeEventListener('selectionchange', f);
+    super.dispose();
+  }
+
   bool _rtlLineMark(web.KeyboardEvent e) {
     if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return false;
     final ta = _el as web.HTMLTextAreaElement;
@@ -171,6 +255,7 @@ class _NativeTextFieldState extends State<_NativeTextField> {
     } else {
       return false;
     }
+    _normalize();
     widget.onChanged(_value);
     _fit();
     return true;
