@@ -37,6 +37,7 @@ class AppTextField extends StatefulWidget {
     this.decoration = const InputDecoration(),
     this.style,
     this.cursorColor,
+    this.textDirection,
     this.textAlign = TextAlign.start,
     this.autofocus = false,
     this.readOnly = false,
@@ -63,6 +64,11 @@ class AppTextField extends StatefulWidget {
   final InputDecoration? decoration;
   final TextStyle? style;
   final Color? cursorColor;
+
+  /// The typed text's direction only (an e-mail is left to right); the
+  /// label, icons and hint keep the surrounding [Directionality]. Null =
+  /// the surrounding one.
+  final TextDirection? textDirection;
   final TextAlign textAlign;
   final bool autofocus;
   final bool readOnly;
@@ -212,6 +218,7 @@ class _AppTextFieldState extends State<AppTextField> {
       decoration: decoration,
       style: widget.style,
       cursorColor: widget.cursorColor,
+      textDirection: widget.textDirection,
       textAlign: widget.textAlign,
       autofocus: widget.autofocus,
       readOnly: widget.readOnly,
@@ -265,7 +272,7 @@ class _AppTextFieldState extends State<AppTextField> {
     ValueChanged<String> changed,
   ) {
     final theme = Theme.of(context);
-    final direction = Directionality.of(context);
+    final direction = widget.textDirection ?? Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     // As TextField: the theme's body text, then the field's own style.
     var style = theme.textTheme.bodyLarge!.merge(widget.style);

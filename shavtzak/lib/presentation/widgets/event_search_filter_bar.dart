@@ -6,6 +6,7 @@ import '../../core/debug/search_action_logger.dart';
 import '../bloc/category/category_bloc.dart';
 import '../bloc/category/category_state.dart';
 import '../screens/event/widgets/category_filter_modal.dart';
+import 'app_text_field.dart';
 
 /// Reusable "search + category filter" bar, mirroring the `/admin/events` bar.
 ///
@@ -107,7 +108,7 @@ class _EventSearchFilterBarState extends State<EventSearchFilterBar> {
       padding: widget.padding,
       child: Directionality(
         textDirection: TextDirection.rtl,
-        child: TextField(
+        child: AppTextField(
           controller: _controller,
           decoration: InputDecoration(
             hintText: widget.hintText,

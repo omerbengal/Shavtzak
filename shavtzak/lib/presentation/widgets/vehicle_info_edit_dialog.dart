@@ -11,6 +11,7 @@ import '../../core/debug/logger.dart';
 import '../../core/services/utilities_service.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/rtl_text_field_utils.dart';
+import 'app_text_field.dart';
 
 /// Dialog for editing user's vehicle information
 class VehicleInfoEditDialog extends StatefulWidget {
@@ -202,7 +203,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                   },
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                AppTextField(
                   controller: _modelController,
                   focusNode: _modelFocusNode,
                   decoration: const InputDecoration(
@@ -218,7 +219,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                   },
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                AppTextField(
                   controller: _colorController,
                   focusNode: _colorFocusNode,
                   decoration: const InputDecoration(
