@@ -1,31 +1,65 @@
 <!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>בדיקת סמן</title>
-<style>body{font:16px -apple-system,sans-serif;margin:16px;background:#fff;color:#222}textarea{width:100%;height:96px;box-sizing:border-box;font:16px/24px -apple-system,sans-serif;padding:10px 12px;border:2px solid #1565C0;border-radius:4px;caret-color:#1565C0}h3{margin:18px 0 6px;font-size:16px}</style></head><body>
-<p>בכל שדה: לכתוב מילה, ללחוץ Enter, ולראות באיזה צד הסמן בשורה הריקה.</p>
-<h3>1. שדה רגיל מימין לשמאל, בלי שום טריק</h3><textarea dir="rtl"></textarea>
-<h3>2. עם תו כיוון בלתי נראה בכל שורה חדשה (הגרסה הקודמת)</h3><textarea dir="rtl" id="rlm"></textarea>
-<h3>4. כמו 2 + תיקון נגיעה (כמו באפליקציה עכשיו): Enter כמה פעמים, ואז לגעת באצבע בשורה ריקה למעלה</h3><textarea dir="rtl" id="tap"></textarea>
-<h3>3. text-align:start</h3><textarea dir="rtl" style="text-align:start"></textarea>
+<style>
+body{font:16px -apple-system,sans-serif;margin:16px;background:#fff;color:#222}
+.f{width:100%;min-height:120px;box-sizing:border-box;font:16px/24px -apple-system,sans-serif;padding:10px 12px;border:2px solid #1565C0;border-radius:4px;caret-color:#1565C0;background:#fff;color:#222;outline:none}
+textarea.f{height:120px;resize:none}
+h3{margin:22px 0 6px;font-size:16px}h3 b{display:inline-block;min-width:28px;background:#1565C0;color:#fff;border-radius:4px;text-align:center;margin-left:6px}
+.ce>div{direction:rtl;text-align:right}
+</style></head><body>
+<p><b>הבדיקה בכל תיבה:</b> לכתוב מילה, Enter 3 פעמים, ואז לגעת באצבע בשורה ריקה <b>למעלה</b>. באיזה צד הסמן?</p>
+
+<h3><b>1</b>שדה רגיל, בלי טריק (ביקורת)</h3><textarea class="f" dir="rtl"></textarea>
+<h3><b>2</b>שדה רגיל + יישור לימין מפורש</h3><textarea class="f" dir="rtl" style="text-align:right"></textarea>
+<h3><b>3</b>כיוון אוטומטי (dir=auto)</h3><textarea class="f" dir="auto"></textarea>
+<h3><b>4</b>unicode-bidi: plaintext</h3><textarea class="f" dir="rtl" style="unicode-bidi:plaintext;text-align:right"></textarea>
+<h3><b>5</b>-webkit-rtl-ordering: logical</h3><textarea class="f" dir="rtl" style="-webkit-rtl-ordering:logical;text-align:right"></textarea>
+<h3><b>6</b>תו RLM בכל שורה + תיקון נגיעה מאוחר (אחרי שהאייפון קובע את הסמן)</h3><textarea class="f" dir="rtl" data-mark="&#x200F;" data-k="1" data-late="1"></textarea>
+<h3><b>7</b>תו ALM (ערבי) בכל שורה + תיקון נגיעה מאוחר</h3><textarea class="f" dir="rtl" data-mark="&#x061C;" data-k="1" data-late="1"></textarea>
+<h3><b>8</b>שני תווי RLM בכל שורה, הסמן ביניהם + תיקון מאוחר</h3><textarea class="f" dir="rtl" data-mark="&#x200F;&#x200F;" data-k="1" data-late="1"></textarea>
+<h3><b>9</b>תו RLE בכל שורה + תיקון מאוחר</h3><textarea class="f" dir="rtl" data-mark="&#x202B;" data-k="1" data-late="1"></textarea>
+<h3><b>10</b>תיבה שאינה שדה (contenteditable), כל שורה בלוק נפרד מימין לשמאל</h3><div class="f ce" dir="rtl" contenteditable="true" data-ce="1"><div><br></div></div>
+<h3><b>11</b>כמו 10, טקסט נקי בלבד (plaintext-only)</h3><div class="f" dir="rtl" style="text-align:right;white-space:pre-wrap" contenteditable="plaintext-only"></div>
+<h3><b>12</b>כמו 10 + unicode-bidi: plaintext לכל שורה</h3><div class="f ce" dir="rtl" contenteditable="true" data-ce="1" data-pt="1"><div><br></div></div>
+
 <script>
-var t=document.getElementById('rlm');
-t.addEventListener('keydown',function(e){
-  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();t.setRangeText('\n\u200F',t.selectionStart,t.selectionEnd,'end');}
-  else if(e.key==='Backspace'&&t.selectionStart===t.selectionEnd&&t.value.substring(t.selectionStart-2,t.selectionStart)==='\n\u200F'){e.preventDefault();var s=t.selectionStart;t.setRangeText('',s-2,s,'end');}
+// Boxes 6-9: an invisible mark M at the start of every line; a caret at a line's start goes to offset k inside M.
+document.querySelectorAll('textarea[data-mark]').forEach(function(a){
+  var M=a.getAttribute('data-mark'),k=+a.getAttribute('data-k'),late=a.hasAttribute('data-late'),comp=false;
+  var chars=M.split('').filter(function(c,i,s){return s.indexOf(c)===i;});
+  function strip(t){chars.forEach(function(c){t=t.split(c).join('');});return t;}
+  function cnt(t){return t.length-strip(t).length;}
+  function mk(p){return M+p.split('\n').join('\n'+M);}
+  function toMarked(p,i){var L=p.substring(0,i).split('\n').length-1;var col0=(i===0||p.charAt(i-1)==='\n');
+    return i+L*M.length+(col0?k:M.length);}
+  function norm(){if(comp)return;var t=a.value,s=a.selectionStart,e=a.selectionEnd;
+    var p=strip(t),ps=s-cnt(t.substring(0,s)),pe=e-cnt(t.substring(0,e));
+    var w=mk(p),ws=toMarked(p,ps),we=toMarked(p,pe);
+    if(w!==t){a.value=w;a.setSelectionRange(ws,we);}else if(ws!==s||we!==e)a.setSelectionRange(ws,we);}
+  a.addEventListener('keydown',function(e){
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();a.setRangeText('\n'+M,a.selectionStart,a.selectionEnd,'end');norm();}
+    else if(e.key==='Backspace'&&a.selectionStart===a.selectionEnd){var t=a.value,s=a.selectionStart,p=strip(t),ps=s-cnt(t.substring(0,s));
+      if(ps>0&&p.charAt(ps-1)==='\n'){e.preventDefault();p=p.substring(0,ps-1)+p.substring(ps);a.value=mk(p);var c=toMarked(p,ps-1);a.setSelectionRange(c,c);}}
+  });
+  a.addEventListener('input',norm);
+  a.addEventListener('compositionstart',function(){comp=true;});
+  a.addEventListener('compositionend',function(){comp=false;norm();});
+  document.addEventListener('selectionchange',function(){if(document.activeElement===a)norm();});
+  ['focus','touchend','mouseup','click'].forEach(function(ty){a.addEventListener(ty,function(){
+    norm();requestAnimationFrame(norm);
+    if(late){[0,50,150,300,500].forEach(function(ms){setTimeout(norm,ms);});}
+  });});
 });
-var R='\u200F',a=document.getElementById('tap'),comp=false;
-function mk(p){return p?R+p.split('\n').join('\n'+R):'';}
-function mo(p,i){if(!p)return 0;return i+1+(p.substring(0,i).split('\n').length-1);}
-function norm(){if(comp)return;var t=a.value,s=a.selectionStart,e=a.selectionEnd;
- function pa(i){return i-(t.substring(0,i).split(R).length-1);}
- var p=t.split(R).join(''),w=mk(p),ws=mo(p,pa(s)),we=mo(p,pa(e));
- if(w!==t){a.value=w;a.setSelectionRange(ws,we);}else if(ws!==s||we!==e)a.setSelectionRange(ws,we);}
-a.addEventListener('keydown',function(e){
-  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();a.setRangeText('\n'+R,a.selectionStart,a.selectionEnd,'end');norm();}
-  else if(e.key==='Backspace'&&a.selectionStart===a.selectionEnd&&a.value.substring(a.selectionStart-2,a.selectionStart)==='\n'+R){e.preventDefault();var s=a.selectionStart;a.setRangeText('',s-2,s,'end');norm();}
+// Boxes 10 / 12: every line block gets dir=rtl (and plaintext bidi in 12).
+document.querySelectorAll('[data-ce]').forEach(function(d){
+  var pt=d.hasAttribute('data-pt');
+  function fix(){
+    if(!d.firstElementChild){d.innerHTML='<div><br></div>';}
+    Array.prototype.forEach.call(d.childNodes,function(n){
+      if(n.nodeType===3&&n.textContent.length){var w=document.createElement('div');d.insertBefore(w,n);w.appendChild(n);n=w;}
+      if(n.nodeType===1){n.setAttribute('dir','rtl');if(pt)n.style.unicodeBidi='plaintext';}
+    });
+  }
+  d.addEventListener('input',fix);fix();
 });
-a.addEventListener('input',norm);
-a.addEventListener('compositionstart',function(){comp=true;});
-a.addEventListener('compositionend',function(){comp=false;norm();});
-document.addEventListener('selectionchange',function(){if(document.activeElement===a)norm();});
-['focus','touchend','mouseup','click'].forEach(function(ty){a.addEventListener(ty,function(){norm();setTimeout(norm,60);});});
 </script></body></html>
