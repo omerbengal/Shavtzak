@@ -38,6 +38,8 @@ class NativeEditable extends StatefulWidget {
     this.onSubmitted,
     this.onSubmitShortcut,
     this.onFocusChanged,
+    this.submitKeepsFocus = false,
+    this.onBackspaceWhenEmpty,
   });
 
   final TextEditingController controller;
@@ -65,6 +67,15 @@ class NativeEditable extends StatefulWidget {
   /// Ctrl/Cmd+Enter in several lines (Enter itself starts a new line).
   final VoidCallback? onSubmitShortcut;
   final ValueChanged<bool>? onFocusChanged;
+
+  /// Enter calls [onSubmitted] and nothing more: the focus stays put until
+  /// the caller moves it (a list that adds a line under this one and moves
+  /// the caret there). Leaving the field in between would let an iPhone
+  /// close its keyboard.
+  final bool submitKeepsFocus;
+
+  /// Backspace in an empty field (a list line that removes itself).
+  final VoidCallback? onBackspaceWhenEmpty;
 
   @override
   State<NativeEditable> createState() => _NativeEditableState();
@@ -478,6 +489,14 @@ class _NativeEditableState extends State<NativeEditable> {
   // ------------------------------------------------------------------ keys
 
   void _onKey(web.KeyboardEvent e) {
+    if (e.key == 'Backspace' &&
+        widget.onBackspaceWhenEmpty != null &&
+        !e.isComposing &&
+        _read().isEmpty) {
+      e.preventDefault();
+      widget.onBackspaceWhenEmpty!();
+      return;
+    }
     if (e.key != 'Enter' || e.isComposing) return;
     if (widget.multiline) {
       if ((e.ctrlKey || e.metaKey) && widget.onSubmitShortcut != null) {
@@ -493,7 +512,7 @@ class _NativeEditableState extends State<NativeEditable> {
     }
     e.preventDefault();
     widget.onSubmitted?.call(_read());
-    if (!mounted) return;
+    if (!mounted || widget.submitKeepsFocus) return;
     // As Flutter's own field does after its action.
     switch (widget.textInputAction) {
       case TextInputAction.next:

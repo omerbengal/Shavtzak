@@ -10,6 +10,7 @@ import '../../../../core/utils/task_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/stage.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../event/widgets/event_time_field.dart';
 import 'discard_changes_dialog.dart';
 
@@ -383,7 +384,7 @@ class _StageFormModalState extends State<_StageFormModal> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          TextField(
+                          AppTextField(
                             key: const Key('stage-form-title'),
                             controller: _titleController,
                             focusNode: _titleFocus,
@@ -407,7 +408,7 @@ class _StageFormModalState extends State<_StageFormModal> {
                             label: 'דרישות מהמלון ולוגיסטיקה',
                           ),
                           const SizedBox(height: 16),
-                          TextField(
+                          AppTextField(
                             key: const Key('stage-form-location'),
                             controller: _locationController,
                             focusNode: _locationFocus,
@@ -483,7 +484,7 @@ class _StageFormModalState extends State<_StageFormModal> {
     required FocusNode focusNode,
     required String label,
   }) {
-    return TextField(
+    return AppTextField(
       key: Key(key),
       controller: controller,
       focusNode: focusNode,
@@ -628,7 +629,7 @@ class _StageFormModalState extends State<_StageFormModal> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: TextField(
+                      child: AppTextField(
                         key: Key('stage-form-contact-name-$index'),
                         controller: draft.name,
                         focusNode: draft.nameFocus,
@@ -659,7 +660,7 @@ class _StageFormModalState extends State<_StageFormModal> {
                   ],
                 ),
                 const SizedBox(height: 6),
-                TextField(
+                AppTextField(
                   key: Key('stage-form-contact-role-$index'),
                   controller: draft.role,
                   focusNode: draft.roleFocus,

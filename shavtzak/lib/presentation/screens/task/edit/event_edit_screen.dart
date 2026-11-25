@@ -22,6 +22,7 @@ import '../../../bloc/user_selection/user_selection_state.dart';
 import '../task_screen_actions.dart';
 import '../task_style.dart';
 import '../tasks_place.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../../widgets/edge_slide_over.dart';
 import 'edit_context.dart';
 import 'event_assignments_quick_view.dart';
@@ -559,7 +560,7 @@ class _EventEditScreenState extends State<EventEditScreen>
     final filterMembers = assigneeFilterMembers(board, _eventAssignees);
     final search = SizedBox(
       width: wide ? 240 : double.infinity,
-      child: TextField(
+      child: AppTextField(
         key: const Key('edit-search'),
         decoration: InputDecoration(
           isDense: true,

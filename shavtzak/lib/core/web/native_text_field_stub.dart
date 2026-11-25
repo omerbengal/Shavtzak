@@ -29,6 +29,8 @@ class NativeEditable extends StatelessWidget {
     this.onSubmitted,
     this.onSubmitShortcut,
     this.onFocusChanged,
+    this.submitKeepsFocus = false,
+    this.onBackspaceWhenEmpty,
   });
 
   final TextEditingController controller;
@@ -51,6 +53,8 @@ class NativeEditable extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
   final VoidCallback? onSubmitShortcut;
   final ValueChanged<bool>? onFocusChanged;
+  final bool submitKeepsFocus;
+  final VoidCallback? onBackspaceWhenEmpty;
 
   @override
   Widget build(BuildContext context) =>

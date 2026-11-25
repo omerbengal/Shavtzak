@@ -362,8 +362,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('edit-search-clear')), findsNothing);
     expect(find.byKey(const Key('edit-stage-dinner')), findsOneWidget);
-    final field =
-        tester.widget<TextField>(find.byKey(const Key('edit-search')));
+    // The search is an AppTextField: in tests a plain TextField inside it.
+    final field = tester.widget<TextField>(find.descendant(
+        of: find.byKey(const Key('edit-search')),
+        matching: find.byType(TextField)));
     expect(field.controller!.text, isEmpty);
   });
 
@@ -605,6 +607,10 @@ void main() {
     expect(editor.left, moreOrLessEquals(cell.left, epsilon: 1));
     expect(editor.right, moreOrLessEquals(assigneesCell.right, epsilon: 1));
 
+    // No caret on open (an iPhone would show no keyboard for it): a tap
+    // puts it in a line, and Escape from there closes the editor.
+    await tester.tap(find.byKey(const Key('edit-subtask-0')));
+    await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('edit-value-editor')), findsNothing);

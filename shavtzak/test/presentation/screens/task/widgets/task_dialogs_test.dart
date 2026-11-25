@@ -539,7 +539,7 @@ void main() {
         'task-form-description',
         'task-form-subtask-0',
       ]) {
-        final field = tester.widget<TextField>(find.byKey(Key(key)));
+        final field = textFieldIn(tester, find.byKey(Key(key)));
         expect(
           field.focusNode,
           isA<RtlCursorFixedFocusNode>(),
@@ -550,7 +550,7 @@ void main() {
       // A subtask row added later gets one too.
       await tester.tap(find.byKey(const Key('task-form-add-subtask')));
       await tester.pump();
-      final added = tester.widget<TextField>(
+      final added = textFieldIn(tester, 
         find.byKey(const Key('task-form-subtask-1')),
       );
       expect(added.focusNode, isA<RtlCursorFixedFocusNode>());
@@ -776,7 +776,7 @@ void main() {
         expect(row('m1'), findsOneWidget);
         expect(row('m2'), findsOneWidget);
         expect(row('m4'), findsOneWidget);
-        expect(tester.widget<TextField>(search).controller!.text, isEmpty);
+        expect(textFieldIn(tester, search).controller!.text, isEmpty);
       });
 
       testWidgets('a search that matches nobody says so', (tester) async {
@@ -797,7 +797,7 @@ void main() {
         await toggleAssignees(tester);
         await toggleAssignees(tester);
 
-        expect(tester.widget<TextField>(search).controller!.text, isEmpty);
+        expect(textFieldIn(tester, search).controller!.text, isEmpty);
         expect(row('m1'), findsOneWidget);
       });
 
@@ -833,7 +833,7 @@ void main() {
           await tester.tap(row('m2'));
           await tester.pump();
 
-          final field = tester.widget<TextField>(search);
+          final field = textFieldIn(tester, search);
           expect(field.controller!.text, isEmpty);
           expect(field.focusNode!.hasFocus, isTrue);
           expect(isTicked(tester, 'm2'), isTrue);
@@ -855,7 +855,7 @@ void main() {
           await tester.tap(row('m2'));
           await tester.pump();
 
-          final field = tester.widget<TextField>(search);
+          final field = textFieldIn(tester, search);
           expect(field.controller!.text, isEmpty);
           expect(field.focusNode!.hasFocus, isTrue);
           expect(isTicked(tester, 'm2'), isFalse);
@@ -864,16 +864,20 @@ void main() {
         }
       });
 
-      testWidgets('opening the dropdown puts the cursor in its search',
+      testWidgets('opening the dropdown leaves the search unfocused',
           (tester) async {
+        // The field is built a frame after the tap: an iPhone opens no
+        // keyboard for a field focused then, so only a tap on it focuses it.
         await openSearch(tester);
         await tester.pump();
-        expect(tester.widget<TextField>(search).focusNode!.hasFocus, isTrue);
+        expect(textFieldIn(tester, search).focusNode!.hasFocus, isFalse);
       });
 
       testWidgets(
-          'picking with no search typed leaves the cursor in the search',
+          'picking with no search typed does not move the cursor into it',
           (tester) async {
+        // Only a typed search earns the caret back after a pick (a phone
+        // keyboard would otherwise pop up over the list).
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
         try {
           await openSearch(tester);
@@ -882,8 +886,8 @@ void main() {
           await tester.pump();
 
           expect(
-            tester.widget<TextField>(search).focusNode!.hasFocus,
-            isTrue,
+            textFieldIn(tester, search).focusNode!.hasFocus,
+            isFalse,
           );
         } finally {
           debugDefaultTargetPlatformOverride = null;
@@ -893,7 +897,7 @@ void main() {
       testWidgets('the search field carries the RTL caret fix', (tester) async {
         await openSearch(tester);
         expect(
-          tester.widget<TextField>(search).focusNode,
+          textFieldIn(tester, search).focusNode,
           isA<RtlCursorFixedFocusNode>(),
         );
       });
@@ -969,8 +973,7 @@ void main() {
         expect(form.closed, isFalse);
         expect(find.text('אין הרשאה ליצור משימות'), findsOneWidget);
         expect(
-          tester
-              .widget<TextField>(find.byKey(const Key('task-form-title')))
+          textFieldIn(tester, find.byKey(const Key('task-form-title')))
               .controller!
               .text,
           'כותרת',
@@ -1150,7 +1153,7 @@ void main() {
 
         expect(form.closed, isFalse);
         expect(find.text('שינויים לא נשמרו'), findsNothing);
-        expect(tester.widget<TextField>(title).controller!.text, 'כותרת');
+        expect(textFieldIn(tester, title).controller!.text, 'כותרת');
       });
 
       testWidgets('confirming the prompt closes the form without saving',
@@ -1228,7 +1231,7 @@ void main() {
       await openUpdate(tester, initialText: 'בטיפול');
       await tester.pump();
 
-      final field = tester.widget<TextField>(text);
+      final field = textFieldIn(tester, text);
       expect(field.autofocus, isFalse);
       expect(field.focusNode!.hasFocus, isFalse);
       expect(
@@ -1249,7 +1252,7 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      final field = tester.widget<TextField>(text);
+      final field = textFieldIn(tester, text);
       expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
       expect(
         field.controller!.selection,
@@ -1309,7 +1312,7 @@ void main() {
 
       expect(note.closed, isFalse);
       expect(find.text('אין הרשאה לעדכן את המשימה'), findsOneWidget);
-      expect(tester.widget<TextField>(text).controller!.text, 'בטיפול');
+      expect(textFieldIn(tester, text).controller!.text, 'בטיפול');
       expect(spinner, findsNothing);
       expect(tester.widget<FilledButton>(saveButton).enabled, isTrue);
     });
@@ -1326,3 +1329,9 @@ void main() {
     });
   });
 }
+
+/// The Flutter field inside [finder]: an `AppTextField` (Flutter's own field
+/// in tests) or a plain `TextField`.
+TextField textFieldIn(WidgetTester tester, Finder finder) =>
+    tester.widget<TextField>(find.descendant(
+        of: finder, matching: find.byType(TextField), matchRoot: true));

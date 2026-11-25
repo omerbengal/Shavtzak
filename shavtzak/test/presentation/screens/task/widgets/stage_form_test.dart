@@ -291,11 +291,11 @@ void main() {
 
       await tester.enterText(phone, '0501234567');
       await tester.pump();
-      expect(tester.widget<TextField>(phone).controller!.text, '050-1234567');
+      expect(textFieldIn(tester, phone).controller!.text, '050-1234567');
 
       await tester.enterText(phone, 'abc');
       await tester.pump();
-      expect(tester.widget<TextField>(phone).controller!.text, '');
+      expect(textFieldIn(tester, phone).controller!.text, '');
     });
 
     testWidgets('name and phone sit side by side, the role below them',
@@ -361,7 +361,7 @@ void main() {
     testWidgets('starts from the stage and saves only once something changed',
         (tester) async {
       final form = await openForm(tester, existing: existing);
-      expect(tester.widget<TextField>(title).controller!.text, 'קליטה');
+      expect(textFieldIn(tester, title).controller!.text, 'קליטה');
       expect(saveEnabled(tester), isFalse);
 
       await tester.enterText(title, 'קליטה ורישום');
@@ -473,10 +473,16 @@ void main() {
       'stage-form-contact-role-0',
     ]) {
       expect(
-        tester.widget<TextField>(find.byKey(Key(key))).focusNode,
+        textFieldIn(tester, find.byKey(Key(key))).focusNode,
         isA<RtlCursorFixedFocusNode>(),
         reason: key,
       );
     }
   });
 }
+
+/// The Flutter field inside [finder]: an `AppTextField` (Flutter's own field
+/// in tests) or a plain `TextField`.
+TextField textFieldIn(WidgetTester tester, Finder finder) =>
+    tester.widget<TextField>(find.descendant(
+        of: finder, matching: find.byType(TextField), matchRoot: true));
