@@ -351,6 +351,22 @@ void main() {
     expect(find.byKey(const Key('edit-stage-dinner')), findsNothing);
   });
 
+  testWidgets('the search X clears the query and brings every stage back',
+      (tester) async {
+    await pump(tester);
+    expect(find.byKey(const Key('edit-search-clear')), findsNothing);
+    await tester.enterText(find.byKey(const Key('edit-search')), 'ערכות');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-stage-dinner')), findsNothing);
+    await tester.tap(find.byKey(const Key('edit-search-clear')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-search-clear')), findsNothing);
+    expect(find.byKey(const Key('edit-stage-dinner')), findsOneWidget);
+    final field =
+        tester.widget<TextField>(find.byKey(const Key('edit-search')));
+    expect(field.controller!.text, isEmpty);
+  });
+
   testWidgets('back returns to the event screen', (tester) async {
     await pump(tester);
     // arrow_back is mirrored under RTL, so it points right: the Hebrew back.

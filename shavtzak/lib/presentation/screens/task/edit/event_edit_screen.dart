@@ -69,6 +69,7 @@ class _EventEditScreenState extends State<EventEditScreen>
   StreamSubscription<List<TeamMember>>? _assigneesSubscription;
 
   String _query = '';
+  final TextEditingController _search = TextEditingController();
   String? _assigneeFilter;
   String? _highlightId;
   Timer? _highlightTimer;
@@ -100,6 +101,7 @@ class _EventEditScreenState extends State<EventEditScreen>
     _highlightTimer?.cancel();
     _edgeTimer?.cancel();
     _scroll.dispose();
+    _search.dispose();
     super.dispose();
   }
 
@@ -466,7 +468,6 @@ class _EventEditScreenState extends State<EventEditScreen>
         onDragMoved: _onDragMoved,
         onDragDone: _stopEdgeScroll,
       );
-      final filtering = _query.trim().isNotEmpty || _assigneeFilter != null;
       final now = actionTime;
       final cards = <Widget>[];
       for (final stage in board.stages) {
@@ -477,7 +478,10 @@ class _EventEditScreenState extends State<EventEditScreen>
           assigneeId: _assigneeFilter,
           now: now,
         );
-        if (filtering && visible.isEmpty) continue;
+        if (!showStageCard(stage, visible,
+            query: _query, assigneeId: _assigneeFilter)) {
+          continue;
+        }
         cards.add(StageEditCard(
           key: ValueKey('stage-card-${stage.id}'),
           stage: stage,
@@ -563,8 +567,20 @@ class _EventEditScreenState extends State<EventEditScreen>
           fillColor: Colors.white,
           hintText: 'חיפוש משימה, שלב או אחראי',
           prefixIcon: const Icon(Icons.search, size: 18),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  key: const Key('edit-search-clear'),
+                  tooltip: 'ניקוי',
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () {
+                    _search.clear();
+                    setState(() => _query = '');
+                  },
+                ),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(999)),
         ),
+        controller: _search,
         onChanged: (value) => setState(() => _query = value),
       ),
     );

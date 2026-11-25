@@ -1,5 +1,5 @@
-import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/task_progress.dart';
+import '../../../../core/utils/team_task_rules.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/stage.dart';
@@ -63,8 +63,61 @@ List<TeamMember> assigneeFilterMembers(
   return byId.values.toList()..sort((a, b) => a.name.compareTo(b.name));
 }
 
-/// The tasks of [stage] the filters keep. A stage whose title matches the
-/// query keeps all its tasks that pass the assignee filter.
+/// Everything the editing screen's search looks in for [stage], normalized
+/// like the team tasks search (case, Hebrew points, quotes): its title, its
+/// time, the hotel location, the hotel requirements, the notes and every
+/// contact (name, role, phone, the phone also as bare digits).
+String stageSearchText(Stage stage) => normalizeTeamTaskSearch([
+      stage.title,
+      stage.startTime ?? '',
+      stage.endTime ?? '',
+      stage.hotelLocation,
+      stage.requirements,
+      stage.notes,
+      for (final contact in stage.contacts) ...[
+        contact.name,
+        contact.role,
+        contact.phone,
+        _digits(contact.phone),
+      ],
+    ].join(' | '));
+
+/// Everything the editing screen's search looks in for [task]: its title,
+/// description, assembly time, subtasks, assignees' names and the
+/// assignees' update (its text and writer).
+String taskSearchText(TaskItem task) => normalizeTeamTaskSearch([
+      task.title,
+      task.description,
+      task.assemblyTime ?? '',
+      for (final subtask in task.subtasks) subtask.title,
+      for (final member in task.assignees) member.name,
+      task.assigneeUpdate ?? '',
+      task.assigneeUpdateByName ?? '',
+    ].join(' | '));
+
+String _digits(String text) => text.replaceAll(RegExp(r'[^0-9]'), '');
+
+/// Whether [text] (already a search text) holds [query]. A query of digits
+/// and dashes / spaces also matches the bare digits, so "050-123" finds a
+/// phone saved as 050123...
+bool _searchHits(String text, String query) {
+  final needle = normalizeTeamTaskSearch(query);
+  if (needle.isEmpty) return true;
+  if (text.contains(needle)) return true;
+  final digits = _digits(needle);
+  return RegExp(r'^[0-9\s\-+()]+$').hasMatch(needle) &&
+      digits.isNotEmpty &&
+      text.contains(digits);
+}
+
+/// Whether [stage]'s own text holds [query] (false for an empty query).
+bool stageMatchesSearch(Stage stage, String query) =>
+    normalizeTeamTaskSearch(query).isNotEmpty &&
+    _searchHits(stageSearchText(stage), query);
+
+/// The tasks of [stage] the filters keep. A stage whose own text matches the
+/// query keeps all its tasks that pass the assignee filter; otherwise only
+/// the tasks whose text matches.
 List<TaskItem> visibleStageTasks(
   EventTaskBoard board,
   Stage stage, {
@@ -72,17 +125,33 @@ List<TaskItem> visibleStageTasks(
   required String? assigneeId,
   required DateTime now,
 }) {
-  final tasks = board.tasksOf(stage.id);
-  final stageMatches = query.trim().isNotEmpty &&
-      normalizeForSearch(stage.title)
-          .toLowerCase()
-          .contains(normalizeForSearch(query.trim()).toLowerCase());
-  return filterTasks(
-    tasks,
+  final byAssignee = filterTasks(
+    board.tasksOf(stage.id),
     now: now,
-    query: stageMatches ? '' : query,
     onlyAssigneeId: assigneeId,
   );
+  if (normalizeTeamTaskSearch(query).isEmpty ||
+      stageMatchesSearch(stage, query)) {
+    return byAssignee;
+  }
+  return byAssignee
+      .where((task) => _searchHits(taskSearchText(task), query))
+      .toList();
+}
+
+/// Whether [stage]'s card shows while filtering, given the tasks it kept.
+/// A stage found by its own text shows even with no tasks, unless an
+/// assignee is picked (then only stages with that person's tasks show).
+bool showStageCard(
+  Stage stage,
+  List<TaskItem> visible, {
+  required String query,
+  required String? assigneeId,
+}) {
+  if (visible.isNotEmpty) return true;
+  final filtering = query.trim().isNotEmpty || assigneeId != null;
+  if (!filtering) return true;
+  return assigneeId == null && stageMatchesSearch(stage, query);
 }
 
 /// The members' first names, for the assignees cell.

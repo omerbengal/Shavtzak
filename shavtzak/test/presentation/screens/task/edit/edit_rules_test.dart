@@ -56,6 +56,83 @@ void main() {
     );
   });
 
+  group('the editing screen search', () {
+    final now = DateTime(2026, 1, 1);
+    final dana = buildMember(id: 'm1', name: 'דנה כהן');
+    final stage = buildStage(
+      title: 'קליטה',
+      notes: 'להביא שולחנות מהמחסן',
+      hotelLocation: 'לובי קומה 2',
+      requirements: 'מקרן וחשמל',
+      contacts: const [
+        StageContact(id: 'c', name: 'יוסי', role: 'אחראי משמרת', phone: '052-2010344'),
+      ],
+    );
+    final bus = buildTask(
+      id: 't1',
+      title: 'להזמין אוטובוס',
+      description: 'מהחניה הדרומית',
+      subtasks: const [Subtask(id: 's', title: 'לאשר מחיר', isDone: false)],
+      assemblyTime: '08:30',
+      assignees: [dana],
+      assigneeUpdate: 'הנהג מאשר',
+    );
+    final food = buildTask(
+      id: 't2',
+      title: 'ארוחת בוקר',
+      assigneeIds: const ['m2'],
+    );
+    final board = EventTaskBoard(
+      event: buildEvent(),
+      stages: [stage],
+      tasks: [bus, food],
+    );
+    List<String> visible(String query, {String? assignee}) => visibleStageTasks(
+          board,
+          stage,
+          query: query,
+          assigneeId: assignee,
+          now: now,
+        ).map((t) => t.id).toList();
+
+    test('part of a stage note, location, requirements or contact finds the whole stage', () {
+      for (final q in ['שולחנות מהמ', 'לובי', 'מקרן', 'יוסי', 'משמרת', '052-201', '0522010344']) {
+        expect(visible(q), ['t1', 't2'], reason: q);
+        expect(stageMatchesSearch(stage, q), isTrue, reason: q);
+      }
+    });
+
+    test('a task match shows only that task', () {
+      for (final q in ['אוטובוס', 'הדרומית', 'לאשר מחיר', 'דנה', '08:30', 'הנהג']) {
+        expect(visible(q), ['t1'], reason: q);
+      }
+      expect(visible('בוקר'), ['t2']);
+    });
+
+    test('ignores case, Hebrew points and quotes', () {
+      final quoted = buildStage(notes: 'תיאום עם צה"ל ו-Hotel');
+      expect(stageMatchesSearch(quoted, 'צהל'), isTrue);
+      expect(stageMatchesSearch(quoted, 'hotel'), isTrue);
+      expect(stageMatchesSearch(buildStage(notes: 'שׁוּלְחָן'), 'שולחן'), isTrue);
+    });
+
+    test('no match hides every task; an empty query keeps them all', () {
+      expect(visible('אין כזה'), isEmpty);
+      expect(visible('  '), ['t1', 't2']);
+    });
+
+    test('the assignee filter still applies to a stage match', () {
+      expect(visible('שולחנות', assignee: 'm2'), ['t2']);
+    });
+
+    test('a stage found by its own text shows even without tasks', () {
+      expect(showStageCard(stage, const [], query: 'שולחנות', assigneeId: null), isTrue);
+      expect(showStageCard(stage, const [], query: 'אין כזה', assigneeId: null), isFalse);
+      expect(showStageCard(stage, const [], query: 'שולחנות', assigneeId: 'm1'), isFalse);
+      expect(showStageCard(stage, const [], query: '', assigneeId: null), isTrue);
+    });
+  });
+
   group('edgeScrollSpeed', () {
     double speed(double y) => edgeScrollSpeed(
         pointerY: y, top: 100, bottom: 900, edge: 64, maxSpeed: 1200);
