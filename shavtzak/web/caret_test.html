@@ -1,0 +1,14 @@
+<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>בדיקת סמן</title>
+<style>body{font:16px -apple-system,sans-serif;margin:16px;background:#fff;color:#222}textarea{width:100%;height:96px;box-sizing:border-box;font:16px/24px -apple-system,sans-serif;padding:10px 12px;border:2px solid #1565C0;border-radius:4px;caret-color:#1565C0}h3{margin:18px 0 6px;font-size:16px}</style></head><body>
+<p>בכל שדה: לכתוב מילה, ללחוץ Enter, ולראות באיזה צד הסמן בשורה הריקה.</p>
+<h3>1. שדה רגיל מימין לשמאל, בלי שום טריק</h3><textarea dir="rtl"></textarea>
+<h3>2. עם תו כיוון בלתי נראה בכל שורה חדשה (כמו באפליקציה עכשיו)</h3><textarea dir="rtl" id="rlm"></textarea>
+<h3>3. text-align:start</h3><textarea dir="rtl" style="text-align:start"></textarea>
+<script>
+var t=document.getElementById('rlm');
+t.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();t.setRangeText('\n\u200F',t.selectionStart,t.selectionEnd,'end');}
+  else if(e.key==='Backspace'&&t.selectionStart===t.selectionEnd&&t.value.substring(t.selectionStart-2,t.selectionStart)==='\n\u200F'){e.preventDefault();var s=t.selectionStart;t.setRangeText('',s-2,s,'end');}
+});
+</script></body></html>

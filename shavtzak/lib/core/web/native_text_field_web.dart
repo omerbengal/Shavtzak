@@ -58,8 +58,9 @@ class _NativeTextFieldState extends State<_NativeTextField> {
     host.setAttribute('lang', 'he');
     host.style.cssText = 'width:100%;height:100%;margin:0;padding:0;'
         'direction:rtl;text-align:right;';
-    final el = web.document.createElement(
-        widget.multiline ? 'textarea' : 'input') as web.HTMLElement;
+    final el =
+        web.document.createElement(widget.multiline ? 'textarea' : 'input')
+            as web.HTMLElement;
     host.appendChild(el);
     _el = el;
     final color = Theme.of(context).colorScheme.onSurface;
@@ -79,7 +80,8 @@ class _NativeTextFieldState extends State<_NativeTextField> {
         '-webkit-user-select:text;user-select:text;touch-action:pan-y;'
         'overflow-y:${widget.multiline ? 'auto' : 'hidden'};';
     if (widget.multiline) {
-      (el as web.HTMLTextAreaElement).value = widget.initial;
+      (el as web.HTMLTextAreaElement).value =
+          widget.initial.replaceAll('\n', '\n$_rlm');
     } else {
       final input = el as web.HTMLInputElement;
       input.type = 'text';
@@ -101,8 +103,28 @@ class _NativeTextFieldState extends State<_NativeTextField> {
           if (submit) {
             e.preventDefault();
             widget.onSubmit();
+            return;
           }
+          if (widget.multiline && _rtlLineMark(e)) e.preventDefault();
         }).toJS);
+    // Backup for a keyboard that sends no Enter keydown: the line break
+    // itself, before the browser inserts it.
+    if (widget.multiline) {
+      el.addEventListener(
+          'beforeinput',
+          ((web.InputEvent e) {
+            if (e.inputType != 'insertLineBreak' &&
+                e.inputType != 'insertParagraph') {
+              return;
+            }
+            final ta = el as web.HTMLTextAreaElement;
+            e.preventDefault();
+            ta.setRangeText(
+                '\n$_rlm', ta.selectionStart, ta.selectionEnd, 'end');
+            widget.onChanged(_value);
+            _fit();
+          }).toJS);
+    }
     // The element is in the page only after this frame; measure then, and
     // once more after the font arrives.
     WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
@@ -118,8 +140,40 @@ class _NativeTextFieldState extends State<_NativeTextField> {
     final el = _el;
     if (el == null) return widget.initial;
     return widget.multiline
-        ? (el as web.HTMLTextAreaElement).value
+        ? (el as web.HTMLTextAreaElement).value.replaceAll(_rlm, '')
         : (el as web.HTMLInputElement).value;
+  }
+
+  // The iPhone draws the caret of an EMPTY line on the left even in a
+  // dir="rtl" textarea with text-align:right (25/11/2026, Omer's iPhone; the
+  // same page in WebKit on the PC puts it on the right, so it is iOS's own
+  // caret). An empty line has no letter to take a direction from, so every
+  // new line starts with an invisible right-to-left mark (U+200F): the line
+  // is then right to left and its caret sits on the right. The marks never
+  // leave the field (_value drops them). Backspace right after a mark that
+  // opens a line removes the mark and the line break together, so it still
+  // takes one press.
+  static const String _rlm = '\u200F';
+
+  bool _rtlLineMark(web.KeyboardEvent e) {
+    if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return false;
+    final ta = _el as web.HTMLTextAreaElement;
+    final start = ta.selectionStart;
+    final end = ta.selectionEnd;
+    final text = ta.value;
+    if (e.key == 'Enter' && !e.shiftKey) {
+      ta.setRangeText('\n$_rlm', start, end, 'end');
+    } else if (e.key == 'Backspace' &&
+        start == end &&
+        start >= 2 &&
+        text.substring(start - 2, start) == '\n$_rlm') {
+      ta.setRangeText('', start - 2, start, 'end');
+    } else {
+      return false;
+    }
+    widget.onChanged(_value);
+    _fit();
+    return true;
   }
 
   // A textarea grows with its text up to _maxHeight, then scrolls inside.
