@@ -37,10 +37,13 @@ class AppVersionService extends ChangeNotifier {
   static const String _whatsNewField = 'WhatsNew';
   static const String _storiesField = 'WhatsNewStories';
 
-  /// The version whose stories this browser already opened (Omer,
-  /// 20/11/2026, option A): every member sees the running version's stories
-  /// once, whatever refresh button brought them there (`storiesUnseen`).
-  static const String _storiesSeenKey = 'stories_seen_version';
+  /// The story files this browser already opened (Omer, 26/11/2026): each
+  /// story of the standing `WhatsNewStories` list shows once per browser.
+  static const String _storiesSeenFilesKey = 'stories_seen_files';
+
+  /// The old mark (until V5.6.7): the version whose stories were opened.
+  /// Read only, through `seenStoryFiles`.
+  static const String _legacyStoriesSeenKey = 'stories_seen_version';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -61,7 +64,7 @@ class AppVersionService extends ChangeNotifier {
   String? get remoteVersion => _remoteVersion;
   List<String> get whatsNewItems => List.unmodifiable(_whatsNewItems);
 
-  /// This version's feature stories (`WhatsNewStories`), every audience.
+  /// The standing feature stories list (`WhatsNewStories`), every audience.
   List<FeatureStory> get stories => _stories;
 
   /// `utilities/information` has been read at least once since sign-in.
@@ -242,31 +245,33 @@ class AppVersionService extends ChangeNotifier {
     WebHelper.reloadPage();
   }
 
-  /// True when this browser has not yet opened the stories of the version it
-  /// runs now (and the server confirms it: [remoteVersion] is it too, so a
-  /// browser waiting for a refresh sees nothing yet).
-  Future<bool> storiesUnseen() async {
+  /// Stories may open now: the server confirms the version this browser
+  /// runs, so a browser waiting for a refresh sees nothing yet.
+  bool get storiesMayOpen =>
+      storiesMayShow(cached: _cachedVersion, remote: _remoteVersion);
+
+  /// The story files this browser already opened, or null when the mark
+  /// cannot be read (then nothing opens).
+  Future<Set<String>?> seenStoryFilesHere() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return storiesUnseenFor(
-        seen: prefs.getString(_storiesSeenKey),
-        cached: _cachedVersion,
-        remote: _remoteVersion,
+      return seenStoryFiles(
+        saved: prefs.getStringList(_storiesSeenFilesKey),
+        legacyVersion: prefs.getString(_legacyStoriesSeenKey),
       );
     } catch (e) {
       developer.log('AppVersionService: Failed to read the stories mark: $e',
           name: 'AppVersion');
-      return false;
+      return null;
     }
   }
 
-  /// The stories of the version running now were opened in this browser.
-  Future<void> markStoriesSeen() async {
-    final version = _remoteVersion?.trim();
-    if (version == null || version.isEmpty) return;
+  /// [files] were opened in this browser (added to the ones before).
+  Future<void> markStoriesSeen(Iterable<String> files) async {
     try {
+      final seen = await seenStoryFilesHere() ?? <String>{};
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_storiesSeenKey, version);
+      await prefs.setStringList(_storiesSeenFilesKey, {...seen, ...files}.toList());
     } catch (e) {
       developer.log('AppVersionService: Failed to mark stories seen: $e',
           name: 'AppVersion');

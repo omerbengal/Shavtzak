@@ -14,22 +14,31 @@ class _Source extends ChangeNotifier implements FeatureStoriesSource {
   bool ready;
   @override
   List<FeatureStory> stories;
-  bool seen;
+  @override
+  bool mayOpen;
+  Set<String> seen;
   int takes = 0;
   int marks = 0;
+  final List<String> marked = [];
 
-  _Source({this.ready = true, this.stories = const [], this.seen = false});
+  _Source({
+    this.ready = true,
+    this.stories = const [],
+    Set<String>? seen,
+    this.mayOpen = true,
+  }) : seen = {...?seen};
 
   @override
-  Future<bool> unseen() async {
+  Future<Set<String>?> seenFiles() async {
     takes++;
-    return !seen;
+    return {...seen};
   }
 
   @override
-  Future<void> markSeen() async {
+  Future<void> markSeen(Iterable<String> files) async {
     marks++;
-    seen = true;
+    marked.addAll(files);
+    seen.addAll(files);
   }
 
   void arrive() {
@@ -79,8 +88,10 @@ void main() {
     // A regular member: the managers' story is not theirs.
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
     expect(find.text('home'), findsOneWidget);
-    // Marked as the screen opened (a closed tab never loops).
+    // Marked as the screen opened (a closed tab never loops), only the
+    // story shown.
     expect(source.marks, 1);
+    expect(source.marked, ['all.png']);
     await tester.tap(find.byKey(const Key('stories-close')));
     await tester.pump();
     source.notifyListeners();
@@ -93,12 +104,29 @@ void main() {
   });
 
   testWidgets('already seen = nothing, and the mark is read once', (tester) async {
-    final source = _Source(stories: [_all], seen: true);
+    final source = _Source(stories: [_all], seen: {'all.png'});
     await pumpGate(tester, source);
     expect(find.textContaining('media:'), findsNothing);
     source.notifyListeners();
     await tester.pump();
     expect(source.takes, 1);
+    expect(source.marks, 0);
+  });
+
+  testWidgets('a story added to the list later shows alone', (tester) async {
+    user = buildMember(id: 'mgr', name: 'מנהלת', isAdmin: true);
+    final source = _Source(stories: [_all, _managers], seen: {'all.png'});
+    await pumpGate(tester, source);
+    expect(find.text('media:m.png'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(source.marked, ['m.png']);
+  });
+
+  testWidgets('waiting for a refresh = nothing, the mark is not read', (tester) async {
+    final source = _Source(stories: [_all], mayOpen: false);
+    await pumpGate(tester, source);
+    expect(find.textContaining('media:'), findsNothing);
+    expect(source.takes, 0);
     expect(source.marks, 0);
   });
 
@@ -153,7 +181,7 @@ void main() {
   });
 
   testWidgets('nothing to show = idle at once', (tester) async {
-    await pumpGate(tester, _Source(seen: true));
+    await pumpGate(tester, _Source(stories: [_all], seen: {'all.png'}));
     var idle = false;
     unawaited(FeatureStoriesGate.whenIdle().then((_) => idle = true));
     await tester.pump();
