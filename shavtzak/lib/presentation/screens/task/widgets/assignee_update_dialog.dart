@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
+import '../../../widgets/app_text_field.dart';
 
 /// Edit a task's assignee update: the short, shared status note.
 ///
@@ -93,7 +94,7 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(
+                AppTextField(
                   key: const Key('assignee-update-text'),
                   controller: _controller,
                   focusNode: _focusNode,

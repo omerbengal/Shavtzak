@@ -36,6 +36,7 @@ class AppTextField extends StatefulWidget {
     this.focusNode,
     this.decoration = const InputDecoration(),
     this.style,
+    this.cursorColor,
     this.textAlign = TextAlign.start,
     this.autofocus = false,
     this.readOnly = false,
@@ -48,6 +49,8 @@ class AppTextField extends StatefulWidget {
     this.onChanged,
     this.onSubmitted,
     this.onSubmitShortcut,
+    this.submitKeepsFocus = false,
+    this.onBackspaceWhenEmpty,
     this.onTapOutside,
     this.validator,
     this.autovalidateMode,
@@ -59,6 +62,7 @@ class AppTextField extends StatefulWidget {
   final FocusNode? focusNode;
   final InputDecoration? decoration;
   final TextStyle? style;
+  final Color? cursorColor;
   final TextAlign textAlign;
   final bool autofocus;
   final bool readOnly;
@@ -77,6 +81,13 @@ class AppTextField extends StatefulWidget {
 
   /// Ctrl/Cmd+Enter in several lines.
   final VoidCallback? onSubmitShortcut;
+
+  /// Enter only calls [onSubmitted]: the field keeps the focus (and an
+  /// iPhone its keyboard) until the caller moves it, e.g. to a line it adds.
+  final bool submitKeepsFocus;
+
+  /// Backspace in an empty field, e.g. a list line that removes itself.
+  final VoidCallback? onBackspaceWhenEmpty;
   final TapRegionCallback? onTapOutside;
 
   /// As a [TextFormField]'s: the field joins the [Form] around it, and
@@ -200,6 +211,7 @@ class _AppTextFieldState extends State<AppTextField> {
       focusNode: _focus,
       decoration: decoration,
       style: widget.style,
+      cursorColor: widget.cursorColor,
       textAlign: widget.textAlign,
       autofocus: widget.autofocus,
       readOnly: widget.readOnly,
@@ -214,9 +226,25 @@ class _AppTextFieldState extends State<AppTextField> {
       selectionWidthStyle: widget.fallbackSelectionWidthStyle,
       onChanged: changed,
       onSubmitted: widget.onSubmitted,
+      // An empty callback replaces the action's own focus move.
+      onEditingComplete: widget.submitKeepsFocus ? () {} : null,
       onTapOutside: widget.onTapOutside,
     );
     field = RtlArrowKeys(multiline: widget.multiline, child: field);
+    if (widget.onBackspaceWhenEmpty != null) {
+      field = Focus(
+        onKeyEvent: (_, event) {
+          if (event is KeyDownEvent &&
+              event.logicalKey == LogicalKeyboardKey.backspace &&
+              _controller.text.isEmpty) {
+            widget.onBackspaceWhenEmpty!();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: field,
+      );
+    }
     if (widget.multiline && widget.onSubmitShortcut != null) {
       field = CallbackShortcuts(
         bindings: {
@@ -292,6 +320,7 @@ class _AppTextFieldState extends State<AppTextField> {
               minLines: widget.minLines ?? 1,
               maxLines: widget.maxLines,
               cursorColor:
+                  widget.cursorColor ??
                   theme.textSelectionTheme.cursorColor ??
                   theme.colorScheme.primary,
               maxLength: widget.maxLength,
@@ -303,6 +332,8 @@ class _AppTextFieldState extends State<AppTextField> {
               onChanged: changed,
               onSubmitted: widget.onSubmitted,
               onSubmitShortcut: widget.onSubmitShortcut,
+              submitKeepsFocus: widget.submitKeepsFocus,
+              onBackspaceWhenEmpty: widget.onBackspaceWhenEmpty,
             ),
           ),
         ),

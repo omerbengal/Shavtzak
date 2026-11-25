@@ -605,6 +605,10 @@ void main() {
     expect(editor.left, moreOrLessEquals(cell.left, epsilon: 1));
     expect(editor.right, moreOrLessEquals(assigneesCell.right, epsilon: 1));
 
+    // No caret on open (an iPhone would show no keyboard for it): a tap
+    // puts it in a line, and Escape from there closes the editor.
+    await tester.tap(find.byKey(const Key('edit-subtask-0')));
+    await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('edit-value-editor')), findsNothing);

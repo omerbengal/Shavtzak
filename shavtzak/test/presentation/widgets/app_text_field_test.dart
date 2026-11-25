@@ -162,4 +162,38 @@ void main() {
     await tester.pump();
     expect(focus.hasFocus, isFalse);
   });
+
+  testWidgets('submitKeepsFocus: Enter submits and the focus stays',
+      (tester) async {
+    final focus = FocusNode();
+    final submitted = <String>[];
+    await pump(
+      tester,
+      AppTextField(
+        focusNode: focus,
+        textInputAction: TextInputAction.next,
+        submitKeepsFocus: true,
+        onSubmitted: submitted.add,
+      ),
+    );
+    await tester.tap(textField());
+    await tester.enterText(textField(), 'א');
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pump();
+    expect(submitted, ['א']);
+    expect(focus.hasFocus, isTrue);
+  });
+
+  testWidgets('Backspace in an empty field calls onBackspaceWhenEmpty',
+      (tester) async {
+    var calls = 0;
+    await pump(tester, AppTextField(onBackspaceWhenEmpty: () => calls++));
+    await tester.tap(textField());
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    expect(calls, 1);
+    await tester.enterText(textField(), 'א');
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    expect(calls, 1);
+  });
 }

@@ -300,7 +300,7 @@ void main() {
       await tester.tap(find.byKey(const Key('tasks-search-open')));
       await tester.pump();
 
-      final field = tester.widget<TextField>(find.byKey(const Key('tasks-search')));
+      final field = textFieldIn(tester, find.byKey(const Key('tasks-search')));
       expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
     });
 
@@ -325,7 +325,7 @@ void main() {
         await tester.pump();
 
         final field =
-            tester.widget<TextField>(find.byKey(const Key('tasks-search')));
+            textFieldIn(tester, find.byKey(const Key('tasks-search')));
         final decoration = field.decoration!;
         final themed = theme.inputDecorationTheme;
         final filled = decoration.filled ?? themed.filled;
@@ -1913,3 +1913,9 @@ class _SilentAssigneesRepository extends FakeTaskRepository {
   Stream<List<TeamMember>> watchEventAssignees(String eventId) =>
       _assignees.stream;
 }
+
+/// The Flutter field inside [finder]: an `AppTextField` (Flutter's own field
+/// in tests) or a plain `TextField`.
+TextField textFieldIn(WidgetTester tester, Finder finder) =>
+    tester.widget<TextField>(find.descendant(
+        of: finder, matching: find.byType(TextField), matchRoot: true));

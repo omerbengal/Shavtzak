@@ -22,6 +22,7 @@ import '../../../domain/entities/team_member.dart';
 import '../../bloc/task/task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/app_text_field.dart';
 import '../../widgets/debug_log_long_press.dart';
 import '../../widgets/member_bar_buttons.dart';
 import '../../widgets/test_environment_indicator.dart';
@@ -345,11 +346,13 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     return AppBar(
       leading: isTab && !_searching ? const MemberSettingsButton() : null,
       title: _searching
-          ? TextField(
+          ? AppTextField(
               key: const Key('tasks-search'),
               controller: _searchController,
               focusNode: _searchFocusNode,
-              autofocus: true,
+              // Not focused on open: the field is built a frame after the
+              // tap on the search icon, and an iPhone opens no keyboard for
+              // a field focused outside the tap itself (25/11/2026).
               // The app's inputDecorationTheme fills every field with the
               // white surface, this one too, so the text is dark like every
               // other search field (white text here was invisible).

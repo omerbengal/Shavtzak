@@ -10,7 +10,6 @@ import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../widgets/app_text_field.dart';
-import '../../../widgets/rtl_arrow_keys.dart';
 import '../../event/widgets/event_time_field.dart';
 import '../task_style.dart';
 
@@ -445,10 +444,9 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
   @override
   void initState() {
     super.initState();
+    // No caret on open: the editor is built a frame after the tap, and an
+    // iPhone opens no keyboard for a field focused outside the tap itself.
     if (_lines.isEmpty) _lines.add(_Line(id: _uuid.v4(), text: ''));
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _lines.last.focus.requestFocus();
-    });
   }
 
   @override
@@ -487,16 +485,6 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
     _report();
   }
 
-  KeyEventResult _onKey(int index, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (event.logicalKey == LogicalKeyboardKey.backspace &&
-        _lines[index].controller.text.isEmpty &&
-        _lines.length > 1) {
-      _remove(index, focusPrevious: true);
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -537,22 +525,28 @@ class _SubtasksEditorState extends State<SubtasksEditor> {
                     ),
                   ),
                   Expanded(
-                    child: Focus(
-                      onKeyEvent: (_, event) => _onKey(index, event),
-                      child: RtlArrowKeys(
-                          child: TextField(
-                        key: Key('edit-subtask-$index'),
-                        controller: line.controller,
-                        focusNode: line.focus,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          hintText: 'תת-משימה',
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (_) => _report(),
-                        onSubmitted: (_) => _insertAfter(index),
-                      )),
+                    // Enter adds a line under this one and moves the caret
+                    // there (the field keeps the focus until then, so an
+                    // iPhone keeps its keyboard); Backspace on an empty line
+                    // removes it.
+                    child: AppTextField(
+                      key: Key('edit-subtask-$index'),
+                      controller: line.controller,
+                      focusNode: line.focus,
+                      textInputAction: TextInputAction.next,
+                      submitKeepsFocus: true,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'תת-משימה',
+                        border: InputBorder.none,
+                      ),
+                      onChanged: (_) => _report(),
+                      onSubmitted: (_) => _insertAfter(index),
+                      onBackspaceWhenEmpty: () {
+                        if (_lines.length > 1) {
+                          _remove(index, focusPrevious: true);
+                        }
+                      },
                     ),
                   ),
                   IconButton(

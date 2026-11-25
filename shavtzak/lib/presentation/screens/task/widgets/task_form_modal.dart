@@ -14,6 +14,7 @@ import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../event/widgets/event_time_field.dart';
 import '../task_style.dart';
 import 'discard_changes_dialog.dart';
@@ -391,7 +392,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                         children: [
                           _buildStageField(theme),
                           const SizedBox(height: 16),
-                          TextField(
+                          AppTextField(
                             key: const Key('task-form-title'),
                             controller: _titleController,
                             focusNode: _titleFocusNode,
@@ -405,7 +406,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                             onChanged: (_) => setState(() {}),
                           ),
                           const SizedBox(height: 16),
-                          TextField(
+                          AppTextField(
                             key: const Key('task-form-description'),
                             controller: _descriptionController,
                             focusNode: _descriptionFocusNode,
@@ -547,14 +548,10 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       _assigneesOpen = !_assigneesOpen;
       _assigneeQuery = '';
     });
-    if (_assigneesOpen) {
-      // The search field exists only once the open dropdown is built.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _assigneesOpen) _assigneeSearchFocusNode.requestFocus();
-      });
-    } else {
-      _assigneeSearchFocusNode.unfocus();
-    }
+    // Not focused on open: the search field is built a frame after the
+    // tap, and an iPhone opens no keyboard for a field focused outside the
+    // tap itself (the browser's field, 25/11/2026). A tap on it does.
+    if (!_assigneesOpen) _assigneeSearchFocusNode.unfocus();
   }
 
   void _setPicked(TeamMember member, bool isPicked) {
@@ -645,7 +642,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
           else ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-              child: TextField(
+              child: AppTextField(
                 key: const Key('task-form-assignee-search'),
                 controller: _assigneeSearchController,
                 focusNode: _assigneeSearchFocusNode,
@@ -747,7 +744,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                     ),
                   ),
                   Expanded(
-                    child: TextField(
+                    child: AppTextField(
                       key: Key('task-form-subtask-$index'),
                       controller: _subtasks[index].controller,
                       focusNode: _subtasks[index].focusNode,
