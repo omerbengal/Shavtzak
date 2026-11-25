@@ -153,6 +153,31 @@ void main() {
     expect(field.enabled, isFalse);
   });
 
+  testWidgets('textDirection sets the typed text only (an e-mail is LTR)',
+      (tester) async {
+    await pump(
+      tester,
+      const AppTextField(
+        textDirection: TextDirection.ltr,
+        keyboardType: TextInputType.emailAddress,
+        decoration: InputDecoration(prefixIcon: Icon(Icons.email)),
+      ),
+    );
+    final field = tester.widget<TextField>(textField());
+    expect(field.textDirection, TextDirection.ltr);
+    expect(field.keyboardType, TextInputType.emailAddress);
+    // The decoration keeps the page's RTL: the icon stays on the right.
+    final icon = tester.getCenter(find.byIcon(Icons.email));
+    final box = tester.getRect(textField());
+    expect(icon.dx, greaterThan(box.center.dx));
+  });
+
+  testWidgets('without textDirection the text follows the page',
+      (tester) async {
+    await pump(tester, const AppTextField());
+    expect(tester.widget<TextField>(textField()).textDirection, isNull);
+  });
+
   testWidgets('autofocus and an outside focus node', (tester) async {
     final focus = FocusNode();
     await pump(tester, AppTextField(focusNode: focus, autofocus: true));

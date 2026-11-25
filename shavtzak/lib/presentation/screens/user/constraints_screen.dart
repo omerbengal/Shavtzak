@@ -21,6 +21,7 @@ import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../event/widgets/event_time_field.dart';
+import '../../widgets/app_text_field.dart';
 import '../../widgets/constraint_event_warning_dialog.dart';
 import 'availability_screen.dart';
 import 'user_navigation_shell.dart'; // Import for onConstraintsPageVisible callback
@@ -1392,7 +1393,7 @@ class _RepeatingConstraintDialogState
                 const SizedBox(height: 16),
                 const Text('הערה (חובה):'),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: _noteController,
                   maxLines: 2,
                   onChanged: (_) => setState(() {}),
@@ -1826,11 +1827,10 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                 const SizedBox(height: 16),
                 const Text('סיבה (חובה):'),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: noteController,
                   focusNode: _noteFocusNode,
                   textAlign: TextAlign.right,
-                  textAlignVertical: TextAlignVertical.top,
                   decoration: InputDecoration(
                     hintText: 'יש להזין סיבה לבקשה...',
                     border: const OutlineInputBorder(),
@@ -1847,7 +1847,6 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                   maxLines: 3,
                   minLines: 3,
                   style: const TextStyle(height: 1.5),
-                  scrollPhysics: const BouncingScrollPhysics(),
                 ),
                 const SizedBox(height: 8),
                 SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
@@ -2260,11 +2259,10 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                 const SizedBox(height: 16),
                 const Text('סיבה (חובה):'),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: noteController,
                   focusNode: _noteFocusNode,
                   textAlign: TextAlign.right,
-                  textAlignVertical: TextAlignVertical.top,
                   decoration: InputDecoration(
                     hintText: 'יש להזין סיבה לבקשה...',
                     border: const OutlineInputBorder(),
@@ -2279,7 +2277,6 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                   maxLines: 3,
                   minLines: 3,
                   style: const TextStyle(height: 1.5),
-                  scrollPhysics: const BouncingScrollPhysics(),
                 ),
                 const SizedBox(height: 8),
                 // Add padding at bottom to account for keyboard
@@ -3114,7 +3111,7 @@ class _EditExpiredConstraintDialogState
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              TextField(
+              AppTextField(
                 controller: noteController,
                 focusNode: _noteFocusNode,
                 decoration: const InputDecoration(

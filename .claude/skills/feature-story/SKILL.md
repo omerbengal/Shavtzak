@@ -1,16 +1,19 @@
 ---
 name: feature-story
-description: Use when a Shavtzak release should show users a new feature once, after the version update - making the feature's "story" (a motion-graphics video up to 30 s, or a single image), from the app's real screens, and registering it for a version. Triggers - "סרטון לפיצ'ר", "סטורי לגרסה", "motion graphics for the feature", the post-merge question "סרטון לגרסה הזו?".
+description: Use when a Shavtzak release should show users a new feature once - making the feature's "story" (a motion-graphics video up to 30 s, or a single image), from the app's real screens, and appending it to the standing stories list. Triggers - "סרטון לפיצ'ר", "סטורי לגרסה", "motion graphics for the feature", the post-merge question "סרטון לגרסה הזו?".
 ---
 
 # Feature story
 
-The app plays the running version's stories, Instagram-style, once per browser: the first load of
-that version on a browser that has not opened them yet, after the user signed in (prefs
-`stories_seen_version`, set as the screen opens). Whatever refresh brought the user there (also the
-old "רענון האפליקציה" button), so the stories reach everyone in the audience. Accepted (Omer,
-20/11/2026): a new device, cleared site data or a private window sees the current stories once
-more, and so does a member who joins a story's audience later (e.g. becomes permanent).
+`WhatsNewStories` is a **standing list** (Omer, 26/11/2026), not tied to a version. The app plays,
+Instagram-style, every story of the list (for the member's audience) that this browser has not
+opened yet, on any load after sign-in while the browser runs the server's version (prefs
+`stories_seen_files` = the files opened here, added to as the screen opens). A story added later
+shows alone; a story taken out of the list never shows again. Accepted (Omer, 20/11/2026): a new
+device, cleared site data or a private window sees the listed stories once more, and so does a
+member who joins a story's audience later (e.g. becomes permanent).
+(Until V5.6.7 the mark was one version, `stories_seen_version`; a browser with `V5.6.7` there counts
+`stories/event-items.mp4` as seen, `legacyStoriesByVersion` in `feature_stories.dart`.)
 (`shavtzak/lib/presentation/widgets/feature_stories/`, design:
 `docs/superpowers/specs/2026-11-20-feature-stories-design.md`). This skill makes one story for one
 feature and registers it.
@@ -59,24 +62,25 @@ feature and registers it.
    `<preview url>/?stories=stories/<id>.mp4` (comma-separated for several; before the `#`). Send
    Omer that link and the mp4 itself in Telegram.
 
-6. **Only this version's files in `shavtzak/web/stories/`** (Omer, msg 5390): the branch that adds
-   this version's stories also deletes every older story file there (`git rm`), so the site never
-   keeps old ones. A release with no stories: the release removes whatever is left in
-   `web/stories/` (a small commit before the version bump). The Remotion sources stay.
+6. **`shavtzak/web/stories/` holds exactly the files in the list** (Omer, 26/11/2026): a new story
+   adds its file and keeps the others that are still listed. Removing a story from the list (Omer's
+   call) also deletes its file there (`git rm`, in a branch merged before or with the list change),
+   so the site never keeps unlisted files. The Remotion sources stay.
 
-7. **Register it for the version** - only after the merge, and only with Omer's OK (production
-   data): in `utilities/information` set `WhatsNewStories` to this version's list
-   `{type: 'video'|'image', file: 'stories/<id>.mp4', audience: 'all'|'managers'|'permanent'}`,
-   in the order they should play, together with the version bump. Read it back after writing.
-   A version with no stories: `WhatsNewStories: []`, never the previous version's (its files are gone).
-   Every signed-in member in the audience then sees the list once on their next load (no refresh
-   needed once they run this version), so write it only when the files are live on the site.
+7. **Register it** - only after the merge, and only with Omer's OK (production data): in
+   `utilities/information` **append** to `WhatsNewStories`
+   `{type: 'video'|'image', file: 'stories/<id>.mp4', audience: 'all'|'managers'|'permanent'}`
+   (the list's order is the playing order), keeping every story already there. Read it back after
+   writing. A release with no new story leaves the list as it is (never empty it to "reset" it).
+   Removing a story = delete its item from the list (+ its file, step 6). Every signed-in member in
+   the audience then sees only the stories new to their browser on their next load, so write it
+   only when the files are live on the site.
 
 ## Files
 
 - `feature_stories/` - the Remotion project (sources of every story, `render.mjs`).
 - `shavtzak/tool/story_capture/` - the capture scripts (not part of `flutter test`).
-- `shavtzak/web/stories/` - the current version's rendered stories only, served with the site,
+- `shavtzak/web/stories/` - the rendered stories that are in the list, served with the site,
   kept out of the service worker's precache (fetched only when shown).
 - Licence: Remotion is free for individuals, companies of up to 3 employees and non-profits
   (checked 20/11/2026, https://www.remotion.dev/license).

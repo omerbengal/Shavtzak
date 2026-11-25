@@ -9,18 +9,22 @@ import '../../../domain/entities/team_member.dart';
 import 'feature_stories_viewer.dart';
 import 'story_media.dart';
 
-/// Where the gate gets the version's stories and the "seen" mark.
+/// Where the gate gets the stories list and the "seen" marks.
 /// Default: [AppVersionService]; tests pass their own.
 abstract class FeatureStoriesSource implements Listenable {
   /// `utilities/information` has been read since sign-in.
   bool get ready;
   List<FeatureStory> get stories;
 
-  /// This browser has not opened the running version's stories yet.
-  Future<bool> unseen();
+  /// Stories may open now (not while the browser waits for a refresh).
+  bool get mayOpen;
 
-  /// Called when the stories screen opens (not on a `?stories=` link).
-  Future<void> markSeen();
+  /// The story files this browser already opened; null = unknown (none open).
+  Future<Set<String>?> seenFiles();
+
+  /// Called with the stories' files as the screen opens (not on a
+  /// `?stories=` link).
+  Future<void> markSeen(Iterable<String> files);
 }
 
 class _VersionServiceSource implements FeatureStoriesSource {
@@ -32,9 +36,11 @@ class _VersionServiceSource implements FeatureStoriesSource {
   @override
   List<FeatureStory> get stories => service.stories;
   @override
-  Future<bool> unseen() => service.storiesUnseen();
+  bool get mayOpen => service.storiesMayOpen;
   @override
-  Future<void> markSeen() => service.markStoriesSeen();
+  Future<Set<String>?> seenFiles() => service.seenStoryFilesHere();
+  @override
+  Future<void> markSeen(Iterable<String> files) => service.markStoriesSeen(files);
   @override
   void addListener(VoidCallback listener) => service.addListener(listener);
   @override
@@ -42,10 +48,10 @@ class _VersionServiceSource implements FeatureStoriesSource {
 }
 
 /// Opens [FeatureStoriesViewer] over the app once per app session, when the
-/// running version has stories for this member (`storiesFor`) that this
-/// browser has not opened yet (Omer, 20/11/2026, option A: the first release
-/// reaches members still on the old refresh button too), or when the address
-/// asks for some (`?stories=`, previews; these never set the mark).
+/// standing stories list has stories for this member (`storiesFor`) that this
+/// browser has not opened yet (`unseenStories`, Omer 26/11/2026: a story
+/// added later shows alone), or when the address asks for some
+/// (`?stories=`, previews; these never set the mark).
 /// Sits in `MaterialApp.router`'s builder, above every screen.
 class FeatureStoriesGate extends StatefulWidget {
   final Widget child;
@@ -120,11 +126,18 @@ class _FeatureStoriesGateState extends State<FeatureStoriesGate> {
     List<FeatureStory> stories = const [];
     if (fromQuery != null) {
       stories = fromQuery;
-    } else if (await _source.unseen()) {
-      stories = storiesFor(_source.stories, isAdmin: user.isAdmin, isPermanent: user.isPermanent);
-      // Marked as the screen opens, so a tab closed mid-story never loops.
-      // No story for this member = no mark (they may join the audience later).
-      if (stories.isNotEmpty) await _source.markSeen();
+    } else if (_source.mayOpen) {
+      final seen = await _source.seenFiles();
+      if (seen != null) {
+        stories = unseenStories(
+          storiesFor(_source.stories, isAdmin: user.isAdmin, isPermanent: user.isPermanent),
+          seen,
+        );
+        // Marked as the screen opens, so a tab closed mid-story never loops.
+        // Only the stories shown: one not for this member stays unmarked
+        // (they may join its audience later).
+        if (stories.isNotEmpty) await _source.markSeen([for (final s in stories) s.file]);
+      }
     }
     if (!mounted) return;
     Logger.action('stories:decided', {'count': stories.length, 'query': fromQuery != null});

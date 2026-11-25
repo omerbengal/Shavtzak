@@ -85,16 +85,56 @@ void main() {
     });
   });
 
-  test('storiesUnseenFor: the running version, not opened here yet', () {
-    // Never opened here (old refresh button, new browser) = due.
-    expect(storiesUnseenFor(seen: null, cached: 'V5.6.0', remote: 'V5.6.0'), isTrue);
-    expect(storiesUnseenFor(seen: 'V5.5.0', cached: 'V5.6.0', remote: 'V5.6.0'), isTrue);
-    // Already opened for this version.
-    expect(storiesUnseenFor(seen: 'V5.6.0', cached: 'V5.6.0', remote: 'V5.6.0'), isFalse);
+  test('storiesMayShow: only when this browser runs the server\'s version', () {
+    expect(storiesMayShow(cached: 'V5.6.0', remote: 'V5.6.0'), isTrue);
+    expect(storiesMayShow(cached: ' V5.6.0', remote: 'V5.6.0 '), isTrue);
     // Waiting for a refresh (runs an older version) = not yet.
-    expect(storiesUnseenFor(seen: null, cached: 'V5.5.0', remote: 'V5.6.0'), isFalse);
+    expect(storiesMayShow(cached: 'V5.5.0', remote: 'V5.6.0'), isFalse);
     // No version on the server.
-    expect(storiesUnseenFor(seen: null, cached: null, remote: null), isFalse);
-    expect(storiesUnseenFor(seen: null, cached: '', remote: ''), isFalse);
+    expect(storiesMayShow(cached: null, remote: null), isFalse);
+    expect(storiesMayShow(cached: '', remote: ''), isFalse);
+  });
+
+  group('unseenStories', () {
+    const a = FeatureStory(type: FeatureStoryType.video, file: 'stories/a.mp4');
+    const b = FeatureStory(type: FeatureStoryType.image, file: 'stories/b.png');
+    const c = FeatureStory(type: FeatureStoryType.video, file: 'stories/c.mp4');
+
+    test('nothing seen = the whole list, in order', () {
+      expect(unseenStories([a, b, c], {}), [a, b, c]);
+    });
+
+    test('a story added to the list later shows alone', () {
+      expect(unseenStories([a, b, c], {'stories/a.mp4', 'stories/b.png'}), [c]);
+    });
+
+    test('all seen = nothing; a seen file no longer listed changes nothing', () {
+      expect(unseenStories([a, b], {'stories/a.mp4', 'stories/b.png', 'stories/old.mp4'}),
+          isEmpty);
+      expect(unseenStories(const [], {'stories/a.mp4'}), isEmpty);
+    });
+  });
+
+  group('seenStoryFiles (the move from the version mark)', () {
+    test('a browser that opened V5.6.7\'s stories keeps event-items as seen', () {
+      expect(seenStoryFiles(legacyVersion: 'V5.6.7'), {'stories/event-items.mp4'});
+      expect(seenStoryFiles(legacyVersion: ' V5.6.7 '), {'stories/event-items.mp4'});
+    });
+
+    test('an unknown or missing old mark adds nothing', () {
+      expect(seenStoryFiles(), isEmpty);
+      expect(seenStoryFiles(legacyVersion: 'V5.6.6'), isEmpty);
+      expect(seenStoryFiles(legacyVersion: ''), isEmpty);
+      expect(seenStoryFiles(saved: ['stories/x.mp4'], legacyVersion: 'V9.9.9'),
+          {'stories/x.mp4'});
+    });
+
+    test('the saved list and the old mark together, no doubles', () {
+      expect(
+        seenStoryFiles(
+            saved: ['stories/x.mp4', 'stories/event-items.mp4'], legacyVersion: 'V5.6.7'),
+        {'stories/x.mp4', 'stories/event-items.mp4'},
+      );
+    });
   });
 }

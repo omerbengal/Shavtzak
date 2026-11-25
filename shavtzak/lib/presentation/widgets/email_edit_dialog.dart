@@ -8,6 +8,7 @@ import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
 import '../../core/debug/logger.dart';
+import 'app_text_field.dart';
 
 /// Dialog for editing user's email address
 class EmailEditDialog extends StatefulWidget {
@@ -73,7 +74,7 @@ class _EmailEditDialogState extends State<EmailEditDialog> {
                     style: TextStyle(fontSize: 16),
                   ),
                   const SizedBox(height: 20),
-                  TextFormField(
+                  AppTextField(
                     controller: _emailController,
                     decoration: const InputDecoration(
                       labelText: 'כתובת אימייל',
@@ -89,10 +90,7 @@ class _EmailEditDialogState extends State<EmailEditDialog> {
                     validator: Validators.validateEmail,
                     keyboardType: TextInputType.emailAddress,
                     textDirection: TextDirection.ltr,
-                    smartQuotesType: SmartQuotesType.disabled,
-                    smartDashesType: SmartDashesType.disabled,
                     textAlign: TextAlign.start,
-                    autofocus: false,
                   ),
                   const SizedBox(height: 12),
                   SizedBox(height: MediaQuery.of(context).viewInsets.bottom),

@@ -221,6 +221,12 @@ class _NativeEditableState extends State<NativeEditable> {
       nativeEnterKeyHint(widget.textInputAction, multiline: widget.multiline),
     );
     el.setAttribute('inputmode', nativeInputMode(widget.keyboardType));
+    if (widget.keyboardType == TextInputType.emailAddress) {
+      // An address: no capital first letter, no autocorrect, no spelling.
+      el.setAttribute('autocapitalize', 'off');
+      el.setAttribute('autocorrect', 'off');
+      el.setAttribute('spellcheck', 'false');
+    }
     final editable = widget.enabled && !widget.readOnly;
     if (widget.multiline) {
       el.setAttribute('contenteditable', editable ? 'true' : 'false');

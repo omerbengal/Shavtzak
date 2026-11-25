@@ -1,11 +1,13 @@
 import 'package:equatable/equatable.dart';
 
-/// Feature stories (Omer, 20/11/2026): once per browser and version, the
-/// version's new features shown Instagram-style, one story per feature, an
-/// image (a short feature) or a video (a flow, up to 30 s). Chosen per
-/// version in `utilities/information` → `WhatsNewStories`:
+/// Feature stories (Omer, 20/11/2026): new features shown Instagram-style,
+/// one story per feature, an image (a short feature) or a video (a flow, up
+/// to 30 s). A standing list (26/11/2026), not tied to a version, in
+/// `utilities/information` → `WhatsNewStories`:
 /// `[{type: video|image, file: 'stories/x.mp4', audience: all|managers|permanent}]`.
-/// Missing or empty = no stories screen. Pure rules; the screen is
+/// Each story shows once per browser while it is in the list (a story added
+/// later shows alone); one taken out of the list never shows. Missing or
+/// empty = no stories screen. Pure rules; the screen is
 /// `presentation/widgets/feature_stories/`.
 
 enum FeatureStoryType { image, video }
@@ -76,8 +78,8 @@ List<FeatureStory> storiesFor(
   return [for (final story in all) if (sees(story)) story];
 }
 
-/// `?stories=a.mp4,b.png` in the address: open these stories now, without a
-/// version change (previews, checking a new story). `.mp4` / `.webm` = video,
+/// `?stories=a.mp4,b.png` in the address: open these stories now, seen or
+/// not, without marking them (previews, checking a new story). `.mp4` / `.webm` = video,
 /// anything else an image. Null when there is nothing to show.
 List<FeatureStory>? storiesFromQuery(String? value) {
   if (value == null) return null;
@@ -102,10 +104,29 @@ Uri featureStoryUri(String file, Uri base) {
   return base.removeFragment().resolve(file);
 }
 
-/// The running version's stories are due in this browser: the version it
-/// runs ([cached]) is the server's ([remote], so not waiting for a refresh),
-/// and its stories were not opened here yet ([seen], the version last shown).
-bool storiesUnseenFor({String? seen, String? cached, String? remote}) {
+/// Stories may open in this browser now: the version it runs ([cached]) is
+/// the server's ([remote]), so a browser waiting for a refresh sees nothing.
+bool storiesMayShow({String? cached, String? remote}) {
   final current = remote?.trim() ?? '';
-  return current.isNotEmpty && cached?.trim() == current && seen?.trim() != current;
+  return current.isNotEmpty && cached?.trim() == current;
 }
+
+/// The stories of [stories] this browser has not opened yet ([seen] = their
+/// files), in order (Omer, 26/11/2026: `WhatsNewStories` is a standing list,
+/// each story shown once per browser while it is in the list).
+List<FeatureStory> unseenStories(List<FeatureStory> stories, Set<String> seen) =>
+    [for (final story in stories) if (!seen.contains(story.file)) story];
+
+/// The stories each version showed while the mark was one version
+/// (`stories_seen_version`, until V5.6.7): a browser that opened them keeps
+/// them as seen.
+const Map<String, List<String>> legacyStoriesByVersion = {
+  'V5.6.7': ['stories/event-items.mp4'],
+};
+
+/// The files this browser opened: the saved list ([saved]) plus the stories
+/// of the version the old mark names ([legacyVersion]; unknown = nothing).
+Set<String> seenStoryFiles({List<String>? saved, String? legacyVersion}) => {
+      ...?saved,
+      ...?legacyStoriesByVersion[legacyVersion?.trim()],
+    };

@@ -39,6 +39,7 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
+import '../../widgets/app_text_field.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/event_search_filter_bar.dart';
 import '../../widgets/interactive_filter_bar.dart';
@@ -386,7 +387,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Directionality(
               textDirection: TextDirection.rtl,
-              child: TextField(
+              child: AppTextField(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
                 decoration: InputDecoration(
@@ -1948,7 +1949,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       const SizedBox(height: 16),
 
                                       // Name field
-                                      TextFormField(
+                                      AppTextField(
                                         controller: _nameController,
                                         focusNode: _nameFocusNode,
                                         decoration: const InputDecoration(
@@ -1996,7 +1997,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       const SizedBox(height: 16),
 
                                       // Email field
-                                      TextFormField(
+                                      AppTextField(
                                         controller: _emailController,
                                         decoration: const InputDecoration(
                                           labelText: 'כתובת אימייל',
@@ -2012,10 +2013,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                             TextInputType.emailAddress,
                                         textDirection: TextDirection
                                             .ltr, // LTR for email input
-                                        smartQuotesType:
-                                            SmartQuotesType.disabled,
-                                        smartDashesType:
-                                            SmartDashesType.disabled,
                                         textAlign: TextAlign
                                             .start, // Left-aligned for email
                                         onChanged: (_) =>
@@ -2869,7 +2866,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       const Divider(height: 32),
 
                                       // Comments field
-                                      TextFormField(
+                                      AppTextField(
                                         controller: _commentsController,
                                         focusNode: _commentsFocusNode,
                                         decoration: const InputDecoration(
@@ -2880,8 +2877,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         ),
                                         minLines: 1,
                                         maxLines: 3,
-                                        scrollPadding:
-                                            const EdgeInsets.only(bottom: 300),
                                         onChanged: (_) =>
                                             setState(() => _isDirty = true),
                                       ),
@@ -4048,7 +4043,7 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
 
               // Note text field
               const SizedBox(height: 16),
-              TextField(
+              AppTextField(
                 controller: _noteController,
                 focusNode: _noteFocusNode,
                 decoration: const InputDecoration(
@@ -4061,7 +4056,6 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                 maxLines: 3,
                 minLines: 1,
                 textDirection: TextDirection.rtl,
-                textAlignVertical: TextAlignVertical.center,
               ),
             ],
           ),
@@ -4566,7 +4560,7 @@ class _AdminRepeatingConstraintDialogState
                 const SizedBox(height: 16),
                 const Text('סיבה (חובה):'),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: _noteController,
                   maxLines: 2,
                   decoration: const InputDecoration(
@@ -5068,11 +5062,10 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                   widget.isPermanent ? 'סיבה (חובה):' : 'הערה (אופציונלי):',
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: _noteController,
                   focusNode: _noteFocusNode,
                   textAlign: TextAlign.right,
-                  textAlignVertical: TextAlignVertical.top,
                   decoration: InputDecoration(
                     hintText: widget.isPermanent
                         ? 'יש להזין סיבה למגבלה...'
@@ -5089,7 +5082,6 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                   maxLines: 3,
                   minLines: 3,
                   style: const TextStyle(height: 1.5),
-                  scrollPhysics: const BouncingScrollPhysics(),
                 ),
               ],
             ),
@@ -6483,7 +6475,7 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
               ),
               const SizedBox(height: 12),
               // Model field - free text input
-              TextField(
+              AppTextField(
                 controller: _modelController,
                 focusNode: _modelFocusNode,
                 decoration: const InputDecoration(
@@ -6500,7 +6492,7 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
               ),
               const SizedBox(height: 12),
               // Color field
-              TextField(
+              AppTextField(
                 controller: _colorController,
                 focusNode: _colorFocusNode,
                 decoration: const InputDecoration(
