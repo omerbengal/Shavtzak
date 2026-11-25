@@ -72,6 +72,9 @@
 
   function flutterInput(el) {
     if (!el || el.id === DUMMY_ID) return null;
+    // The app's own browser fields (AppTextField) open the keyboard by
+    // themselves: the tap lands on them.
+    if (el.hasAttribute && el.hasAttribute('data-native-field')) return null;
     if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return null;
     return el.closest && el.closest('flutter-view') ? el : null;
   }
