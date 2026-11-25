@@ -10,7 +10,7 @@ import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../../domain/entities/task_topic.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
-import '../../../widgets/rtl_arrow_keys.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../task/task_style.dart';
 
 /// What the picker returns: a link, or "ללא שיוך" ([link] null). Null from
@@ -299,20 +299,18 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
       child: Row(
         children: [
           Expanded(
-            child: RtlArrowKeys(
-              child: TextField(
-                key: const Key('task-link-pending-name'),
-                controller: _newPending,
-                autofocus: true,
-                decoration: InputDecoration(
-                  isDense: true,
-                  labelText: 'שם האירוע שעוד לא נוצר',
-                  errorText: _pendingError,
-                  border: const OutlineInputBorder(),
-                ),
-                onChanged: (_) => setState(() => _pendingError = null),
-                onSubmitted: (_) => _addPending(state),
+            child: AppTextField(
+              key: const Key('task-link-pending-name'),
+              controller: _newPending,
+              autofocus: true,
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: 'שם האירוע שעוד לא נוצר',
+                errorText: _pendingError,
+                border: const OutlineInputBorder(),
               ),
+              onChanged: (_) => setState(() => _pendingError = null),
+              onSubmitted: (_) => _addPending(state),
             ),
           ),
           IconButton(
@@ -438,17 +436,16 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
             ),
             const SizedBox(height: 8),
             ],
-            RtlArrowKeys(
-              child: TextField(
-                key: const Key('task-link-search'),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  hintText: 'חיפוש...',
-                  prefixIcon: Icon(Icons.search, size: 18),
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) => setState(() => _query = value),
+            AppTextField(
+              key: const Key('task-link-search'),
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: 'חיפוש...',
+                prefixIcon: Icon(Icons.search, size: 18),
+                border: OutlineInputBorder(),
               ),
+              onChanged: (value) => setState(() => _query = value),
             ),
             const SizedBox(height: 4),
             Expanded(
@@ -495,18 +492,16 @@ class _TaskLinkPickerState extends State<_TaskLinkPicker> {
               Row(
                 children: [
                   Expanded(
-                    child: RtlArrowKeys(
-                      child: TextField(
-                        key: const Key('task-link-new-topic'),
-                        controller: _newTopic,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: 'נושא חדש',
-                          errorText: _error,
-                          border: const OutlineInputBorder(),
-                        ),
-                        onSubmitted: (_) => _addTopic(state),
+                    child: AppTextField(
+                      key: const Key('task-link-new-topic'),
+                      controller: _newTopic,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'נושא חדש',
+                        errorText: _error,
+                        border: const OutlineInputBorder(),
                       ),
+                      onSubmitted: (_) => _addTopic(state),
                     ),
                   ),
                   IconButton(

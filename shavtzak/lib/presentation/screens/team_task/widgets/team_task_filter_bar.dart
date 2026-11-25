@@ -6,7 +6,7 @@ import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
-import '../../../widgets/rtl_arrow_keys.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../task/task_style.dart';
 import 'task_link_picker.dart';
 import 'team_task_style.dart';
@@ -307,46 +307,44 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   Widget _searchField() {
     return SizedBox(
       height: 34,
-      child: RtlArrowKeys(
-        child: TextField(
-          key: const Key('team-filter-search'),
-          controller: _search,
-          focusNode: _focus,
-          style: const TextStyle(fontSize: TaskStyle.filterFontSize),
-          textInputAction: TextInputAction.search,
-          onChanged: (value) {
-            setState(() {});
-            _set(_filter.copyWith(query: value));
-          },
-          onTapOutside: (_) => _focus.unfocus(),
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: 'חיפוש',
-            prefixIcon: const Icon(Icons.search, size: 18),
-            prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            suffixIcon: _search.text.isEmpty
-                ? null
-                : IconButton(
-                    key: const Key('team-filter-search-clear'),
-                    tooltip: 'ניקוי',
-                    icon: const Icon(Icons.close, size: 16),
-                    onPressed: () {
-                      _search.clear();
-                      _focus.unfocus();
-                      setState(() {});
-                      _set(_filter.copyWith(query: ''));
-                    },
-                  ),
-            suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: TaskStyle.rest),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: TaskStyle.rest),
-            ),
+      child: AppTextField(
+        key: const Key('team-filter-search'),
+        controller: _search,
+        focusNode: _focus,
+        style: const TextStyle(fontSize: TaskStyle.filterFontSize),
+        textInputAction: TextInputAction.search,
+        onChanged: (value) {
+          setState(() {});
+          _set(_filter.copyWith(query: value));
+        },
+        onTapOutside: (_) => _focus.unfocus(),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'חיפוש',
+          prefixIcon: const Icon(Icons.search, size: 18),
+          prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          suffixIcon: _search.text.isEmpty
+              ? null
+              : IconButton(
+                  key: const Key('team-filter-search-clear'),
+                  tooltip: 'ניקוי',
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () {
+                    _search.clear();
+                    _focus.unfocus();
+                    setState(() {});
+                    _set(_filter.copyWith(query: ''));
+                  },
+                ),
+          suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: TaskStyle.rest),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: TaskStyle.rest),
           ),
         ),
       ),

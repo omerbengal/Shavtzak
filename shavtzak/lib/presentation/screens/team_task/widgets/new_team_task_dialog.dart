@@ -8,7 +8,7 @@ import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
-import '../../../widgets/rtl_arrow_keys.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../task/edit/value_editors.dart';
 import '../../task/widgets/discard_changes_dialog.dart';
 import 'deadline_picker.dart';
@@ -183,42 +183,39 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
                         // owners, deadline.
                         _linkField(state),
                         const SizedBox(height: 16),
-                        RtlArrowKeys(
-                          child: TextField(
-                            key: const Key('new-team-task-title'),
-                            controller: _title,
-                            autofocus: true,
-                            maxLength: 200,
-                            minLines: 1,
-                            maxLines: 1,
-                            textInputAction: TextInputAction.next,
-                            decoration: InputDecoration(
-                              labelText: 'כותרת',
-                              prefixIcon: const Icon(Icons.title),
-                              errorText: _titleError,
-                              border: const OutlineInputBorder(),
-                              counterText: '',
-                            ),
-                            onChanged: (_) => setState(() => _titleError = null),
+                        AppTextField(
+                          key: const Key('new-team-task-title'),
+                          controller: _title,
+                          // No autofocus (Omer, 25/11/2026): an iPhone opens
+                          // no keyboard for a focus that is not in a tap, so
+                          // the field only looked ready.
+                          maxLength: 200,
+                          minLines: 1,
+                          maxLines: 1,
+                          textInputAction: TextInputAction.next,
+                          decoration: InputDecoration(
+                            labelText: 'כותרת',
+                            prefixIcon: const Icon(Icons.title),
+                            errorText: _titleError,
+                            border: const OutlineInputBorder(),
+                            counterText: '',
                           ),
+                          onChanged: (_) => setState(() => _titleError = null),
                         ),
                         ...[
                           const SizedBox(height: 16),
-                          RtlArrowKeys(
-                            multiline: true,
-                            child: TextField(
-                              key: const Key('new-team-task-description'),
-                              controller: _description,
-                              minLines: 2,
-                              maxLines: 5,
-                              decoration: const InputDecoration(
-                                labelText: 'תיאור',
-                                prefixIcon: Icon(Icons.notes),
-                                border: OutlineInputBorder(),
-                                alignLabelWithHint: true,
-                              ),
-                              onChanged: (_) => setState(() {}),
+                          AppTextField(
+                            key: const Key('new-team-task-description'),
+                            controller: _description,
+                            minLines: 2,
+                            maxLines: 5,
+                            decoration: const InputDecoration(
+                              labelText: 'תיאור',
+                              prefixIcon: Icon(Icons.notes),
+                              border: OutlineInputBorder(),
+                              alignLabelWithHint: true,
                             ),
+                            onChanged: (_) => setState(() {}),
                           ),
                         ],
                         const SizedBox(height: 16),

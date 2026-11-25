@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
@@ -11,6 +9,7 @@ import '../../../../core/utils/task_schedule.dart';
 import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/team_member.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../../widgets/rtl_arrow_keys.dart';
 import '../../event/widgets/event_time_field.dart';
 import '../task_style.dart';
@@ -58,41 +57,27 @@ class _TextValueEditorState extends State<TextValueEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final field = RtlArrowKeys(
-        multiline: widget.multiline,
-        child: TextField(
-          key: const Key('edit-text'),
-          controller: _controller,
-          focusNode: _focus,
-          autofocus: true,
-          minLines: widget.multiline ? 2 : 1,
-          maxLines: widget.multiline ? null : 1,
-          keyboardType:
-              widget.multiline ? TextInputType.multiline : TextInputType.text,
-          textInputAction:
-              widget.multiline ? TextInputAction.newline : TextInputAction.done,
-          // Not Flutter's default on an iPhone and in Safari, which stretches
-          // a selection towards the line's edge and in Hebrew stretches the
-          // wrong way: one selected word was highlighted up to the field's
-          // left edge, over the words after it.
-          selectionWidthStyle: ui.BoxWidthStyle.tight,
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: widget.hint,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: widget.onChanged,
-          onSubmitted: widget.multiline ? null : (_) => widget.onSubmit(),
-        ));
-    if (!widget.multiline) return field;
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true):
-            widget.onSubmit,
-        const SingleActivator(LogicalKeyboardKey.enter, meta: true):
-            widget.onSubmit,
-      },
-      child: field,
+    // The browser's own field on the web (AppTextField); Flutter's, with the
+    // RTL controller and focus node above, elsewhere.
+    return AppTextField(
+      key: const Key('edit-text'),
+      controller: _controller,
+      focusNode: _focus,
+      autofocus: true,
+      minLines: widget.multiline ? 2 : 1,
+      maxLines: widget.multiline ? null : 1,
+      keyboardType:
+          widget.multiline ? TextInputType.multiline : TextInputType.text,
+      textInputAction:
+          widget.multiline ? TextInputAction.newline : TextInputAction.done,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: widget.hint,
+        border: const OutlineInputBorder(),
+      ),
+      onChanged: widget.onChanged,
+      onSubmitted: widget.multiline ? null : (_) => widget.onSubmit(),
+      onSubmitShortcut: widget.multiline ? widget.onSubmit : null,
     );
   }
 }
@@ -351,12 +336,12 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          RtlArrowKeys(
-              child: TextField(
+          AppTextField(
             key: const Key('edit-assignee-search'),
             controller: _search,
             focusNode: _searchFocus,
             autofocus: true,
+            textInputAction: TextInputAction.search,
             decoration: const InputDecoration(
               isDense: true,
               hintText: 'חיפוש חבר צוות...',
@@ -364,7 +349,7 @@ class _AssigneesEditorState extends State<AssigneesEditor> {
               border: OutlineInputBorder(),
             ),
             onChanged: (value) => setState(() => _query = value),
-          )),
+          ),
           if (members.isEmpty)
             Padding(
               padding: const EdgeInsets.all(12),
@@ -676,21 +661,32 @@ class _ContactsEditorState extends State<ContactsEditor> {
     bool phone = false,
     bool autofocus = false,
   }) {
-    final field = TextField(
+    final decoration = InputDecoration(
+      isDense: true,
+      hintText: hint,
+      border: const OutlineInputBorder(),
+    );
+    // A phone number stays Flutter's field, with its formatter; it reads
+    // left to right, so its arrows already point right. Name and role are
+    // the browser's own field on the web.
+    if (!phone) {
+      return AppTextField(
+        key: key,
+        controller: controller,
+        autofocus: autofocus,
+        decoration: decoration,
+        onChanged: (_) => _report(),
+      );
+    }
+    return TextField(
       key: key,
       controller: controller,
       autofocus: autofocus,
-      keyboardType: phone ? TextInputType.phone : TextInputType.text,
-      inputFormatters: phone ? [PhoneNumberTextInputFormatter()] : null,
-      decoration: InputDecoration(
-        isDense: true,
-        hintText: hint,
-        border: const OutlineInputBorder(),
-      ),
+      keyboardType: TextInputType.phone,
+      inputFormatters: [PhoneNumberTextInputFormatter()],
+      decoration: decoration,
       onChanged: (_) => _report(),
     );
-    // A phone number reads left to right, so its arrows already point right.
-    return phone ? field : RtlArrowKeys(child: field);
   }
 
   @override

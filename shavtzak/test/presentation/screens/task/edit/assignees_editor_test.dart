@@ -36,7 +36,8 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(reports.last, ['m2']);
-    final field = tester.widget<TextField>(search);
+    final field = tester.widget<TextField>(
+        find.descendant(of: search, matching: find.byType(TextField)));
     expect(field.controller!.text, isEmpty);
     expect(field.focusNode!.hasFocus, isTrue);
     // The whole list is back, ready for the next name.
