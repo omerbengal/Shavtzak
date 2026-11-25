@@ -30,6 +30,7 @@ import 'widgets/event_item_management_dialog.dart';
 import 'widgets/event_constraint_collisions_dialog.dart';
 import 'widgets/event_form_modal.dart';
 import 'widgets/event_drive_files_section.dart';
+import 'widgets/event_items_icons_row.dart';
 import 'widgets/role_management_dialog.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/debug/search_action_logger.dart';
@@ -724,6 +725,8 @@ class _EventListScreenState extends State<EventListScreen> {
                   ),
                 ],
               ),
+              // What the event has, under the Drive / constraints icons.
+              EventItemsIconsRow(choices: event.items),
               const SizedBox(height: 12),
               // Event details - aligned to visual right with padding
               Padding(
