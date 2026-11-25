@@ -42,9 +42,7 @@ class TeamTaskFilterBar extends StatefulWidget {
 }
 
 class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
-  late final TextEditingController _search = TextEditingController(
-    text: widget.state.filter.query,
-  );
+  late final TextEditingController _search = TextEditingController(text: widget.state.filter.query);
   final FocusNode _focus = FocusNode();
 
   @override
@@ -59,8 +57,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
   void _set(TeamTaskFilter filter) =>
       context.read<TeamTaskBloc>().add(TeamTaskFilterChanged(filter));
 
-  bool get _compact =>
-      MediaQuery.sizeOf(context).width < TeamTaskFilterBar.compactWidth;
+  bool get _compact => MediaQuery.sizeOf(context).width < TeamTaskFilterBar.compactWidth;
 
   // ---- what each filter offers ----
 
@@ -84,10 +81,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     final ids = _filter.ownerIds;
     if (ids.isEmpty) return 'אחראי/ת';
     if (ids.length == 1) {
-      return widget.state.members
-              .where((m) => m.id == ids.first)
-              .firstOrNull
-              ?.name ??
+      return widget.state.members.where((m) => m.id == ids.first).firstOrNull?.name ??
           unknownMemberLabel;
     }
     return 'אחראי/ת (${ids.length})';
@@ -112,32 +106,27 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     final next = {..._filter.urgencies};
     if (!next.remove(urgency)) next.add(urgency);
     // Every level ticked = no filter.
-    _set(
-      _filter.copyWith(
-        urgencies: next.length == TeamTaskUrgency.values.length
-            ? const {}
-            : next,
-      ),
-    );
+    _set(_filter.copyWith(
+        urgencies: next.length == TeamTaskUrgency.values.length ? const {} : next));
   }
 
   List<Widget> _urgencyRows({required String keyPrefix}) => [
-    for (final urgency in TeamTaskUrgency.values.reversed)
-      CheckboxMenuButton(
-        key: Key('$keyPrefix-${urgency.key}'),
-        value: _filter.urgencies.contains(urgency),
-        closeOnActivate: false,
-        onChanged: (_) => _toggleUrgency(urgency),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TeamTaskUrgencyIcon(urgency: urgency, size: 16),
-            const SizedBox(width: 6),
-            Text(urgency.hebrewLabel),
-          ],
-        ),
-      ),
-  ];
+        for (final urgency in TeamTaskUrgency.values.reversed)
+          CheckboxMenuButton(
+            key: Key('$keyPrefix-${urgency.key}'),
+            value: _filter.urgencies.contains(urgency),
+            closeOnActivate: false,
+            onChanged: (_) => _toggleUrgency(urgency),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TeamTaskUrgencyIcon(urgency: urgency, size: 16),
+                const SizedBox(width: 6),
+                Text(urgency.hebrewLabel),
+              ],
+            ),
+          ),
+      ];
 
   // ---- the time chips (19/11/2026) ----
 
@@ -163,15 +152,16 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     required String keyPrefix,
     required TeamTaskTimeRange? selected,
     required void Function(TeamTaskTimeRange) onPick,
-  }) => [
-    for (final range in TeamTaskTimeRange.values)
-      CheckboxMenuButton(
-        key: Key('$keyPrefix-${range.name}'),
-        value: selected == range,
-        onChanged: (_) => onPick(range),
-        child: Text(range.hebrewLabel),
-      ),
-  ];
+  }) =>
+      [
+        for (final range in TeamTaskTimeRange.values)
+          CheckboxMenuButton(
+            key: Key('$keyPrefix-${range.name}'),
+            value: selected == range,
+            onChanged: (_) => onPick(range),
+            child: Text(range.hebrewLabel),
+          ),
+      ];
 
   Widget _timeChip({
     required String keyName,
@@ -179,30 +169,27 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     required String tooltip,
     required TeamTaskTimeRange? selected,
     required void Function(TeamTaskTimeRange) onPick,
-  }) => MenuAnchor(
-    menuChildren: _timeRows(
-      keyPrefix: keyName,
-      selected: selected,
-      onPick: onPick,
-    ),
-    builder: (context, controller, _) => Tooltip(
-      message: tooltip,
-      child: InkWell(
-        key: Key(keyName),
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Logger.action('tap:${keyName}Chip');
-          controller.isOpen ? controller.close() : controller.open();
-        },
-        child: _FilterChipLook(
-          compact: _compact,
-          icon: Icons.schedule,
-          label: _timeLabel(name, selected),
-          active: selected != null,
+  }) =>
+      MenuAnchor(
+        menuChildren: _timeRows(keyPrefix: keyName, selected: selected, onPick: onPick),
+        builder: (context, controller, _) => Tooltip(
+          message: tooltip,
+          child: InkWell(
+            key: Key(keyName),
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              Logger.action('tap:${keyName}Chip');
+              controller.isOpen ? controller.close() : controller.open();
+            },
+            child: _FilterChipLook(
+              compact: _compact,
+              icon: Icons.schedule,
+              label: _timeLabel(name, selected),
+              active: selected != null,
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
   void _toggleLate() {
     Logger.action('tap:teamTasksLateChip', {'on': !_filter.lateOnly});
@@ -226,18 +213,13 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
     }
     // Room for the permanent member's mark after a name.
     width += 22;
-    Widget centred(Widget child) => SizedBox(
-      width: width,
-      child: Center(child: child),
-    );
+    Widget centred(Widget child) => SizedBox(width: width, child: Center(child: child));
     final ids = _filter.ownerIds;
     return [
       MenuItemButton(
         key: Key('$keyPrefix-all'),
         closeOnActivate: false,
-        onPressed: ids.isEmpty
-            ? null
-            : () => _set(_filter.copyWith(ownerIds: const {})),
+        onPressed: ids.isEmpty ? null : () => _set(_filter.copyWith(ownerIds: const {})),
         // The checkboxes' room, so this row's text is centred like the names.
         leadingIcon: const SizedBox(width: 24),
         child: centred(const Text('כל האחראים')),
@@ -248,9 +230,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           value: ids.contains(member.id),
           closeOnActivate: false,
           onChanged: (_) => _toggleOwner(member.id),
-          child: centred(
-            MemberNameText(name: member.name, permanent: member.isPermanent),
-          ),
+          child: centred(MemberNameText(name: member.name, permanent: member.isPermanent)),
         ),
     ];
   }
@@ -296,9 +276,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           // The search as wide as the list below it.
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: TeamTaskStyle.maxListWidth,
-              ),
+              constraints: const BoxConstraints(maxWidth: TeamTaskStyle.maxListWidth),
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: side),
                 child: _searchField(),
@@ -315,10 +293,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (leading != null) ...[
-                    leading,
-                    SizedBox(width: _compact ? 4 : 6),
-                  ],
+                  if (leading != null) ...[leading, SizedBox(width: _compact ? 4 : 6)],
                   ..._chips(),
                 ],
               ),
@@ -347,10 +322,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
           isDense: true,
           hintText: 'חיפוש',
           prefixIcon: const Icon(Icons.search, size: 18),
-          prefixIconConstraints: const BoxConstraints(
-            minWidth: 32,
-            minHeight: 32,
-          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           suffixIcon: _search.text.isEmpty
               ? null
               : IconButton(
@@ -364,14 +336,8 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
                     _set(_filter.copyWith(query: ''));
                   },
                 ),
-          suffixIconConstraints: const BoxConstraints(
-            minWidth: 32,
-            minHeight: 32,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 8,
-          ),
+          suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
             borderSide: const BorderSide(color: TaskStyle.rest),
@@ -412,10 +378,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
               controller.isOpen ? controller.close() : controller.open();
             },
             child: _FilterChipLook(
-              compact: _compact,
-              label: _statusLabel,
-              active: filter.statusesChanged,
-            ),
+                compact: _compact, label: _statusLabel, active: filter.statusesChanged),
           ),
         ),
       ),
@@ -434,10 +397,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
                 controller.isOpen ? controller.close() : controller.open();
               },
               child: _FilterChipLook(
-                compact: _compact,
-                label: _ownerLabel,
-                active: filter.ownerIds.isNotEmpty,
-              ),
+                  compact: _compact, label: _ownerLabel, active: filter.ownerIds.isNotEmpty),
             ),
           ),
         ),
@@ -456,10 +416,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
               controller.isOpen ? controller.close() : controller.open();
             },
             child: _FilterChipLook(
-              compact: _compact,
-              label: _urgencyLabel,
-              active: filter.urgencies.isNotEmpty,
-            ),
+                compact: _compact, label: _urgencyLabel, active: filter.urgencies.isNotEmpty),
           ),
         ),
       ),
@@ -468,11 +425,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
         key: const Key('team-filter-link'),
         borderRadius: BorderRadius.circular(16),
         onTap: _tapLink,
-        child: _FilterChipLook(
-          compact: _compact,
-          label: _linkLabel,
-          active: filter.link != null,
-        ),
+        child: _FilterChipLook(compact: _compact, label: _linkLabel, active: filter.link != null),
       ),
       if (widget.showOwner) ...[
         gap,
@@ -500,11 +453,7 @@ class _TeamTaskFilterBarState extends State<TeamTaskFilterBar> {
         borderRadius: BorderRadius.circular(16),
         onTap: _toggleLate,
         child: _FilterChipLook(
-          compact: _compact,
-          label: 'באיחור',
-          active: filter.lateOnly,
-          dropdown: false,
-        ),
+            compact: _compact, label: 'באיחור', active: filter.lateOnly, dropdown: false),
       ),
     ];
   }
@@ -544,11 +493,7 @@ class _FilterChipLook extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(
-              icon,
-              size: 15,
-              color: active ? TaskStyle.mine : TaskStyle.neutralText,
-            ),
+            Icon(icon, size: 15, color: active ? TaskStyle.mine : TaskStyle.neutralText),
             const SizedBox(width: 4),
           ],
           Text(
@@ -558,12 +503,7 @@ class _FilterChipLook extends StatelessWidget {
               color: active ? TaskStyle.mine : TaskStyle.neutralText,
             ),
           ),
-          if (dropdown)
-            const Icon(
-              Icons.arrow_drop_down,
-              size: 18,
-              color: TaskStyle.neutralText,
-            ),
+          if (dropdown) const Icon(Icons.arrow_drop_down, size: 18, color: TaskStyle.neutralText),
         ],
       ),
     );
