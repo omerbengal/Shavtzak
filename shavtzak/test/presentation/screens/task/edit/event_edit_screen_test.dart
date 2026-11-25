@@ -362,8 +362,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('edit-search-clear')), findsNothing);
     expect(find.byKey(const Key('edit-stage-dinner')), findsOneWidget);
-    final field =
-        tester.widget<TextField>(find.byKey(const Key('edit-search')));
+    // The search is an AppTextField: in tests a plain TextField inside it.
+    final field = tester.widget<TextField>(find.descendant(
+        of: find.byKey(const Key('edit-search')),
+        matching: find.byType(TextField)));
     expect(field.controller!.text, isEmpty);
   });
 
