@@ -1,6 +1,7 @@
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:web/web.dart' as web;
 
 import '../utils/native_field_rules.dart';
@@ -183,8 +184,9 @@ class _NativeEditableState extends State<NativeEditable> {
         : color.withValues(alpha: color.a * 0.6);
     final weight = (style.fontWeight ?? FontWeight.w400).value;
     final family = style.fontFamily ?? 'Rubik';
-    // Below 16 px an iPhone zooms the page in on focus, unless the page
-    // forbids zooming, which index.html does (maximum-scale=1).
+    // Below 16 px an iPhone zooms the page in on focus, unless the viewport
+    // caps zoom at 1: web/ios_no_focus_zoom.js keeps that cap on the tag
+    // Flutter's engine writes (its own allows up to 5).
     el.style.cssText =
         'width:100%;height:100%;box-sizing:border-box;'
         'margin:0;padding:0;border:0;outline:none;resize:none;'
@@ -549,13 +551,62 @@ class _NativeEditableState extends State<NativeEditable> {
       onKeyEvent: (_, event) => nativeFieldKeepsKey(event.logicalKey)
           ? KeyEventResult.skipRemainingHandlers
           : KeyEventResult.ignored,
-      child: SizedBox(
-        height: widget.multiline ? _height : widget.lineHeight,
-        child: HtmlElementView.fromTagName(
-          tagName: 'div',
-          onElementCreated: _created,
+      child: _WithBaseline(
+        baseline: _baseline,
+        child: SizedBox(
+          height: widget.multiline ? _height : widget.lineHeight,
+          child: HtmlElementView.fromTagName(
+            tagName: 'div',
+            onElementCreated: _created,
+          ),
         ),
       ),
     );
   }
+
+  // Where the browser draws the first line's baseline: the font's ascent and
+  // descent centred in the CSS line height, which is the line Flutter lays
+  // out for the same style. The decorator puts the hint (and a prefix or
+  // suffix) on it; a platform view has no baseline of its own, so without
+  // this they sat on the field's bottom edge, too low.
+  double get _baseline =>
+      (TextPainter(
+              text: TextSpan(text: 'א', style: widget.style),
+              textDirection: widget.textDirection,
+            )..layout())
+          .computeDistanceToActualBaseline(TextBaseline.alphabetic);
+}
+
+/// Reports [baseline] as its child's alphabetic baseline.
+class _WithBaseline extends SingleChildRenderObjectWidget {
+  const _WithBaseline({required this.baseline, required super.child});
+
+  final double baseline;
+
+  @override
+  _RenderWithBaseline createRenderObject(BuildContext context) =>
+      _RenderWithBaseline(baseline);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderWithBaseline r) {
+    r.baseline = baseline;
+  }
+}
+
+class _RenderWithBaseline extends RenderProxyBox {
+  _RenderWithBaseline(this._baseline);
+
+  double _baseline;
+  set baseline(double value) {
+    if (value == _baseline) return;
+    _baseline = value;
+    markNeedsLayout();
+  }
+
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) => _baseline;
+
+  @override
+  double? computeDryBaseline(BoxConstraints constraints, TextBaseline b) =>
+      _baseline;
 }

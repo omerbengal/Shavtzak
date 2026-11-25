@@ -186,7 +186,9 @@ class _TeamTaskFormState extends State<_TeamTaskForm> {
                         AppTextField(
                           key: const Key('new-team-task-title'),
                           controller: _title,
-                          autofocus: true,
+                          // No autofocus (Omer, 25/11/2026): an iPhone opens
+                          // no keyboard for a focus that is not in a tap, so
+                          // the field only looked ready.
                           maxLength: 200,
                           minLines: 1,
                           maxLines: 1,

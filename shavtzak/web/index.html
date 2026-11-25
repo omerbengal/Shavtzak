@@ -4,6 +4,9 @@
   <!-- iPhone: the keyboard opens on the first tap of a text field. Loaded
        first so it sees the address before the app rewrites it. -->
   <script src="ios_keyboard_fix.js"></script>
+  <!-- iPhone: no zoom-in when a field takes focus (Flutter's engine swaps
+       the viewport tag below for one allowing zoom up to 5). -->
+  <script src="ios_no_focus_zoom.js"></script>
   <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
