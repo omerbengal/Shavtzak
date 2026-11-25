@@ -7,7 +7,7 @@ import '../../../../core/utils/crud_action_result.dart';
 import '../../../../domain/entities/task_topic.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
-import '../../../widgets/rtl_arrow_keys.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../task/task_style.dart';
 import '../../task/widgets/confirm_delete_dialog.dart';
 
@@ -55,14 +55,12 @@ class _RenameDialogState extends State<_RenameDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: const Text('שינוי שם הנושא'),
-        content: RtlArrowKeys(
-          child: TextField(
-            key: const Key('topic-rename-field'),
-            controller: _controller,
-            autofocus: true,
-            decoration: const InputDecoration(border: OutlineInputBorder()),
-            onSubmitted: (value) => Navigator.of(context).pop(value),
-          ),
+        content: AppTextField(
+          key: const Key('topic-rename-field'),
+          controller: _controller,
+          autofocus: true,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('ביטול')),
@@ -171,17 +169,15 @@ class _TopicManagementDialogState extends State<TopicManagementDialog> {
             Row(
               children: [
                 Expanded(
-                  child: RtlArrowKeys(
-                    child: TextField(
-                      key: const Key('topic-new-name'),
-                      controller: _newName,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        hintText: 'נושא חדש',
-                        border: OutlineInputBorder(),
-                      ),
-                      onSubmitted: (_) => _add(topics),
+                  child: AppTextField(
+                    key: const Key('topic-new-name'),
+                    controller: _newName,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      hintText: 'נושא חדש',
+                      border: OutlineInputBorder(),
                     ),
+                    onSubmitted: (_) => _add(topics),
                   ),
                 ),
                 IconButton(

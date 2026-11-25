@@ -4,7 +4,7 @@ import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/team_task_rules.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
-import '../../../widgets/rtl_arrow_keys.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../task/task_style.dart';
 import 'task_link_picker.dart';
 import 'team_task_style.dart';
@@ -73,18 +73,17 @@ class _DuplicatePickerDialogState extends State<DuplicatePickerDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              RtlArrowKeys(
-                child: TextField(
-                  key: const Key('duplicate-search'),
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    hintText: 'חיפוש...',
-                    prefixIcon: Icon(Icons.search, size: 18),
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => setState(() => _query = value),
+              AppTextField(
+                key: const Key('duplicate-search'),
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  hintText: 'חיפוש...',
+                  prefixIcon: Icon(Icons.search, size: 18),
+                  border: OutlineInputBorder(),
                 ),
+                onChanged: (value) => setState(() => _query = value),
               ),
               const SizedBox(height: 8),
               Expanded(

@@ -8,6 +8,7 @@ import '../../../../domain/entities/team_member.dart';
 import '../../../../domain/entities/team_task.dart';
 import '../../../bloc/team_task/team_task_bloc.dart';
 import '../../../widgets/rtl_arrow_keys.dart';
+import '../../../widgets/app_text_field.dart';
 import '../../task/task_style.dart';
 import '../../task/widgets/confirm_delete_dialog.dart';
 import 'team_task_mentions.dart';
@@ -160,21 +161,18 @@ class _TeamTaskUpdateLogState extends State<TeamTaskUpdateLog> {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
-          child: RtlArrowKeys(
-            multiline: true,
-            child: TextField(
-              key: const Key('team-task-log-edit-field'),
-              controller: _edit,
-              autofocus: true,
-              readOnly: _saving,
-              minLines: 1,
-              maxLines: 6,
-              decoration: const InputDecoration(
-                isDense: true,
-                border: OutlineInputBorder(),
-                filled: true,
-                fillColor: Colors.white,
-              ),
+          child: AppTextField(
+            key: const Key('team-task-log-edit-field'),
+            controller: _edit,
+            autofocus: true,
+            readOnly: _saving,
+            minLines: 1,
+            maxLines: 6,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              filled: true,
+              fillColor: Colors.white,
             ),
           ),
         ),
