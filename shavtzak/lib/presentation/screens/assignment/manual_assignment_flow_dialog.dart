@@ -19,6 +19,7 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../widgets/app_text_field.dart';
 
 class ManualAssignmentFlowDialog extends StatefulWidget {
   const ManualAssignmentFlowDialog({super.key});
@@ -284,7 +285,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
         // Search bar
         Directionality(
           textDirection: TextDirection.rtl,
-          child: TextField(
+          child: AppTextField(
             controller: _eventSearchController,
             textDirection: TextDirection.rtl,
             decoration: InputDecoration(
@@ -450,7 +451,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
         // Search bar
         Directionality(
           textDirection: TextDirection.rtl,
-          child: TextField(
+          child: AppTextField(
             controller: _memberSearchController,
             textDirection: TextDirection.rtl,
             decoration: InputDecoration(
@@ -653,7 +654,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             // Search bar
             Directionality(
               textDirection: TextDirection.rtl,
-              child: TextField(
+              child: AppTextField(
                 controller: _roleSearchController,
                 textDirection: TextDirection.rtl,
                 decoration: InputDecoration(

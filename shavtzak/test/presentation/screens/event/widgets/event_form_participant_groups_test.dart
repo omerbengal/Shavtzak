@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/domain/entities/participant_group.dart';
 import 'package:shavtzak/presentation/screens/event/widgets/participant_group_rows.dart';
+import 'package:shavtzak/presentation/widgets/app_text_field.dart';
 
 void main() {
   group('participant group rows', () {
@@ -70,12 +71,27 @@ void main() {
       expect(find.text('הוסף סבב'), findsNothing);
     });
 
+    testWidgets('a label stops at its length cap with no counter shown',
+        (tester) async {
+      final rowsKey = GlobalKey<ParticipantGroupRowsState>();
+      await tester.pumpWidget(_host(rowsKey: rowsKey));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(AppTextField).first, 'א' * 80);
+      await tester.enterText(find.byType(TextFormField).first, '5');
+      await tester.pumpAndSettle();
+
+      final label = rowsKey.currentState!.toGroups().single.label!;
+      expect(label.length, 20);
+      expect(find.textContaining('/'), findsNothing);
+    });
+
     testWidgets('a label with no count blocks submission', (tester) async {
       final key = GlobalKey<FormState>();
       await tester.pumpWidget(_host(formKey: key));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextFormField).first, 'בוקר');
+      await tester.enterText(find.byType(AppTextField).first, 'בוקר');
       await tester.pumpAndSettle();
 
       expect(key.currentState!.validate(), isFalse);
@@ -88,7 +104,7 @@ void main() {
       await tester.pumpWidget(_host(formKey: key));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextFormField).at(1), '500');
+      await tester.enterText(find.byType(TextFormField).first, '500');
       await tester.pumpAndSettle();
 
       expect(key.currentState!.validate(), isTrue);
@@ -107,11 +123,13 @@ void main() {
       await tester.tap(find.text('הוסף סבב'));
       await tester.pumpAndSettle();
 
-      final labels = find.byType(TextFormField);
+      // The label is the app's own field, the count stays Flutter's.
+      final labels = find.byType(AppTextField);
+      final counts = find.byType(TextFormField);
       // Row 0: label "בוקר", count 500. Row 1: count only. Row 2: left empty.
       await tester.enterText(labels.at(0), 'בוקר');
-      await tester.enterText(labels.at(1), '500');
-      await tester.enterText(labels.at(3), '700');
+      await tester.enterText(counts.at(0), '500');
+      await tester.enterText(counts.at(1), '700');
       await tester.pumpAndSettle();
 
       expect(rowsKey.currentState!.toGroups(), const [

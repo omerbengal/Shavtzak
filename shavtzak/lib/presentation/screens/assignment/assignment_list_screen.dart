@@ -50,6 +50,7 @@ import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../../core/debug/search_action_logger.dart';
+import '../../widgets/app_text_field.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -790,7 +791,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Directionality(
                   textDirection: TextDirection.rtl,
-                  child: TextField(
+                  child: AppTextField(
                     controller: _searchController,
                     decoration: InputDecoration(
                       hintText: 'חיפוש באירוע, מיקום, תפקיד, שם או לייבל...',
@@ -2157,7 +2158,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             },
                           ),
                           const SizedBox(height: 8),
-                          TextField(
+                          AppTextField(
                             controller: notesController,
                             focusNode: notesFocusNode,
                             minLines: 4,
@@ -2368,7 +2369,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
+                AppTextField(
                   controller: noteController,
                   maxLines: 3,
                   decoration: const InputDecoration(
@@ -2467,7 +2468,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextField(
+                      AppTextField(
                         controller: searchController,
                         autofocus: false,
                         decoration: InputDecoration(
@@ -2727,7 +2728,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextField(
+                        AppTextField(
                           controller: nameController,
                           enabled: !isSaving,
                           autofocus: false,

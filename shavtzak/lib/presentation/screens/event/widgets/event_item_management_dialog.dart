@@ -13,6 +13,7 @@ import '../../../bloc/event_item/event_item_bloc.dart';
 import '../../../bloc/event_item/event_item_event.dart';
 import '../../../bloc/event_item/event_item_state.dart';
 import '../../../widgets/loading_overlay.dart';
+import '../../../widgets/app_text_field.dart';
 
 /// "ניהול מה יש באירוע": the list of things an event can have (name + emoji),
 /// managed like the categories: add, edit (tap), reorder (drag), archive,
@@ -391,11 +392,10 @@ class _EventItemEditDialogState extends State<EventItemEditDialog> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            AppTextField(
               key: EventItemEditDialog.nameKey,
               controller: _name,
               focusNode: _nameFocus,
-              autofocus: true,
               maxLength: EventItemEditDialog.maxNameLength,
               decoration: const InputDecoration(
                 labelText: 'שם',
@@ -404,7 +404,7 @@ class _EventItemEditDialogState extends State<EventItemEditDialog> {
               onSubmitted: (_) => _save(),
             ),
             const SizedBox(height: 8),
-            TextField(
+            AppTextField(
               key: EventItemEditDialog.emojiKey,
               controller: _emoji,
               decoration: const InputDecoration(

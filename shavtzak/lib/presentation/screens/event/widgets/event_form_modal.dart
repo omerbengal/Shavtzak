@@ -44,6 +44,7 @@ import 'custom_hours_resolve_dialog.dart';
 import 'empty_note_removal_dialog.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
+import '../../../widgets/app_text_field.dart';
 
 /// Public Event Form Modal Widget for creating/editing events
 /// Can be used from any screen that needs to create or edit events
@@ -1658,7 +1659,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 16),
 
                                         // Name field
-                                        TextFormField(
+                                        AppTextField(
                                           controller: _nameController,
                                           focusNode: _nameFocusNode,
                                           decoration: InputDecoration(
@@ -1697,7 +1698,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 16),
 
                                         // Location field
-                                        TextFormField(
+                                        AppTextField(
                                           controller: _locationController,
                                           focusNode: _locationFocusNode,
                                           decoration: InputDecoration(
@@ -1827,7 +1828,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 16),
 
                                         // Parking Location field
-                                        TextFormField(
+                                        AppTextField(
                                           controller:
                                               _parkingLocationController,
                                           focusNode: _parkingLocationFocusNode,
@@ -2707,7 +2708,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 16),
 
                                         // Comments
-                                        TextFormField(
+                                        AppTextField(
                                           controller: _commentsController,
                                           focusNode: _commentsFocusNode,
                                           decoration: const InputDecoration(
@@ -2718,8 +2719,6 @@ class _EventFormModalState extends State<EventFormModal> {
                                           ),
                                           minLines: 1,
                                           maxLines: 3,
-                                          scrollPadding: const EdgeInsets.only(
-                                              bottom: 300),
                                           onChanged: (_) =>
                                               setState(() => _isDirty = true),
                                         ),
@@ -2828,7 +2827,7 @@ class _EventFormModalState extends State<EventFormModal> {
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           title: const Text('צור קטגוריה חדשה'),
-          content: TextField(
+          content: AppTextField(
             controller: controller,
             focusNode: focusNode,
             decoration: const InputDecoration(

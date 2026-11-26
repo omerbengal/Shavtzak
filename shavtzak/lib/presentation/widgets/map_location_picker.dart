@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/debug/logger.dart';
 import '../../core/utils/rtl_text_field_utils.dart';
+import 'app_text_field.dart';
 
 // Conditional imports for web-specific geolocation API
 import 'web/geolocation_stub.dart'
@@ -607,7 +608,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                         ),
                                       ],
                                     ),
-                                    child: TextField(
+                                    child: AppTextField(
                                       controller: _searchController,
                                       focusNode: _searchFocusNode,
                                       decoration: InputDecoration(
