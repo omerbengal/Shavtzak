@@ -766,6 +766,17 @@ class _TaskLine extends StatelessWidget {
         ),
       );
 
+  /// The task's description under its title, in grey as in the stage
+  /// table; wraps in full. Tasks only, stages show none.
+  Widget _description() => Text(
+        task.description,
+        key: Key('my-task-desc-${task.id}'),
+        style: const TextStyle(
+          fontSize: TaskStyle.rowMetaSize,
+          color: TaskStyle.neutralText,
+        ),
+      );
+
   Widget _buildFull(List<String> others) {
     final update = _updateText();
     return Padding(
@@ -807,6 +818,13 @@ class _TaskLine extends StatelessWidget {
               ],
             ],
           ),
+          if (task.description.isNotEmpty)
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: task.hasSubtasks ? 8 : 40,
+              ),
+              child: _description(),
+            ),
           if (others.isNotEmpty)
             Padding(
               padding: EdgeInsetsDirectional.only(
@@ -901,6 +919,7 @@ class _TaskLine extends StatelessWidget {
                       child: HiddenTaskBadge(
                           key: Key('my-task-hidden-${task.id}')),
                     ),
+                  if (task.description.isNotEmpty) _description(),
                   if (others.isNotEmpty) _withOthers(others),
                   if (update != null) update,
                   if (isExpanded && task.hasSubtasks) _subtasks(),
