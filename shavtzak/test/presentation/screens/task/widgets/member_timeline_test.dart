@@ -648,6 +648,40 @@ void main() {
             ],
       );
 
+  testWidgets('a task description shows under its title, on full and compact rows',
+      (tester) async {
+    final full = tWsLater.copyWith(description: 'להביא את הערכות מהמחסן');
+    final compact = tDinner.copyWith(description: 'לבדוק מי מגיע לפני');
+    await pumpTimeline(
+      tester,
+      board: sampleBoard(tasks: [
+        for (final task in sampleTasks)
+          if (task.id == full.id)
+            full
+          else if (task.id == compact.id)
+            compact
+          else
+            task,
+      ]),
+    );
+
+    expect(
+      inside('my-task-ws-later', find.text('להביא את הערכות מהמחסן')),
+      findsOneWidget,
+    );
+    expect(
+      inside('my-task-dinner-guests', find.text('לבדוק מי מגיע לפני')),
+      findsOneWidget,
+    );
+    expect(top(tester, find.byKey(const Key('my-task-desc-ws-later'))),
+        greaterThan(top(tester, find.text('חלוקת ערכות למשתתפים'))));
+    expect(
+        tester.widget<Text>(find.text('להביא את הערכות מהמחסן')).maxLines,
+        isNull);
+    // A task without one shows nothing.
+    expect(find.byKey(const Key('my-task-desc-ws-soon')), findsNothing);
+  });
+
   testWidgets('an update shows under its task, on full and compact rows',
       (tester) async {
     final full = tWsLater.copyWith(

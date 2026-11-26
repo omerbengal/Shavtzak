@@ -106,6 +106,23 @@ void main() {
     expect(find.byType(TabBar), findsNothing);
   });
 
+  testWidgets('my tasks tab: a description shows under the title, not in all tasks',
+      (tester) async {
+    final described = buildTeamTask(id: 'd', title: 'הזמנת מתנות', assigneeIds: ['mgr'])
+        .copyWith(owners: [manager], description: 'להזמין עד יום חמישי');
+    await pumpTeamTasks(tester, user: manager, board: board([mine, described]));
+    // A manager opens on "כל המשימות": no description there.
+    expect(find.byKey(const Key('team-task-desc-d')), findsNothing);
+    await tester.tap(find.text('המשימות שלי'));
+    await tester.pumpAndSettle();
+    final desc = find.byKey(const Key('team-task-desc-d'));
+    expect(desc, findsOneWidget);
+    expect(tester.widget<Text>(desc).data, 'להזמין עד יום חמישי');
+    expect(tester.widget<Text>(desc).maxLines, isNull);
+    expect(tester.getTopLeft(desc).dy,
+        greaterThan(tester.getTopLeft(find.text('הזמנת מתנות')).dy));
+  });
+
   testWidgets('late deadline is red', (tester) async {
     final late =
         buildTeamTask(id: 'l', title: 'באיחור', deadline: '2026-11-10').copyWith(owners: [dana]);
