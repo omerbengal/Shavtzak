@@ -6,6 +6,7 @@ import '../bloc/team/team_state.dart';
 import 'map_location_picker.dart';
 import '../../core/utils/rtl_text_field_utils.dart';
 import '../../core/debug/logger.dart';
+import 'app_text_field.dart';
 
 /// Result from parking location picker dialog
 class ParkingLocationResult {
@@ -324,7 +325,7 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
                     const SizedBox(height: 16),
 
                     // Search bar
-                    TextField(
+                    AppTextField(
                       controller: _editorSearchController,
                       focusNode: _editorSearchFocusNode,
                       textAlign: TextAlign.right,

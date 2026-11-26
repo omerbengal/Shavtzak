@@ -32,6 +32,7 @@ import 'package:shavtzak/presentation/bloc/role/role_event.dart';
 import 'package:shavtzak/presentation/bloc/role/role_state.dart';
 import 'package:shavtzak/presentation/screens/event/widgets/custom_hours_resolve_dialog.dart';
 import 'package:shavtzak/presentation/screens/event/widgets/event_form_modal.dart';
+import 'package:shavtzak/presentation/widgets/app_text_field.dart';
 
 // The generated mocks of the subscription test already hold MockEventRepository
 // and MockAssignmentRepository; reuse them rather than generating a second copy.
@@ -221,7 +222,7 @@ void main() {
     await pumpForm(tester, assignments: const Stream.empty());
 
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'שם האירוע'), 'כנס חורף 2027');
+        find.widgetWithText(AppTextField, 'שם האירוע'), 'כנס חורף 2027');
     await tester.pump();
     await tapSave(tester);
 

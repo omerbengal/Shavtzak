@@ -34,6 +34,7 @@ import 'widgets/event_items_icons_row.dart';
 import 'widgets/role_management_dialog.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/debug/search_action_logger.dart';
+import '../../widgets/app_text_field.dart';
 
 // Filter enum for events (0=all, 1=future, 2=past)
 enum EventFilter { all, future, past }
@@ -390,7 +391,7 @@ class _EventListScreenState extends State<EventListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Directionality(
               textDirection: TextDirection.rtl,
-              child: TextField(
+              child: AppTextField(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
                 decoration: InputDecoration(

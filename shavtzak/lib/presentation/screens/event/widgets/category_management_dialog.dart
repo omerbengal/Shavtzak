@@ -12,6 +12,7 @@ import '../../../bloc/category/category_bloc.dart';
 import '../../../bloc/category/category_event.dart';
 import '../../../bloc/category/category_state.dart';
 import '../../../widgets/loading_overlay.dart';
+import '../../../widgets/app_text_field.dart';
 
 /// Dispatches a category BLoC event that reports back via a completer, and
 /// awaits the result. Shared by the main dialog and its add/edit sub-dialogs
@@ -757,7 +758,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            AppTextField(
               controller: _controller,
               focusNode: _focusNode,
               decoration: const InputDecoration(
@@ -879,7 +880,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            AppTextField(
               controller: _controller,
               focusNode: _focusNode,
               decoration: const InputDecoration(

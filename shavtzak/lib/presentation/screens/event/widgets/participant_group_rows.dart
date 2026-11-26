@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/debug/logger.dart';
 import '../../../../domain/entities/participant_group.dart';
+import '../../../widgets/app_text_field.dart';
 
 const int _maxParticipantRows = 10;
 const int _maxLabelLength = 20;
@@ -110,11 +111,9 @@ class ParticipantGroupRowsState extends State<ParticipantGroupRows> {
               children: [
                 Expanded(
                   flex: 3,
-                  child: TextFormField(
+                  child: AppTextField(
                     controller: _rows[i].label,
-                    inputFormatters: [
-                      LengthLimitingTextInputFormatter(_maxLabelLength),
-                    ],
+                    maxLength: _maxLabelLength,
                     onChanged: (_) {
                       // Rebuild so the count validator re-reads this label.
                       setState(() {});
@@ -125,6 +124,7 @@ class ParticipantGroupRowsState extends State<ParticipantGroupRows> {
                       hintText: 'סבב ${i + 1}',
                       border: const OutlineInputBorder(),
                       isDense: true,
+                      counterText: '',
                     ),
                   ),
                 ),

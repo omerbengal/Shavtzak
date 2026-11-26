@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_text_field.dart';
 
 /// Search box that narrows a dialog's list of people by name. Pair it with
 /// `nameMatchesSearch` and show [NameSearchNoResults] when nothing matches.
@@ -9,7 +10,7 @@ class NameSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    return AppTextField(
       decoration: const InputDecoration(
         hintText: 'חיפוש לפי שם',
         prefixIcon: Icon(Icons.search),

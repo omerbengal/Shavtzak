@@ -10,6 +10,7 @@ import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_event.dart';
 import '../../../bloc/role/role_state.dart';
 import '../../../widgets/loading_overlay.dart';
+import '../../../widgets/app_text_field.dart';
 
 /// Dialog for managing roles (add, rename, archive, restore, reorder, toggle visibility)
 class RoleManagementDialog extends StatefulWidget {
@@ -526,7 +527,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
+                  AppTextField(
                     controller: controller,
                     focusNode: focusNode,
                     decoration: const InputDecoration(
@@ -628,7 +629,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             title: const Text('שנה שם תפקיד'),
-            content: TextField(
+            content: AppTextField(
               controller: controller,
               focusNode: focusNode,
               decoration: const InputDecoration(

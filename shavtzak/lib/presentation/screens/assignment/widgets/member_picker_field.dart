@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/search_utils.dart';
 import '../../../../domain/entities/team_member.dart';
+import '../../../widgets/app_text_field.dart';
 
 /// A fixed entry under the member list, e.g. "שובצו כבר". Never filtered by
 /// the search.
@@ -326,7 +327,7 @@ class _MemberPickerMenuState extends State<_MemberPickerMenu> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-              child: TextField(
+              child: AppTextField(
                 controller: _searchController,
                 autofocus: false,
                 style: const TextStyle(fontSize: 13),

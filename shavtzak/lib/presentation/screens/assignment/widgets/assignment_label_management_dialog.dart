@@ -7,6 +7,7 @@ import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../domain/entities/assignment_label.dart';
 import '../../../widgets/loading_overlay.dart';
+import '../../../widgets/app_text_field.dart';
 
 class AssignmentLabelManagementDialog extends StatefulWidget {
   const AssignmentLabelManagementDialog({super.key});
@@ -720,7 +721,7 @@ class _AssignmentLabelManagementDialogState
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextField(
+                        AppTextField(
                           controller: nameController,
                           enabled: !isSaving,
                           autofocus: false,
