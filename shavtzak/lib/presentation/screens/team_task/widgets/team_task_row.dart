@@ -28,6 +28,7 @@ class TeamTaskRow extends StatelessWidget {
     this.onAddUpdate,
     this.selected = false,
     this.showCreated = false,
+    this.showDescription = false,
     this.mention,
     this.mentionTitle,
     this.mentionByName,
@@ -46,6 +47,10 @@ class TeamTaskRow extends StatelessWidget {
   /// "כל המשימות" (msg 4480): the creation date in the row's bottom-left
   /// corner.
   final bool showCreated;
+
+  /// "המשימות שלי" (Omer, 26/11/2026): the task's description under its
+  /// title, in grey, in full.
+  final bool showDescription;
 
   /// Its task is the one open in the side panel (wide window, round 7).
   final bool selected;
@@ -160,6 +165,18 @@ class TeamTaskRow extends StatelessWidget {
                 ),
             ],
           ),
+          if (mention == null && showDescription && task.description.trim().isNotEmpty)
+            Padding(
+              padding: EdgeInsetsDirectional.only(start: lead, top: 3),
+              child: Text(
+                task.description.trim(),
+                key: Key('team-task-desc-${task.id}'),
+                style: const TextStyle(
+                  fontSize: TaskStyle.rowMetaSize,
+                  color: TaskStyle.neutralText,
+                ),
+              ),
+            ),
           if (mention != null) ..._mentionLines(lead),
           if (mention == null && events.isNotEmpty)
             Padding(

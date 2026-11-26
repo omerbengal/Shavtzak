@@ -838,6 +838,8 @@ class _GroupedListState extends State<_GroupedList> {
           canChangeStatus: !widget.editing,
           // "כל המשימות" only (msg 4480).
           showCreated: widget.editing,
+          // "המשימות שלי" only (26/11/2026).
+          showDescription: !widget.editing,
           onAddUpdate: widget.editing ? null : () => showTeamTaskUpdatesDialog(context, task.id),
           onTap: () => showTeamTaskSheet(context, task.id, manage: widget.editing),
         ),
